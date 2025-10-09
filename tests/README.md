@@ -8,16 +8,23 @@ Automated tests for the initd init system components.
 
 ```bash
 # Build and run all tests
+meson compile -C build
 meson test -C build
 
 # Run specific test
-meson test -C build test-calendar
-meson test -C build test-parser
-meson test -C build test-control
-meson test -C build test-socket
+meson test -C build "calendar parser"
+meson test -C build "unit file parser"
+meson test -C build "control protocol"
+meson test -C build "socket activator"
+meson test -C build "IPC protocol"
+meson test -C build "unit scanner"
+meson test -C build "dependency resolution"
+meson test -C build "state machine"
+meson test -C build "logging system"
+meson test -C build "integration"
 
 # Verbose output
-meson test -C build --verbose
+meson test -C build -v
 
 # Run tests in parallel
 meson test -C build --num-processes 4
@@ -80,14 +87,72 @@ TEST("test description");
 PASS();
 ```
 
-## Future Tests
+### test-ipc (6 tests)
+Tests master/slave IPC communication:
+- Request serialization
+- Response serialization
+- Stop service requests
+- Error responses
+- Service exited notifications
+- Shutdown complete requests
 
-- **test-dependency** - Dependency graph resolution
-- **test-scanner** - Unit directory scanning
-- **test-ipc** - Master/slave IPC communication
-- **test-state** - Service state transitions
-- **test-enable** - Enable/disable symlink management
-- **test-integration** - End-to-end system tests
+### test-scanner (10 tests)
+Tests unit directory scanning:
+- Empty directory handling
+- Single service scanning
+- Unit file priority
+- Multiple unit types
+- Invalid unit file skipping
+- Non-unit file filtering
+- Systemd directory filtering
+- Unit list linking
+- Duplicate unit name handling
+- Free units cleanup
+
+### test-dependency (10 tests)
+Tests dependency graph resolution:
+- After/Before dependency ordering
+- Requires/Wants dependencies
+- Conflicts handling
+- Circular dependency detection
+- Dependency chain resolution
+- Multiple dependencies per unit
+- Target unit dependencies
+- Missing dependency handling
+
+### test-state (11 tests)
+Tests service state transitions:
+- Valid state transitions
+- Failure state handling
+- Simple/forking/oneshot service lifecycles
+- Restart policies (always, on-failure, no)
+- Timer/socket/target unit states
+
+### test-log (10 tests)
+Tests logging system:
+- Log initialization
+- Early boot log buffering
+- Syslog ready notification
+- Direct logging to syslog
+- Different log priorities
+- Log buffer overflow handling
+- Logging with NULL unit name
+- Syslog detection
+- Log message formatting
+- Multiple init/close cycles
+
+### test-integration (10 tests)
+Tests end-to-end workflows:
+- Parse and validate integration
+- State/command to string conversion
+- Unit type detection from filename
+- Dependency/install/environment parsing
+- Service types and restart policies
+- Timer unit integration
+
+## Test Statistics
+
+**Total: 10 test suites, 83 individual tests - all passing ✅**
 
 ## CI Integration
 

@@ -63,6 +63,10 @@ systemd files or code are reused here.
 - Standard targets (rescue, multi-user, graphical)
 - Drop-in compatibility with existing systemd unit files (will convert on the fly if a systemd service is enabled)
 
+## Credits
+
+Many of the service scripts for sysinit.target (checkfs, console, createfiles, localnet, modules-load, mountvirtfs, udev-retry, udev-trigger) were adapted from the [LFS-bootscripts](https://github.com/lfs-book/lfs/tree/trunk/bootscripts) project.
+
 ## Architecture
 
 ### Daemon Independence
