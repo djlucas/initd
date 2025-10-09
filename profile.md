@@ -954,54 +954,51 @@ meson test -C build -v
 
 ## Security Testing
 
-### Static Analysis (Manual)
+### Integrated Analysis Tools
 
-**Quick static checks** (run regularly):
+The project includes comprehensive static and dynamic analysis integrated into the build system:
+
+**Run all analysis tools**:
 ```bash
-# Install tools
-sudo apt install cppcheck flawfinder
-
-# Run cppcheck for common errors
-cppcheck --enable=all --inconclusive --std=c23 src/
-
-# Run flawfinder for security issues
-flawfinder src/
+meson compile -C build analyze-all
 ```
 
-**Thorough analysis** (before releases):
+**Individual analysis tools**:
 ```bash
-# Install clang static analyzer
-sudo apt install clang-tools
+# Static code analysis
+meson compile -C build analyze-cppcheck
 
-# Run scan-build
-scan-build meson compile -C build
+# Security-focused static analysis
+meson compile -C build analyze-flawfinder
+
+# Clang static analyzer
+meson compile -C build analyze-scan
+
+# Runtime memory error detection
+meson compile -C build analyze-sanitizers
+
+# Memory leak detection
+meson compile -C build analyze-valgrind
 ```
 
-### Dynamic Analysis (Manual)
+**Analysis results** are saved to `analysis-output/` with individual log files:
+- `cppcheck.log` - Static analysis results
+- `flawfinder.log` - Security analysis results
+- `scan-build.log` - Clang analyzer results
+- `sanitizers.log` - AddressSanitizer/UndefinedBehaviorSanitizer results
+- `valgrind.log` - Memory leak detection results
+- `analysis-summary.log` - Overall summary
 
-**Memory and error detection**:
-```bash
-# Install valgrind
-sudo apt install valgrind
+**Tools included**:
+- **cppcheck** - Comprehensive static code analysis
+- **flawfinder** - Security vulnerability scanner
+- **Clang scan-build** - Deep static analysis with clang
+- **AddressSanitizer** - Runtime memory error detection
+- **UndefinedBehaviorSanitizer** - Undefined behavior detection
+- **LeakSanitizer** - Memory leak detection
+- **Valgrind** - Comprehensive memory analysis
 
-# Run on test suite
-valgrind --leak-check=full --show-leak-kinds=all ./build/tests/test-parser
-valgrind --leak-check=full --show-leak-kinds=all ./build/tests/test-control
-# ... repeat for all tests
-```
-
-**Sanitizers** (compile-time):
-```bash
-# AddressSanitizer (memory errors)
-CFLAGS="-fsanitize=address" meson setup build-asan
-meson compile -C build-asan
-meson test -C build-asan
-
-# UndefinedBehaviorSanitizer
-CFLAGS="-fsanitize=undefined" meson setup build-ubsan
-meson compile -C build-ubsan
-meson test -C build-ubsan
-```
+All analysis tools are configured with dedicated build directories and proper logging.
 
 ### Fuzzing (Manual)
 

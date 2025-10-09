@@ -171,16 +171,23 @@ Or use existing systemd unit directories for compatibility.
 
 ```bash
 # Start a service
-systemctl start nginx
+initctl start nginx
 
 # Enable at boot
-systemctl enable nginx
+initctl enable nginx
 
 # Check status
-systemctl status nginx
+initctl status nginx
 
-# View logs
+# View logs with grep (traditional)
+grep nginx /var/log/messages | tail -20
+
+# View logs with journalctl wrapper
 journalctl -u nginx -f
+
+# systemctl compatibility (symlink to initctl)
+systemctl start nginx
+systemctl status nginx
 ```
 
 ## Development Status
@@ -244,8 +251,10 @@ Core init system functionality is implemented with comprehensive test coverage.
 - Socket activator with idle timeout
 - Comprehensive test suite (10 suites, 83 tests)
 
-### Test Coverage
-The project includes extensive automated testing:
+### Test Coverage & Analysis
+The project includes extensive automated testing and static/dynamic analysis:
+
+**Test Suites:**
 - **10 test suites** with **83 individual tests** (100% passing)
 - Calendar expression parser tests
 - Unit file parser and validation tests
@@ -258,11 +267,34 @@ The project includes extensive automated testing:
 - Logging system tests
 - Integration tests
 
+**Static & Dynamic Analysis:**
+- **cppcheck** - Static code analysis
+- **flawfinder** - Security-focused static analysis
+- **Clang scan-build** - Static analyzer with deeper checks
+- **AddressSanitizer/UndefinedBehaviorSanitizer** - Runtime memory error detection
+- **Valgrind** - Memory leak and error detection
+
 Build and run tests:
 ```bash
 meson compile -C build
 meson test -C build -v
 ```
+
+Run complete analysis suite:
+```bash
+meson compile -C build analyze-all
+```
+
+Individual analysis tools:
+```bash
+meson compile -C build analyze-cppcheck
+meson compile -C build analyze-flawfinder
+meson compile -C build analyze-scan
+meson compile -C build analyze-sanitizers
+meson compile -C build analyze-valgrind
+```
+
+Analysis results are saved to `analysis-output/` with individual log files for review.
 
 ### What's Next
 - Cgroup integration (Linux)
