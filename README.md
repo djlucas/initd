@@ -56,7 +56,7 @@ maintaining a clean, auditable codebase and true portability.
 
 ### User-Facing Tools
 
-- **systemctl** - Service control interface compatible with systemd
+- **initctl** - Service control interface compatible with systemd
 - **journalctl** - Log query wrapper for traditional syslog
 - Standard targets (rescue, multi-user, graphical)
 - Drop-in compatibility with existing systemd unit files
