@@ -45,7 +45,7 @@ systemd files or code are reused here.
 - **Security First**
   - Privilege-separated architecture (master/slave supervisor)
   - Minimal code running as root
-  - Optional cgroup isolation (Linux only)
+  - Optional cgroup isolation (Linux only - not implemetned yet)
   - Service sandboxing via User/Group directives
 
 - **Platform Support**
