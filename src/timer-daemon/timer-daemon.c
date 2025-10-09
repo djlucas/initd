@@ -104,8 +104,8 @@ static int create_control_socket(void) {
         return -1;
     }
 
-    /* Set permissions */
-    chmod(TIMER_SOCKET_PATH, 0666);
+    /* Set permissions - use fchmod to avoid race condition */
+    fchmod(fd, 0666);
 
     fprintf(stderr, "timer-daemon: control socket created at %s\n", TIMER_SOCKET_PATH);
     return fd;
@@ -325,6 +325,13 @@ static int activate_direct(const char *service_name) {
         }
         argv[argc] = NULL;
 
+        /* Check if we have a command to execute */
+        if (argc == 0 || argv[0] == NULL) {
+            fprintf(stderr, "timer-daemon: invalid ExecStart for %s\n", service_name);
+            free(cmd);
+            exit(1);
+        }
+
         /* Execute */
         execvp(argv[0], argv);
 
@@ -357,7 +364,7 @@ static int activate_service(const char *service_name) {
 static void fire_timer(struct timer_instance *timer) {
     /* Determine service to activate */
     /* Timer name: backup.timer -> activate backup.service */
-    char service_name[256];
+    char service_name[MAX_UNIT_NAME + 16];
     char *dot = strrchr(timer->unit->name, '.');
     if (dot) {
         size_t len = dot - timer->unit->name;

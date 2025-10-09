@@ -67,6 +67,7 @@ static void free_calendar_spec(struct calendar_spec *spec) {
     free_component(&spec->hour);
     free_component(&spec->minute);
     free_component(&spec->second);
+    free(spec);
 }
 
 /* Parse weekday name to number (0=Sun, 6=Sat) */
@@ -184,7 +185,10 @@ static struct calendar_spec *parse_calendar_expression(const char *expr) {
     struct calendar_spec *spec = calloc(1, sizeof(struct calendar_spec));
     if (!spec) return NULL;
 
-    char *copy = strdup(expr);
+    /* Allocate buffer large enough for shortcuts or original expression */
+    size_t len = strlen(expr);
+    size_t buflen = (len > 32) ? len + 1 : 32;  /* At least 32 bytes for shortcuts */
+    char *copy = malloc(buflen);
     if (!copy) {
         free(spec);
         return NULL;
@@ -203,6 +207,8 @@ static struct calendar_spec *parse_calendar_expression(const char *expr) {
         strcpy(copy, "* *-*-01 00:00:00");
     } else if (strcmp(expr, "yearly") == 0 || strcmp(expr, "annually") == 0) {
         strcpy(copy, "* *-01-01 00:00:00");
+    } else {
+        strcpy(copy, expr);
     }
 
     /* Parse format: [WEEKDAY] YEAR-MONTH-DAY HOUR:MINUTE:SECOND */
@@ -213,10 +219,10 @@ static struct calendar_spec *parse_calendar_expression(const char *expr) {
     int n = sscanf(copy, "%63s %63s %63s", weekday, date, time);
 
     if (n == 2) {
-        /* No weekday specified */
-        strcpy(time, date);
-        strcpy(date, weekday);
-        strcpy(weekday, "*");
+        /* No weekday specified - shift values */
+        memmove(time, date, sizeof(time));
+        memmove(date, weekday, sizeof(date));
+        snprintf(weekday, sizeof(weekday), "*");
     } else if (n != 3) {
         free(copy);
         free_calendar_spec(spec);

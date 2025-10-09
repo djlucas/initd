@@ -228,7 +228,7 @@ static bool unit_provides(struct unit_file *unit, const char *service_name) {
 
 /* Enable a unit (create symlinks in target wants directories) */
 static int enable_unit(struct unit_file *unit) {
-    char link_path[1024];
+    char link_path[1536];  /* Room for path + "/" + unit name */
     char target_dir[1024];
 
     /* Process WantedBy */
@@ -439,8 +439,8 @@ static int create_control_socket(void) {
         return -1;
     }
 
-    /* Make socket accessible */
-    chmod(CONTROL_SOCKET_PATH, 0666);
+    /* Make socket accessible - use fchmod to avoid race condition */
+    fchmod(fd, 0666);
 
     if (listen(fd, 5) < 0) {
         perror("slave: listen");
@@ -731,6 +731,12 @@ static int start_unit_recursive(struct unit_file *unit) {
 /* Main loop: manage services */
 static int main_loop(void) {
     fprintf(stderr, "supervisor-slave: entering main loop\n");
+
+    /* Defensive check: ensure sockets are valid */
+    if (control_socket < 0 || master_socket < 0) {
+        fprintf(stderr, "supervisor-slave: invalid socket in main_loop\n");
+        return -1;
+    }
 
     struct pollfd fds[2];
     fds[0].fd = control_socket;

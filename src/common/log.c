@@ -14,6 +14,8 @@
 #include <syslog.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include "log.h"
 
 #define MAX_BUFFER_ENTRIES 1000
@@ -119,22 +121,11 @@ static void flush_buffer(void) {
         return;
     }
 
-    /* Get current times for offset calculation */
-    struct timespec now_real, now_boot;
-    clock_gettime(CLOCK_REALTIME, &now_real);
-    clock_gettime(CLOCK_BOOTTIME, &now_boot);
-
-    /* Calculate boot time to real time offset */
-    int64_t offset_sec = now_real.tv_sec - now_boot.tv_sec;
-
     /* Flush all buffered entries */
     struct log_entry *entry = log_state.head;
     while (entry) {
-        /* Reconstruct real timestamp */
-        time_t log_real_time = entry->boot_time.tv_sec + offset_sec;
-
         /* Format message with boot time annotation */
-        char full_msg[MAX_MESSAGE_LEN + 128];
+        char full_msg[MAX_UNIT_LEN + MAX_MESSAGE_LEN + 128];
         if (entry->unit[0]) {
             snprintf(full_msg, sizeof(full_msg),
                      "[%s] [buffered from boot+%ld.%03lds] %s",
@@ -188,11 +179,23 @@ void log_check_syslog(void) {
         return; /* Already ready */
     }
 
-    /* Test if /dev/log exists and is accessible */
+    /* Test if syslog is available by attempting to connect */
     /* This provides syslog detection in standalone mode or when
      * supervisor doesn't have explicit Provides=syslog knowledge */
-    if (access("/dev/log", W_OK) == 0) {
-        log_syslog_ready();
+    /* We test by opening a connection to the syslog socket directly */
+    int test_fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (test_fd >= 0) {
+        struct sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, "/dev/log", sizeof(addr.sun_path) - 1);
+
+        if (connect(test_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            close(test_fd);
+            log_syslog_ready();
+        } else {
+            close(test_fd);
+        }
     }
 }
 

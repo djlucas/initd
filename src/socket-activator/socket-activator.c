@@ -123,8 +123,8 @@ static int create_control_socket(void) {
         return -1;
     }
 
-    /* Set permissions */
-    chmod(SOCKET_ACTIVATOR_SOCKET_PATH, 0666);
+    /* Set permissions - use fchmod to avoid race condition */
+    fchmod(fd, 0666);
 
     fprintf(stderr, "socket-activator: control socket created at %s\n",
             SOCKET_ACTIVATOR_SOCKET_PATH);
@@ -296,13 +296,15 @@ static int activate_via_supervisor(const char *service_name, int client_fd) {
     /* TODO: Requires IPC with supervisor to delegate service startup + FD passing */
     /* Optional Phase 3 enhancement - allows supervisor to manage service lifecycle */
     /* For now, return failure to fall back to direct */
+    (void)service_name;  /* Unused in stub implementation */
+    (void)client_fd;     /* Unused in stub implementation */
     return -1;
 }
 
 /* Activate service directly and pass socket */
 static int activate_direct(struct socket_instance *sock, int client_fd) {
     /* Determine service name from socket name */
-    char service_name[256];
+    char service_name[MAX_UNIT_NAME + 16];  /* Room for ".service" suffix */
     char *dot = strrchr(sock->unit->name, '.');
     if (dot) {
         size_t len = dot - sock->unit->name;

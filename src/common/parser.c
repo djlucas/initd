@@ -314,6 +314,7 @@ void free_unit_file(struct unit_file *unit) {
     for (int i = 0; i < unit->unit.requires_count; i++) free(unit->unit.requires[i]);
     for (int i = 0; i < unit->unit.wants_count; i++) free(unit->unit.wants[i]);
     for (int i = 0; i < unit->unit.conflicts_count; i++) free(unit->unit.conflicts[i]);
+    for (int i = 0; i < unit->unit.provides_count; i++) free(unit->unit.provides[i]);
 
     /* Free [Service] fields */
     if (unit->type == UNIT_SERVICE) {

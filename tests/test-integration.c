@@ -92,6 +92,8 @@ void test_state_to_string_integration(void) {
     str = state_to_string(UNIT_STATE_FAILED);
     assert(str != NULL);
 
+    (void)unit;  /* Used for state transition demonstration */
+
     PASS();
 }
 

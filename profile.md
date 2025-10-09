@@ -952,6 +952,78 @@ meson test -C build -v
 - OpenBSD
 - GNU Hurd (if available)
 
+## Security Testing
+
+### Static Analysis (Manual)
+
+**Quick static checks** (run regularly):
+```bash
+# Install tools
+sudo apt install cppcheck flawfinder
+
+# Run cppcheck for common errors
+cppcheck --enable=all --inconclusive --std=c23 src/
+
+# Run flawfinder for security issues
+flawfinder src/
+```
+
+**Thorough analysis** (before releases):
+```bash
+# Install clang static analyzer
+sudo apt install clang-tools
+
+# Run scan-build
+scan-build meson compile -C build
+```
+
+### Dynamic Analysis (Manual)
+
+**Memory and error detection**:
+```bash
+# Install valgrind
+sudo apt install valgrind
+
+# Run on test suite
+valgrind --leak-check=full --show-leak-kinds=all ./build/tests/test-parser
+valgrind --leak-check=full --show-leak-kinds=all ./build/tests/test-control
+# ... repeat for all tests
+```
+
+**Sanitizers** (compile-time):
+```bash
+# AddressSanitizer (memory errors)
+CFLAGS="-fsanitize=address" meson setup build-asan
+meson compile -C build-asan
+meson test -C build-asan
+
+# UndefinedBehaviorSanitizer
+CFLAGS="-fsanitize=undefined" meson setup build-ubsan
+meson compile -C build-ubsan
+meson test -C build-ubsan
+```
+
+### Fuzzing (Manual)
+
+**Fuzzing targets** (parsers are primary candidates):
+
+1. **Unit file parser**:
+   ```bash
+   sudo apt install afl++
+   # Create fuzzing harness for parser
+   # Feed malformed unit files
+   ```
+
+2. **Calendar expression parser**:
+   ```bash
+   # Fuzz calendar expressions with libFuzzer or AFL
+   ```
+
+3. **Control protocol**:
+   ```bash
+   # Fuzz IPC message handling
+   ```
+
 ## Documentation Needed
 
 1. **User Documentation**

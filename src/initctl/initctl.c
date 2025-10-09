@@ -87,7 +87,6 @@ static void print_status(const struct control_response *resp, const char *unit_n
     const char *color_reset = "\033[0m";
     const char *color_green = "\033[0;32m";
     const char *color_red = "\033[0;31m";
-    const char *color_bold = "\033[1m";
 
     /* Determine color based on state */
     const char *state_color = color_reset;
@@ -275,8 +274,8 @@ int main(int argc, char *argv[]) {
 
         /* Print entries */
         for (size_t i = 0; i < count; i++) {
-            char next_str[20] = "-";
-            char last_str[20] = "-";
+            char next_str[32] = "-";
+            char last_str[32] = "-";
 
             /* Format next run time */
             if (entries[i].next_run > 0) {

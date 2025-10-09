@@ -90,7 +90,7 @@ struct unit_list_entry {
 /* Timer entry for LIST_TIMERS */
 struct timer_list_entry {
     char name[256];
-    char unit[256];             // Unit to activate (e.g., backup.service)
+    char unit[280];             // Unit to activate (e.g., backup.service) - extra room for suffix
     time_t next_run;            // Next scheduled run time
     time_t last_run;            // Last run time (0 if never)
     uint32_t state;             // Timer state

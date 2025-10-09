@@ -106,6 +106,7 @@ void test_service_forking_lifecycle(void) {
     unit.pid = 999;  /* Track daemon PID */
     unit.state = STATE_ACTIVE;
 
+    (void)unit;  /* Used for state transition demonstration */
     PASS();
 }
 
@@ -126,6 +127,7 @@ void test_service_oneshot_lifecycle(void) {
     unit.state = STATE_ACTIVE;  /* Active even with no PID */
     unit.pid = 0;
 
+    (void)unit;  /* Used for state transition demonstration */
     PASS();
 }
 
@@ -170,6 +172,7 @@ void test_restart_policy_on_failure(void) {
     /* Should restart */
     unit.state = STATE_ACTIVATING;
 
+    (void)unit;  /* Used for state transition demonstration */
     PASS();
 }
 
@@ -203,6 +206,7 @@ void test_timer_state(void) {
     /* Timer can be stopped */
     unit.state = STATE_INACTIVE;
 
+    (void)unit;  /* Used for state transition demonstration */
     PASS();
 }
 
@@ -222,6 +226,7 @@ void test_socket_state(void) {
     /* Socket can be stopped */
     unit.state = STATE_INACTIVE;
 
+    (void)unit;  /* Used for state transition demonstration */
     PASS();
 }
 
@@ -237,6 +242,7 @@ void test_target_state(void) {
 
     /* Target has no persistent state */
 
+    (void)unit;  /* Used for state transition demonstration */
     PASS();
 }
 

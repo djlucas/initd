@@ -139,11 +139,13 @@ int scan_unit_directories_filtered(struct unit_file ***units_out, int *count_out
         /* Grow array if needed */
         if (count >= capacity - 1) {
             capacity *= 2;
-            units = realloc(units, capacity * sizeof(struct unit_file *));
-            if (!units) {
+            struct unit_file **tmp = realloc(units, capacity * sizeof(struct unit_file *));
+            if (!tmp) {
                 free(dirs);
+                free(units);
                 return -1;
             }
+            units = tmp;
         }
 
         dir = strtok(NULL, ":");
