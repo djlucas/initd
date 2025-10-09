@@ -19,7 +19,9 @@ This is actively developed, incomplete, and untested code. It is not ready for a
 **initd** provides modern service management for unix-like systems without the
 complexity and ecosystem lock-in of systemd. It implements the good ideas from
 systemd (declarative unit files, dependency resolution, socket activation) while
-maintaining a clean, auditable codebase and true portability.
+maintaining a clean, auditable codebase and true portability. Note: this is not
+an "e" package extracted from systemd, but a completely separate codebase. No
+systemd files or code are reused here.
 
 ### Design Philosophy
 
@@ -56,10 +58,10 @@ maintaining a clean, auditable codebase and true portability.
 
 ### User-Facing Tools
 
-- **initctl** - Service control interface compatible with systemd
-- **journalctl** - Log query wrapper for traditional syslog
+- **initctl** - Service control interface compatible with systemd's systemctl (a symlink provided)
+- **journalctl** - Log query wrapper for traditional syslog that mimics some of systemd's journalctl
 - Standard targets (rescue, multi-user, graphical)
-- Drop-in compatibility with existing systemd unit files
+- Drop-in compatibility with existing systemd unit files (will convert on the fly if a systemd service is enabled)
 
 ## Architecture
 
