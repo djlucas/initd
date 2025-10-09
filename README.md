@@ -2,6 +2,18 @@
 
 A lightweight, portable init system with systemd unit file compatibility.
 
+---
+
+## ⚠️ **WARNING: PRE-ALPHA SOFTWARE** ⚠️
+
+**DO NOT USE THIS SOFTWARE IN PRODUCTION OR ON ANY SYSTEM YOU CARE ABOUT.**
+
+This is actively developed, incomplete, and untested code. It is not ready for any use beyond experimentation and development. Expect bugs, missing features, and breaking changes.
+
+**You have been warned.**
+
+---
+
 ## Overview
 
 **initd** provides modern service management for unix-like systems without the
@@ -14,7 +26,7 @@ maintaining a clean, auditable codebase and true portability.
 - **Minimal and Auditable** - Small, readable C23 codebase
 - **Privilege Separated** - Security by design, minimal root code
 - **Systemd Compatible** - Use existing unit files where beneficial
-- **Truly Portable** - Works on Linux, BSD, and GNU Hurd
+- **Truly Portable** - Multi-platform Unix-like support
 - **Unix Philosophy** - Each component does one thing well
 
 ## Key Features
@@ -36,8 +48,11 @@ maintaining a clean, auditable codebase and true portability.
 
 - **Platform Support**
   - Linux: Full feature set with cgroups v2
-  - FreeBSD/OpenBSD/NetBSD: Process group-based supervision
-  - GNU Hurd: Core functionality with platform-specific adaptations
+  - Other Unix-like systems: Process group-based supervision
+  - Two deployment modes:
+    - **PID 1 mode**: Full init replacement (primary use case)
+    - **Standalone mode**: Run under existing init (testing, containers, BSD rc, sysvinit)
+  - Portable architecture for broad compatibility
 
 ### User-Facing Tools
 
@@ -48,24 +63,48 @@ maintaining a clean, auditable codebase and true portability.
 
 ## Architecture
 
+### Daemon Independence
+
+**Core Principle:** Each component is a separate, independent daemon - fundamentally different from systemd's monolithic design.
+
+- Each daemon can be installed and run standalone
+- No interdependencies - cross-daemon communication is optional
+- Each manages its own control socket
+- Can be packaged separately or as a suite
+
+### Components
+
 ```
-init (PID 1)
+init (PID 1) - optional, not needed in standalone mode
   └─ supervisor-master (root, minimal)
       ├─ supervisor-slave (unprivileged, main logic)
       │   ├─ Parses unit files
       │   ├─ Resolves dependencies
       │   ├─ Monitors services
-      │   └─ Handles systemctl requests
+      │   └─ Control socket: /run/initd/supervisor.sock
       └─ Spawns services with privilege dropping
+
+timer-daemon (independent)
+  ├─ Manages .timer units
+  ├─ Cron replacement functionality
+  └─ Control socket: /run/initd/timer.sock
+
+socket-activator (independent)
+  ├─ Manages .socket units
+  ├─ On-demand service activation
+  └─ Control socket: /run/initd/socket-activator.sock
+
+initctl/systemctl
+  └─ Routes commands to appropriate daemon based on unit type
 ```
 
 **Key Components:**
 
-1. **init** - PID 1, zombie reaping, supervisor lifecycle
-2. **supervisor-master** - Privileged operations only (fork/exec, cgroups)
-3. **supervisor-slave** - Unprivileged service management
-4. **socket-activator** - On-demand service activation
-5. **systemctl** - Control interface (binary protocol over Unix socket)
+1. **init** - PID 1, zombie reaping, supervisor lifecycle (optional)
+2. **supervisor** (master + slave) - Service management daemon
+3. **timer-daemon** - Timer/cron functionality (independent, optional)
+4. **socket-activator** - On-demand service activation (independent, optional)
+5. **initctl/systemctl** - Control interface (routes to correct daemon)
 6. **journalctl** - Log query tool (syslog wrapper)
 
 ## Differentiating Features
@@ -84,7 +123,7 @@ init (PID 1)
 
 - **True Portability**
   - Not just "works on Linux"
-  - First-class BSD and Hurd support
+  - Multi-platform Unix-like support
   - Platform abstraction from the start
 
 - **No Ecosystem Lock-in**
@@ -140,19 +179,90 @@ journalctl -u nginx -f
 
 ## Development Status
 
-**Current Phase:** Initial Development
+**Current Phase:** Phase 2 Complete - Ready for Phase 3
 
-This project is under active development. The architecture is complete and implementation is underway.
+**Overall Progress:** ~50% complete
 
-### Roadmap
+Core init system functionality is implemented with comprehensive test coverage.
 
-- [x] Architecture design
-- [x] Complete specification
-- [ ] Phase 1: Minimal boot capability
-- [ ] Phase 2: Core features (dependencies, targets)
-- [ ] Phase 3: Advanced features (timers, sockets)
-- [ ] Phase 4: Multi-platform support
-- [ ] Phase 5: Production hardening
+### Implementation Phases
+
+#### ✅ Phase 1: Minimal Boot - **COMPLETE (100%)**
+- [x] Init binary (PID 1, zombie reaping)
+- [x] Supervisor master/slave split with privilege separation
+- [x] Basic unit file parser (systemd-compatible format)
+- [x] Start/stop simple services
+- [x] Shutdown handling with proper service ordering
+- [x] Service PID monitoring and restart policies
+
+#### ✅ Phase 2: Core Features & Independent Daemons - **COMPLETE (100%)**
+- [x] Dependency resolution (Requires, Wants, After, Before)
+- [x] Target support
+- [x] Service restart/recovery (RESTART_ALWAYS, RESTART_ON_FAILURE)
+- [x] Basic systemctl commands (start, stop, status, is-active)
+- [x] Syslog integration for logging
+- [x] Enable/disable commands
+- [x] List-units command (with --all flag for systemd directories)
+- [x] Timer daemon (independent, cron replacement)
+- [x] Socket activator daemon (independent, with idle timeout)
+- [x] Daemon independence (separate control sockets, optional communication)
+- [x] Full systemctl compatibility (command routing to daemons)
+- [x] list-timers command
+- [x] journalctl wrapper (complete)
+
+#### ⏳ Phase 3: Platform Support & Polishing - **PLANNED (0%)**
+- [ ] Cgroup integration (Linux)
+
+#### ⏳ Phase 4: Multi-Platform Support - **PLANNED (0%)**
+- [ ] Platform abstraction layer
+- [ ] Standalone supervisor mode (run without replacing init)
+- [ ] Multi-platform support beyond Linux
+- [ ] Testing on multiple platforms
+- [ ] Portable process supervision
+
+#### ⏳ Phase 5: Production Hardening - **PLANNED (0%)**
+- [ ] Service script testing
+- [ ] Comprehensive documentation
+- [ ] Performance optimization
+- [ ] Security audit
+
+### What Works Now
+- PID 1 init with signal handling
+- Privilege-separated supervisor architecture
+- Unit file parsing and dependency resolution
+- Starting and stopping services
+- Automatic service restart on failure
+- Control interface (`initctl`/`systemctl` commands)
+- Proper system shutdown
+- Independent timer daemon with cron replacement
+- Socket activator with idle timeout
+- Comprehensive test suite (10 suites, 83 tests)
+
+### Test Coverage
+The project includes extensive automated testing:
+- **10 test suites** with **83 individual tests** (100% passing)
+- Calendar expression parser tests
+- Unit file parser and validation tests
+- Control protocol serialization tests
+- Socket activation tests
+- IPC communication tests
+- Unit scanner tests
+- Dependency resolution tests
+- State machine tests
+- Logging system tests
+- Integration tests
+
+Build and run tests:
+```bash
+meson compile -C build
+meson test -C build -v
+```
+
+### What's Next
+- Cgroup integration (Linux)
+- Platform abstraction layer
+- Multi-platform testing
+- Production hardening
 
 ## Requirements
 

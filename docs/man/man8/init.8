@@ -1,0 +1,134 @@
+.TH INIT 8 "2025" "initd 0.1.0" "System Manager's Manual"
+.SH NAME
+init \- initd system initialization
+.SH SYNOPSIS
+.B init
+.RI [ supervisor=PATH ]
+.RI [ timeout=SECONDS ]
+.SH DESCRIPTION
+.B init
+is the parent of all processes on the system, running as PID 1. It is responsible
+for starting the supervisor-master process, reaping zombie processes, and
+coordinating system shutdown.
+.PP
+This is a minimal init implementation designed for simplicity, security, and
+portability. The bulk of service management is delegated to the supervisor
+processes.
+.SH OPTIONS
+The kernel command line or bootloader may pass the following arguments to init:
+.TP
+.BI supervisor= PATH
+Specifies the path to the supervisor-master executable. If not specified,
+the default compiled-in path is used (typically
+.IR /usr/libexec/initd/supervisor-master ).
+.TP
+.BI timeout= SECONDS
+Specifies how long (in seconds) to wait for supervisor-master to exit gracefully
+during shutdown before sending SIGKILL. Default is 30 seconds. Must be a positive
+integer.
+.SH SIGNALS
+.B init
+handles the following signals:
+.TP
+.B SIGCHLD
+Reaps zombie processes. If the supervisor-master exits unexpectedly, init will
+automatically restart it unless shutdown has been requested.
+.TP
+.B SIGTERM
+Initiates system poweroff. Signals supervisor to shutdown, waits for graceful
+exit, then calls
+.BR reboot (2)
+with
+.BR RB_POWER_OFF .
+.TP
+.B SIGINT
+Initiates system reboot (Ctrl+Alt+Del handler). Signals supervisor to shutdown,
+then calls
+.BR reboot (2)
+with
+.BR RB_AUTOBOOT .
+.TP
+.B SIGUSR1
+Initiates system halt. Signals supervisor to shutdown, then calls
+.BR reboot (2)
+with
+.BR RB_HALT_SYSTEM .
+.SH OPERATION
+On startup,
+.B init
+performs the following:
+.IP 1. 4
+Verifies it is running as PID 1
+.IP 2. 4
+Parses command line arguments
+.IP 3. 4
+Installs signal handlers
+.IP 4. 4
+Forks and executes supervisor-master
+.IP 5. 4
+Enters main loop: checks for shutdown requests and reaps zombies
+.PP
+During shutdown,
+.B init
+coordinates an orderly system halt:
+.IP 1. 4
+Sends SIGTERM to supervisor-master
+.IP 2. 4
+Waits up to
+.I timeout
+seconds for supervisor to exit
+.IP 3. 4
+Sends SIGKILL if supervisor has not exited
+.IP 4. 4
+Calls
+.BR sync (2)
+twice to flush filesystem buffers
+.IP 5. 4
+Calls
+.BR reboot (2)
+with appropriate command
+.SH FILES
+.TP
+.I /usr/libexec/initd/supervisor-master
+Default location of supervisor-master executable (compile-time configurable)
+.SH EXIT STATUS
+.B init
+does not exit under normal operation. If it cannot start as PID 1 or fails
+to initialize, it exits with status 1.
+.SH NOTES
+.B init
+is designed to be statically linked for minimal dependencies. It contains
+no complex logic - all service management is delegated to supervisor processes.
+.PP
+The supervisor-master process runs with root privileges but only performs
+specific privileged operations. The supervisor-slave process (spawned by master)
+runs unprivileged and handles the bulk of service management logic.
+.SH EXAMPLES
+Typical kernel command line:
+.PP
+.EX
+    linux /vmlinuz root=/dev/sda1 init=/sbin/init
+.EE
+.PP
+With custom supervisor path:
+.PP
+.EX
+    linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/opt/initd/supervisor-master
+.EE
+.PP
+With custom timeout:
+.PP
+.EX
+    linux /vmlinuz root=/dev/sda1 init=/sbin/init timeout=60
+.EE
+.SH SEE ALSO
+.BR supervisor-master (8),
+.BR initctl (1),
+.BR reboot (2),
+.BR signal (7)
+.SH AUTHOR
+Written by DJ Lucas.
+.SH COPYRIGHT
+Copyright \(co 2025 DJ Lucas.
+.br
+License: MIT

@@ -1,0 +1,8 @@
+[Unit]
+Description=Docker Socket for API
+
+[Socket]
+ListenStream=/var/run/docker.sock
+
+[Install]
+WantedBy=sockets.target

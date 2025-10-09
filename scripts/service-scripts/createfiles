@@ -1,0 +1,74 @@
+#!/bin/bash
+########################################################################
+# Begin createfiles
+#
+# Description : Create files and directories from configuration
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+# Exit if no createfiles config
+[ -r /etc/initd/sysconfig/createfiles.conf ] || exit 0
+grep -E -qv '^(#|$)' /etc/initd/sysconfig/createfiles.conf || exit 0
+
+echo "Creating files and directories from config"
+
+while read name type perm usr grp dtype maj min junk; do
+   # Ignore comments and blank lines
+   case "${name}" in
+      ""|\#*) continue ;;
+   esac
+
+   # Ignore existing files
+   if [ -e "${name}" ]; then
+      continue
+   fi
+
+   # Create based on type
+   case "${type}" in
+      dir)
+         echo "Creating directory: ${name}"
+         mkdir -p "${name}"
+         ;;
+      file)
+         echo "Creating file: ${name}"
+         :> "${name}"
+         ;;
+      dev)
+         case "${dtype}" in
+            char)
+               echo "Creating character device: ${name}"
+               mknod "${name}" c ${maj} ${min}
+               ;;
+            block)
+               echo "Creating block device: ${name}"
+               mknod "${name}" b ${maj} ${min}
+               ;;
+            pipe)
+               echo "Creating named pipe: ${name}"
+               mknod "${name}" p
+               ;;
+            *)
+               echo "WARNING: Unknown device type: ${dtype}"
+               continue
+               ;;
+         esac
+         ;;
+      *)
+         echo "WARNING: Unknown type: ${type}"
+         continue
+         ;;
+   esac
+
+   # Set permissions
+   chown ${usr}:${grp} "${name}" 2>/dev/null
+   chmod ${perm} "${name}" 2>/dev/null
+done < /etc/initd/sysconfig/createfiles.conf
+
+echo "File creation complete"
+exit 0
+
+# End createfiles

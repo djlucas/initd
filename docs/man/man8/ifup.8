@@ -1,0 +1,85 @@
+.TH IFUP 8 "2025" "initd 0.1.0" "System Administration"
+.SH NAME
+ifup \- bring up a network interface
+.SH SYNOPSIS
+.B ifup
+.I interface
+.SH DESCRIPTION
+.B ifup
+brings up a network interface by starting its corresponding network service
+unit. The interface must have a configuration file in
+.IR /etc/initd/sysconfig .
+.PP
+This command is a convenience wrapper around
+.BR initctl (1)
+that starts the templated network service for the specified interface.
+.SH ARGUMENTS
+.TP
+.I interface
+The name of the network interface to bring up (e.g., eth0, wlan0).
+.SH CONFIGURATION
+Each interface requires a configuration file at:
+.PP
+.EX
+    /etc/initd/sysconfig/network-\fIINTERFACE\fR.conf
+.EE
+.PP
+The configuration file specifies the network service type and parameters.
+Supported service types include:
+.IP \(bu 4
+.B static
+\- Static IP configuration
+.IP \(bu 4
+.B dhcpcd
+\- DHCP client daemon
+.IP \(bu 4
+.B dhclient
+\- ISC DHCP client
+.IP \(bu 4
+.B pppoe
+\- PPP over Ethernet
+.IP \(bu 4
+.B wpa_supplicant
+\- WPA wireless configuration
+.IP \(bu 4
+.B iwd
+\- Intel wireless daemon
+.SH EXIT STATUS
+.TP
+.B 0
+Interface brought up successfully
+.TP
+.B 1
+Error (missing interface name, configuration file not found, or service failed to start)
+.SH EXAMPLES
+Bring up eth0:
+.PP
+.EX
+    ifup eth0
+.EE
+.PP
+Bring up wireless interface:
+.PP
+.EX
+    ifup wlan0
+.EE
+.SH FILES
+.TP
+.I /etc/initd/sysconfig/network-*.conf
+Network interface configuration files
+.SH NOTES
+The interface configuration file must exist before running
+.BR ifup .
+If the service is already running, this command may fail or restart the service
+depending on the service unit configuration.
+.SH SEE ALSO
+.BR ifdown (8),
+.BR initctl (1),
+.BR init (8),
+.BR supervisor-slave (8)
+.SH AUTHOR
+Written by DJ Lucas.
+.SH COPYRIGHT
+Copyright \(co 2025 DJ Lucas.
+.br
+License: MIT

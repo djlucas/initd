@@ -1,0 +1,184 @@
+.TH SUPERVISOR-SLAVE 8 "2025" "initd 0.1.0" "System Manager's Manual"
+.SH NAME
+supervisor-slave \- unprivileged service management daemon for initd
+.SH SYNOPSIS
+.B supervisor-slave
+.SH DESCRIPTION
+.B supervisor-slave
+is the unprivileged, main logic component of the initd supervisor system.
+It handles all service management operations including unit file parsing,
+dependency resolution, state tracking, and user command processing.
+.PP
+Running as a dedicated unprivileged user, supervisor-slave contains the bulk
+of the service management code while maintaining a minimal attack surface.
+All operations requiring root privileges are delegated to
+.BR supervisor-master (8)
+via IPC.
+.PP
+.B supervisor-slave
+is automatically started by
+.BR supervisor-master (8)
+and should not be invoked directly by users.
+.SH RESPONSIBILITIES
+.TP
+.B Unit File Management
+Scans unit directories, parses .service, .timer, .target, and .socket files,
+validates unit configurations, and builds the dependency graph.
+.TP
+.B Dependency Resolution
+Resolves After, Before, Requires, Wants, and Conflicts relationships.
+Detects circular dependencies and ensures correct startup ordering.
+.TP
+.B Service State Tracking
+Maintains state for all services (inactive, activating, active, deactivating, failed).
+Monitors service PIDs and handles state transitions.
+.TP
+.B Restart Policy Enforcement
+Implements Restart=always, Restart=on-failure, and Restart=no policies.
+Tracks restart counts and respects RestartSec delays.
+.TP
+.B Control Interface
+Accepts commands from
+.BR initctl (1)
+via Unix domain socket at
+.IR /run/initd/supervisor.sock .
+Processes start, stop, restart, enable, disable, and status commands.
+.TP
+.B Logging
+Buffers early boot logs in memory, flushes to syslog when available,
+and handles all service output redirection.
+.SH OPERATION
+.B supervisor-slave
+follows this operational flow:
+.IP 1. 4
+Scan unit directories (/etc/initd/system, /lib/initd/system, etc.)
+.IP 2.
+Parse all unit files and build dependency graph
+.IP 3.
+Start default.target (which pulls in required services)
+.IP 4.
+Enter main event loop:
+.RS
+.IP \(bu 2
+Poll control socket for user commands
+.IP \(bu
+Monitor service PIDs via supervisor-master
+.IP \(bu
+Handle service exits and restarts
+.IP \(bu
+Process dependency state changes
+.RE
+.IP 5.
+On shutdown, stop services in reverse dependency order
+.SH UNIT DIRECTORIES
+Units are searched in priority order:
+.TP
+.I /etc/initd/system
+Local administrator configurations (highest priority)
+.TP
+.I /lib/initd/system
+Distribution-provided initd units
+.TP
+.I /etc/systemd/system
+Systemd compatibility (admin configs)
+.TP
+.I /lib/systemd/system
+Systemd compatibility (distribution units)
+.PP
+If a unit exists in multiple directories, the highest priority version is used.
+.SH SUPPORTED UNIT TYPES
+.TP
+.B .service
+Service units for daemon management
+.TP
+.B .target
+Target units for grouping and synchronization points
+.TP
+.B .socket
+Socket units (forwarded to socket-activator daemon if running)
+.TP
+.B .timer
+Timer units (forwarded to timer-daemon if running)
+.SH CONTROL COMMANDS
+The following commands are accepted via the control socket:
+.TP
+.B start <unit>
+Start a service unit and its dependencies
+.TP
+.B stop <unit>
+Stop a service unit
+.TP
+.B restart <unit>
+Restart a service unit
+.TP
+.B reload <unit>
+Reload a service configuration (sends SIGHUP)
+.TP
+.B enable <unit>
+Enable a unit to start at boot
+.TP
+.B disable <unit>
+Disable a unit from starting at boot
+.TP
+.B status <unit>
+Query unit status and state
+.TP
+.B is-active <unit>
+Check if unit is currently active
+.TP
+.B is-enabled <unit>
+Check if unit is enabled
+.TP
+.B list-units
+List all loaded units
+.TP
+.B daemon-reload
+Reload unit files from disk
+.SH FILES
+.TP
+.I /run/initd/supervisor.sock
+Control socket for accepting user commands
+.TP
+.I /etc/initd/system/*.service
+Local service unit files
+.TP
+.I /lib/initd/system/*.service
+Distribution service unit files
+.TP
+.I /var/log/messages
+System log (via syslog)
+.SH SECURITY
+.B supervisor-slave
+runs as an unprivileged user (typically
+.IR initd-supervisor )
+with no special privileges. It cannot:
+.IP \(bu 2
+Execute processes as other users
+.IP \(bu
+Modify system files
+.IP \(bu
+Access privileged system calls
+.PP
+All privileged operations are performed by
+.BR supervisor-master (8)
+after request validation.
+.SH LOGGING
+Early boot logs (before syslog starts) are buffered in memory with
+CLOCK_BOOTTIME timestamps. When syslog becomes available, buffered
+logs are flushed with reconstructed timestamps. All subsequent logs
+go directly to syslog with the format:
+.PP
+.RS
+.I timestamp hostname supervisor[pid]: [unit.service] message
+.RE
+.SH SEE ALSO
+.BR init (8),
+.BR supervisor-master (8),
+.BR initctl (1),
+.BR systemctl (1),
+.BR timer-daemon (8),
+.BR socket-activator (8)
+.SH AUTHOR
+Written for the initd project.
+.SH COPYRIGHT
+Copyright \(co 2025. Licensed under the MIT License.

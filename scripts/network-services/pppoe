@@ -1,0 +1,122 @@
+#!/bin/bash
+########################################################################
+# Begin /lib/initd/network-services/pppoe
+#
+# Description : PPPoE configuration using pppd
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+IFACE=$1
+ACTION=$2
+
+# Config already sourced by network-configure and exported
+
+PIDFILE="/var/run/pppoe-${IFACE}.pid"
+PPPD_OPTIONS="/etc/ppp/options.${IFACE}"
+
+case "${ACTION}" in
+   up)
+      # Check if pppd is available
+      if ! command -v pppd >/dev/null 2>&1; then
+         echo "ERROR: pppd not found in PATH"
+         exit 1
+      fi
+
+      # Check if pppoe plugin is available
+      if [ ! -f /usr/lib/pppd/*/rp-pppoe.so ] && [ ! -f /usr/lib64/pppd/*/rp-pppoe.so ]; then
+         echo "ERROR: rp-pppoe.so plugin not found"
+         exit 1
+      fi
+
+      # Bring interface up first
+      if ! ip link show ${IFACE} >/dev/null 2>&1; then
+         echo "ERROR: Interface ${IFACE} does not exist"
+         exit 1
+      fi
+
+      echo "Bringing up interface ${IFACE}"
+      ip link set ${IFACE} up
+
+      # Validate required variables
+      if [ -z "${PPPOE_USER}" ]; then
+         echo "ERROR: PPPOE_USER not set in configuration"
+         exit 1
+      fi
+
+      if [ -z "${PPPOE_PASSWORD}" ]; then
+         echo "ERROR: PPPOE_PASSWORD not set in configuration"
+         exit 1
+      fi
+
+      # Create PPP options file if it doesn't exist
+      mkdir -p /etc/ppp
+      cat > ${PPPD_OPTIONS} <<EOF
+# PPPoE options for ${IFACE}
+plugin rp-pppoe.so
+${IFACE}
+user "${PPPOE_USER}"
+password "${PPPOE_PASSWORD}"
+noipdefault
+defaultroute
+hide-password
+noauth
+persist
+noaccomp
+default-asyncmap
+mtu 1492
+mru 1492
+${PPPOE_EXTRA_OPTIONS}
+EOF
+
+      # Add service name if specified
+      if [ -n "${PPPOE_SERVICE}" ]; then
+         echo "rp_pppoe_service \"${PPPOE_SERVICE}\"" >> ${PPPD_OPTIONS}
+      fi
+
+      # Start pppd
+      echo "Starting PPPoE connection on ${IFACE}"
+      pppd file ${PPPD_OPTIONS} linkname ${IFACE}
+
+      if [ $? -ne 0 ]; then
+         echo "ERROR: Failed to start PPPoE connection"
+         rm -f ${PPPD_OPTIONS}
+         exit 1
+      fi
+
+      echo "PPPoE connection initiated for ${IFACE}"
+      ;;
+
+   down)
+      # Find and kill pppd process for this interface
+      if [ -f "${PIDFILE}" ]; then
+         echo "Stopping PPPoE connection on ${IFACE}"
+         kill $(cat ${PIDFILE}) 2>/dev/null
+         rm -f ${PIDFILE}
+      else
+         # Try to find by linkname
+         pkill -f "pppd.*linkname ${IFACE}"
+      fi
+
+      # Remove options file
+      rm -f ${PPPD_OPTIONS}
+
+      # Bring interface down
+      echo "Bringing down interface ${IFACE}"
+      ip link set ${IFACE} down
+
+      echo "PPPoE connection stopped for ${IFACE}"
+      ;;
+
+   *)
+      echo "Usage: $0 <interface> {up|down}"
+      exit 1
+      ;;
+esac
+
+exit 0
+
+# End /lib/initd/network-services/pppoe

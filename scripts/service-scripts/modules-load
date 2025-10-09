@@ -1,0 +1,44 @@
+#!/bin/bash
+########################################################################
+# Begin modules-load
+#
+# Description : Module auto-loading script
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+# Assure that the kernel has module support
+[ -e /proc/modules ] || exit 0
+
+# Exit if there's no modules file or there are no valid entries
+[ -r /etc/initd/sysconfig/modules.conf ] || exit 0
+grep -E -qv '^($|#)' /etc/initd/sysconfig/modules.conf || exit 0
+
+echo "Loading modules"
+
+failed=0
+
+while read module args; do
+   # Ignore comments and blank lines
+   case "$module" in
+      ""|"#"*) continue ;;
+   esac
+
+   # Attempt to load the module, passing any arguments provided
+   echo "Loading module: ${module} ${args}"
+   modprobe ${module} ${args} >/dev/null
+
+   if [ $? -eq 0 ]; then
+      echo "Loaded module: ${module}"
+   else
+      echo "ERROR: Failed to load module: ${module}"
+      failed=1
+   fi
+done < /etc/initd/sysconfig/modules.conf
+
+exit ${failed}
+
+# End modules-load

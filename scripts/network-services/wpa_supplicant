@@ -1,0 +1,99 @@
+#!/bin/bash
+########################################################################
+# Begin /lib/initd/network-services/wpa_supplicant
+#
+# Description : Wireless configuration using wpa_supplicant
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+IFACE=$1
+ACTION=$2
+
+# Config already sourced by network-configure and exported
+
+PIDFILE="/var/run/wpa_supplicant-${IFACE}.pid"
+
+case "${ACTION}" in
+   up)
+      # Check if wpa_supplicant is available
+      if ! command -v wpa_supplicant >/dev/null 2>&1; then
+         echo "ERROR: wpa_supplicant not found in PATH"
+         exit 1
+      fi
+
+      # Bring interface up first
+      if ! ip link show ${IFACE} >/dev/null 2>&1; then
+         echo "ERROR: Interface ${IFACE} does not exist"
+         exit 1
+      fi
+
+      echo "Bringing up interface ${IFACE}"
+      ip link set ${IFACE} up
+
+      # Validate required variables
+      if [ -z "${WPA_CONF}" ]; then
+         echo "ERROR: WPA_CONF not set in configuration"
+         exit 1
+      fi
+
+      if [ ! -f "${WPA_CONF}" ]; then
+         echo "ERROR: WPA configuration file ${WPA_CONF} not found"
+         exit 1
+      fi
+
+      # Start wpa_supplicant
+      echo "Starting wpa_supplicant on ${IFACE}"
+      wpa_supplicant -B -i ${IFACE} -c ${WPA_CONF} -P ${PIDFILE} ${WPA_OPTIONS}
+
+      if [ $? -ne 0 ]; then
+         echo "ERROR: Failed to start wpa_supplicant"
+         exit 1
+      fi
+
+      # Wait for connection (timeout 30 seconds)
+      echo "Waiting for wireless connection..."
+      timeout=30
+      while [ $timeout -gt 0 ]; do
+         if wpa_cli -i ${IFACE} status 2>/dev/null | grep -q "wpa_state=COMPLETED"; then
+            echo "Wireless connection established"
+            break
+         fi
+         sleep 1
+         timeout=$((timeout - 1))
+      done
+
+      if [ $timeout -eq 0 ]; then
+         echo "WARNING: Wireless connection timeout, continuing anyway"
+      fi
+
+      echo "wpa_supplicant started for ${IFACE}"
+      ;;
+
+   down)
+      # Stop wpa_supplicant
+      if [ -f "${PIDFILE}" ]; then
+         echo "Stopping wpa_supplicant on ${IFACE}"
+         kill $(cat ${PIDFILE}) 2>/dev/null
+         rm -f ${PIDFILE}
+      fi
+
+      # Bring interface down
+      echo "Bringing down interface ${IFACE}"
+      ip link set ${IFACE} down
+
+      echo "Wireless interface ${IFACE} taken down successfully"
+      ;;
+
+   *)
+      echo "Usage: $0 <interface> {up|down}"
+      exit 1
+      ;;
+esac
+
+exit 0
+
+# End /lib/initd/network-services/wpa_supplicant

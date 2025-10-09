@@ -1,0 +1,14 @@
+[Unit]
+Description=Setup Console Keymap and Font
+DefaultDependencies=no
+After=sysinit.target
+Before=basic.target
+ConditionPathExists=/etc/initd/sysconfig/console.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/lib/initd/service-scripts/console
+
+[Install]
+WantedBy=basic.target

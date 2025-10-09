@@ -1,0 +1,14 @@
+[Unit]
+Description=Remount Root Filesystem Read-Write
+DefaultDependencies=no
+After=checkfs.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mount --options remount,rw /
+ExecStartPost=/bin/rm -f /fastboot /forcefsck
+
+[Install]
+WantedBy=sysinit.target

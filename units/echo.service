@@ -1,0 +1,6 @@
+[Unit]
+Description=Echo service (socket activated)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat STDIN STDOUT

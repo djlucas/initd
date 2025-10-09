@@ -1,0 +1,270 @@
+/* init.c - PID 1 init process for initd
+ *
+ * Minimal init system responsibilities:
+ * - Reap zombie processes
+ * - Start and monitor supervisor-master
+ * - Handle shutdown signals
+ * - Coordinate system shutdown
+ *
+ * Copyright (c) 2025 DJ Lucas
+ * SPDX-License-Identifier: MIT
+ */
+
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/reboot.h>
+#include <errno.h>
+#include <string.h>
+#include <stdbool.h>
+
+#ifndef SUPERVISOR_PATH
+#define SUPERVISOR_PATH "/usr/libexec/initd/supervisor-master"
+#endif
+
+#define DEFAULT_TIMEOUT 30
+#define MAX_PATH 256
+
+/* Global state */
+static volatile sig_atomic_t shutdown_requested = 0;
+static volatile sig_atomic_t shutdown_type = 0; /* 0=poweroff, 1=reboot, 2=halt */
+static pid_t supervisor_pid = 0;
+static char supervisor_path[MAX_PATH] = SUPERVISOR_PATH;
+static int supervisor_timeout = DEFAULT_TIMEOUT;
+
+/* Signal handlers */
+static void sigchld_handler(int sig) {
+    (void)sig;
+    /* Just set a flag, reaping happens in main loop */
+}
+
+static void sigterm_handler(int sig) {
+    (void)sig;
+    shutdown_requested = 1;
+    shutdown_type = 0; /* poweroff */
+}
+
+static void sigint_handler(int sig) {
+    (void)sig;
+    shutdown_requested = 1;
+    shutdown_type = 1; /* reboot */
+}
+
+static void sigusr1_handler(int sig) {
+    (void)sig;
+    shutdown_requested = 1;
+    shutdown_type = 2; /* halt */
+}
+
+/* Parse command line arguments */
+static void parse_args(int argc, char *argv[]) {
+    for (int i = 1; i < argc; i++) {
+        char *arg = argv[i];
+        char *eq = strchr(arg, '=');
+
+        if (!eq) {
+            continue; /* Skip malformed args */
+        }
+
+        *eq = '\0'; /* Split into key and value */
+        char *key = arg;
+        char *value = eq + 1;
+
+        if (strcmp(key, "supervisor") == 0) {
+            strncpy(supervisor_path, value, MAX_PATH - 1);
+            supervisor_path[MAX_PATH - 1] = '\0';
+        } else if (strcmp(key, "timeout") == 0) {
+            supervisor_timeout = atoi(value);
+            if (supervisor_timeout <= 0) {
+                supervisor_timeout = DEFAULT_TIMEOUT;
+            }
+        }
+
+        *eq = '='; /* Restore for safety */
+    }
+}
+
+/* Start supervisor-master */
+static pid_t start_supervisor(void) {
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("init: fork failed");
+        return -1;
+    }
+
+    if (pid == 0) {
+        /* Child: exec supervisor */
+        execl(supervisor_path, "supervisor-master", NULL);
+        /* If exec fails */
+        perror("init: exec supervisor failed");
+        _exit(1);
+    }
+
+    /* Parent */
+    fprintf(stderr, "init: started supervisor-master (pid %d)\n", pid);
+    return pid;
+}
+
+/* Reap zombie processes */
+static void reap_zombies(void) {
+    pid_t pid;
+    int status;
+
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        if (pid == supervisor_pid) {
+            fprintf(stderr, "init: supervisor-master exited (status %d)\n",
+                    WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+            supervisor_pid = 0;
+
+            /* If shutdown not requested, restart supervisor */
+            if (!shutdown_requested) {
+                fprintf(stderr, "init: restarting supervisor-master\n");
+                supervisor_pid = start_supervisor();
+            }
+        }
+    }
+}
+
+/* Perform system shutdown */
+static void do_shutdown(void) {
+    fprintf(stderr, "init: shutdown requested (type %d)\n", shutdown_type);
+
+    /* If supervisor is still running, send SIGTERM */
+    if (supervisor_pid > 0) {
+        fprintf(stderr, "init: signaling supervisor to shutdown\n");
+        kill(supervisor_pid, SIGTERM);
+
+        /* Wait for supervisor to exit (with timeout) */
+        int timeout = supervisor_timeout;
+        while (supervisor_pid > 0 && timeout > 0) {
+            sleep(1);
+            reap_zombies();
+            timeout--;
+        }
+
+        /* Force kill if still running */
+        if (supervisor_pid > 0) {
+            fprintf(stderr, "init: supervisor timeout, sending SIGKILL\n");
+            kill(supervisor_pid, SIGKILL);
+            waitpid(supervisor_pid, NULL, 0);
+        }
+    }
+
+    /* Final sync */
+    sync();
+    sync();
+
+    /* Perform shutdown action */
+    fprintf(stderr, "init: performing final shutdown\n");
+
+    switch (shutdown_type) {
+    case 0: /* poweroff */
+        reboot(RB_POWER_OFF);
+        break;
+    case 1: /* reboot */
+        reboot(RB_AUTOBOOT);
+        break;
+    case 2: /* halt */
+        reboot(RB_HALT_SYSTEM);
+        break;
+    }
+
+    /* Should not reach here */
+    fprintf(stderr, "init: reboot() failed: %s\n", strerror(errno));
+    while (1) pause();
+}
+
+/* Setup signal handlers */
+static int setup_signals(void) {
+    struct sigaction sa;
+
+    /* SIGCHLD - reap zombies */
+    sa.sa_handler = sigchld_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+    if (sigaction(SIGCHLD, &sa, NULL) < 0) {
+        perror("init: sigaction SIGCHLD");
+        return -1;
+    }
+
+    /* SIGTERM - poweroff */
+    sa.sa_handler = sigterm_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGTERM, &sa, NULL) < 0) {
+        perror("init: sigaction SIGTERM");
+        return -1;
+    }
+
+    /* SIGINT - reboot (Ctrl+Alt+Del) */
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGINT, &sa, NULL) < 0) {
+        perror("init: sigaction SIGINT");
+        return -1;
+    }
+
+    /* SIGUSR1 - halt */
+    sa.sa_handler = sigusr1_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGUSR1, &sa, NULL) < 0) {
+        perror("init: sigaction SIGUSR1");
+        return -1;
+    }
+
+    return 0;
+}
+
+int main(int argc, char *argv[]) {
+    /* Verify we are PID 1 */
+    if (getpid() != 1) {
+        fprintf(stderr, "init: must be run as PID 1\n");
+        return 1;
+    }
+
+    fprintf(stderr, "init: initd version 0.1.0 starting\n");
+
+    /* Parse command line arguments */
+    parse_args(argc, argv);
+
+    /* Setup signal handlers */
+    if (setup_signals() < 0) {
+        fprintf(stderr, "init: failed to setup signal handlers\n");
+        return 1;
+    }
+
+    /* Start supervisor */
+    supervisor_pid = start_supervisor();
+    if (supervisor_pid < 0) {
+        fprintf(stderr, "init: failed to start supervisor\n");
+        return 1;
+    }
+
+    /* Main loop */
+    fprintf(stderr, "init: entering main loop\n");
+
+    while (1) {
+        /* Check for shutdown */
+        if (shutdown_requested) {
+            do_shutdown();
+            /* does not return */
+        }
+
+        /* Reap any zombies */
+        reap_zombies();
+
+        /* Sleep briefly to avoid busy loop */
+        sleep(1);
+    }
+
+    /* Never reached */
+    return 0;
+}

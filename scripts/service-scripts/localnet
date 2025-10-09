@@ -1,0 +1,46 @@
+#!/bin/bash
+########################################################################
+# Begin localnet
+#
+# Description : Loopback device and hostname setup
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+# Read hostname from /etc/hostname
+[ -r /etc/hostname ] && HOSTNAME=$(cat /etc/hostname)
+
+echo "Bringing up the loopback interface"
+ip addr add 127.0.0.1/8 label lo dev lo
+if [ $? -eq 0 ]; then
+   echo "Added loopback address 127.0.0.1/8"
+else
+   echo "ERROR: Failed to add loopback address"
+   exit 1
+fi
+
+ip link set lo up
+if [ $? -eq 0 ]; then
+   echo "Loopback interface is up"
+else
+   echo "ERROR: Failed to bring up loopback interface"
+   exit 1
+fi
+
+if [ -n "${HOSTNAME}" ]; then
+   echo "Setting hostname to ${HOSTNAME}"
+   hostname ${HOSTNAME}
+   if [ $? -eq 0 ]; then
+      echo "Hostname set to ${HOSTNAME}"
+   else
+      echo "ERROR: Failed to set hostname"
+      exit 1
+   fi
+fi
+
+exit 0
+
+# End localnet

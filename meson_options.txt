@@ -1,0 +1,9 @@
+option('dynamic-init', type: 'boolean', value: false,
+  description: 'Build init dynamically linked (default: static)')
+
+option('supervisor-user', type: 'string', value: 'initd-supervisor',
+  description: 'Unprivileged user for supervisor-slave')
+
+# Reference implementation scripts (disabled by default)
+option('install-ref-scripts', type: 'boolean', value: false,
+  description: 'Install reference implementation scripts')

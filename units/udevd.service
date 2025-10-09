@@ -1,0 +1,13 @@
+[Unit]
+Description=udev Daemon
+DefaultDependencies=no
+After=mountvirtfs.service
+Before=sysinit.target
+
+[Service]
+Type=simple
+ExecStart=/sbin/udevd --daemon
+Environment=SYSTEMD_LOG_TARGET=kmsg
+
+[Install]
+WantedBy=sysinit.target

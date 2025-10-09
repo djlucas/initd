@@ -1,0 +1,82 @@
+#!/bin/bash
+########################################################################
+# Begin checkfs
+#
+# Description : File System Check
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+# From man fsck
+# 0    - No errors
+# 1    - File system errors corrected
+# 2    - System should be rebooted
+# 4    - File system errors left uncorrected
+# 8    - Operational error
+# 16   - Usage or syntax error
+# 32   - Fsck canceled by user request
+# 128  - Shared library error
+#
+########################################################################
+
+# Check for /fastboot flag
+if [ -f /fastboot ]; then
+   echo "Found /fastboot, skipping filesystem checks"
+   exit 0
+fi
+
+# Remount root read-only for checking
+echo "Remounting root filesystem read-only"
+mount -n -o remount,ro / >/dev/null
+
+if [ $? -ne 0 ]; then
+   echo "ERROR: Cannot remount root filesystem read-only"
+   echo "<3>checkfs: CRITICAL: Cannot remount root read-only, halting system" > /dev/kmsg
+   exit 1
+fi
+
+echo "Root filesystem remounted read-only"
+
+# Check for /forcefsck flag
+options=""
+if [ -f /forcefsck ]; then
+   echo "Found /forcefsck, forcing filesystem checks"
+   options="-f"
+fi
+
+# Run filesystem check
+echo "Checking filesystems"
+fsck ${options} -a -A -C -T >/dev/null 2>&1
+error_value=$?
+
+# Handle fsck return codes
+case "${error_value}" in
+   0)
+      echo "Filesystems are clean"
+      ;;
+   1)
+      echo "WARNING: Filesystem errors were found and corrected"
+      ;;
+   2|3)
+      echo "ERROR: Filesystem errors corrected, system requires reboot"
+      echo "<4>checkfs: Filesystem errors corrected, rebooting in 5 seconds..." > /dev/kmsg
+      sleep 5
+      sync
+      reboot -f
+      ;;
+   4|5|6|7|8|9|10|11|12|13|14|15)
+      echo "ERROR: Filesystem errors could not be fixed automatically"
+      echo "<3>checkfs: CRITICAL: Filesystem errors require manual intervention" > /dev/kmsg
+      exit 1
+      ;;
+   *)
+      echo "ERROR: Unexpected fsck failure (exit code: ${error_value})"
+      echo "<3>checkfs: CRITICAL: fsck failed with code ${error_value}" > /dev/kmsg
+      exit ${error_value}
+      ;;
+esac
+
+exit 0
+
+# End checkfs

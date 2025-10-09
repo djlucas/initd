@@ -1,0 +1,53 @@
+# /etc/initd/sysconfig/network-eth0.conf
+#
+# Network configuration for eth0
+#
+# SERVICE: Which network service to use
+#   - static:         Static IP configuration
+#   - dhcpcd:         DHCP using dhcpcd
+#   - dhclient:       DHCP using ISC dhclient
+#   - pppoe:          PPPoE connection (DSL)
+#   - wpa_supplicant: Wireless with wpa_supplicant
+#   - iwd:            Wireless with iwd
+#
+
+SERVICE="static"
+
+#
+# Static IP Configuration (SERVICE=static)
+#
+IP=192.168.1.10
+PREFIX=24
+GATEWAY=192.168.1.1
+
+# Additional IP addresses (space-separated)
+ADDITIONAL_IPS="192.168.1.11/24 192.168.1.12/24"
+
+# Static routes (one per line, use quotes)
+STATIC_ROUTES="10.0.10.0/24 via 192.168.1.254
+10.0.20.0/24 via 192.168.1.254"
+
+#
+# DHCP Configuration (SERVICE=dhcpcd or SERVICE=dhclient)
+#
+# DHCP_OPTIONS="-t 30 --hostname myhostname"
+
+#
+# PPPoE Configuration (SERVICE=pppoe)
+#
+# PPPOE_USER="username"
+# PPPOE_PASSWORD="password"
+# PPPOE_SERVICE="ISP"
+# PPPOE_EXTRA_OPTIONS="lcp-echo-interval 20 lcp-echo-failure 3"
+
+#
+# Wireless Configuration (SERVICE=wpa_supplicant)
+#
+# WPA_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
+# WPA_OPTIONS="-D nl80211"
+
+#
+# Wireless Configuration (SERVICE=iwd)
+#
+# IWD_SSID="MyNetwork"
+# IWD_PASSPHRASE="password"

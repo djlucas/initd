@@ -1,0 +1,201 @@
+.TH TIMER-DAEMON 8 "2025" "initd 0.1.0" "System Manager's Manual"
+.SH NAME
+timer-daemon \- independent timer scheduling daemon for initd
+.SH SYNOPSIS
+.B timer-daemon
+.SH DESCRIPTION
+.B timer-daemon
+is an independent daemon that provides timer-based service activation,
+serving as a modern replacement for cron. It manages .timer units and
+activates associated services at scheduled times.
+.PP
+As an independent daemon, timer-daemon can run standalone without the
+supervisor, making it suitable for use in various deployment scenarios
+including containers, BSD systems, and alongside other init systems.
+.SH FEATURES
+.TP
+.B Calendar Expressions
+Supports systemd-compatible calendar expressions (OnCalendar=) including
+shortcuts like 'daily', 'weekly', 'monthly', and full cron-style expressions.
+.TP
+.B Boot-Relative Timers
+OnBootSec= triggers services after system boot
+.TP
+.B Startup-Relative Timers
+OnStartupSec= triggers services after timer activation
+.TP
+.B Active/Inactive Timers
+OnUnitActiveSec= and OnUnitInactiveSec= for periodic execution relative
+to service state
+.TP
+.B Persistent Timers
+Persistent=true catches up on missed runs (e.g., if system was powered off)
+.TP
+.B Randomized Delay
+RandomizedDelaySec= adds jitter to prevent thundering herd
+.SH OPERATION
+.B timer-daemon
+operates independently:
+.IP 1. 4
+Scan timer unit directories for .timer files
+.IP 2.
+Parse timer configurations and calculate next run times
+.IP 3.
+Enter main event loop:
+.RS
+.IP \(bu 2
+Sleep until next timer expiration
+.IP \(bu
+When timer fires, activate associated service
+.IP \(bu
+Update persistent timer state
+.IP \(bu
+Calculate next run time
+.RE
+.SH SERVICE ACTIVATION
+When a timer expires,
+.B timer-daemon
+activates the associated service:
+.IP 1. 4
+Check if supervisor is running (test /run/initd/supervisor.sock)
+.IP 2.
+If supervisor available: send activation request via IPC
+.IP 3.
+If no supervisor: execute service directly via systemctl/service command
+.IP 4.
+Log activation to syslog
+.PP
+This allows timer-daemon to work both with and without the initd supervisor.
+.SH UNIT DIRECTORIES
+Timer units are searched in priority order:
+.TP
+.I /etc/initd/system/*.timer
+Local administrator timer configurations
+.TP
+.I /lib/initd/system/*.timer
+Distribution-provided timer units
+.TP
+.I /etc/systemd/system/*.timer
+Systemd compatibility (admin configs)
+.TP
+.I /lib/systemd/system/*.timer
+Systemd compatibility (distribution units)
+.SH TIMER UNIT FORMAT
+Timer units use the standard systemd .timer format:
+.PP
+.RS
+.nf
+[Unit]
+Description=Daily backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target
+.fi
+.RE
+.PP
+For a timer unit named 'backup.timer', the associated service is 'backup.service'
+by default (same base name with .service extension).
+.SH SUPPORTED DIRECTIVES
+.TP
+.B OnCalendar=<expression>
+Calendar-based scheduling. Examples: 'daily', 'weekly', 'Mon,Fri 10:00',
+'*-*-* 04:00:00'
+.TP
+.B OnBootSec=<time>
+Trigger relative to system boot (e.g., '5min', '1h')
+.TP
+.B OnStartupSec=<time>
+Trigger relative to timer daemon startup
+.TP
+.B OnUnitActiveSec=<time>
+Periodic trigger relative to when service last became active
+.TP
+.B OnUnitInactiveSec=<time>
+Periodic trigger relative to when service last became inactive
+.TP
+.B Persistent=<bool>
+If true, catch up on missed runs. Default: false
+.TP
+.B RandomizedDelaySec=<time>
+Add random delay (jitter) to prevent simultaneous activation. Default: 0
+.SH CONTROL COMMANDS
+.B timer-daemon
+accepts commands via
+.IR /run/initd/timer.sock :
+.TP
+.B list-timers
+List all loaded timers with next run times
+.TP
+.B status <timer>
+Show detailed status for a specific timer
+.TP
+.B start <timer>
+Activate a timer
+.TP
+.B stop <timer>
+Deactivate a timer
+.TP
+.B enable <timer>
+Enable a timer to start at boot
+.TP
+.B disable <timer>
+Disable a timer from starting at boot
+.SH FILES
+.TP
+.I /run/initd/timer.sock
+Control socket for accepting commands
+.TP
+.I /run/initd/timer-daemon.pid
+PID file
+.TP
+.I /var/lib/initd/timers/
+Persistent timer state (tracks last run times)
+.SH SIGNALS
+.TP
+.B SIGTERM, SIGINT
+Graceful shutdown
+.TP
+.B SIGHUP
+Reload timer units from disk
+.SH EXAMPLES
+.SS Daily Backup Timer
+.nf
+# /etc/initd/system/backup.timer
+[Unit]
+Description=Daily Backup Timer
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target
+.fi
+.SS System Maintenance
+.nf
+# /etc/initd/system/maintenance.timer
+[Unit]
+Description=Weekly Maintenance
+
+[Timer]
+OnCalendar=Sun 02:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+.fi
+.SH SEE ALSO
+.BR initctl (1),
+.BR systemctl (1),
+.BR supervisor-slave (8),
+.BR cron (8)
+.SH AUTHOR
+Written for the initd project.
+.SH COPYRIGHT
+Copyright \(co 2025. Licensed under the MIT License.

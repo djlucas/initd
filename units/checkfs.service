@@ -1,0 +1,13 @@
+[Unit]
+Description=Check Filesystems
+DefaultDependencies=no
+After=swap.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/lib/initd/service-scripts/checkfs
+
+[Install]
+WantedBy=sysinit.target

@@ -1,0 +1,102 @@
+#!/bin/bash
+########################################################################
+# Begin /lib/initd/network-services/iwd
+#
+# Description : Wireless configuration using iwd
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+IFACE=$1
+ACTION=$2
+
+# Config already sourced by network-configure and exported
+
+case "${ACTION}" in
+   up)
+      # Check if iwctl is available
+      if ! command -v iwctl >/dev/null 2>&1; then
+         echo "ERROR: iwctl not found in PATH"
+         exit 1
+      fi
+
+      # Check if iwd daemon is running
+      if ! pidof iwd >/dev/null 2>&1; then
+         echo "ERROR: iwd daemon is not running"
+         echo "Start iwd.service first"
+         exit 1
+      fi
+
+      # Bring interface up first
+      if ! ip link show ${IFACE} >/dev/null 2>&1; then
+         echo "ERROR: Interface ${IFACE} does not exist"
+         exit 1
+      fi
+
+      echo "Bringing up interface ${IFACE}"
+      ip link set ${IFACE} up
+
+      # Validate required variables
+      if [ -z "${IWD_SSID}" ]; then
+         echo "ERROR: IWD_SSID not set in configuration"
+         exit 1
+      fi
+
+      # Connect to network
+      echo "Connecting to ${IWD_SSID} on ${IFACE}"
+
+      # If passphrase is provided, connect with it
+      if [ -n "${IWD_PASSPHRASE}" ]; then
+         iwctl station ${IFACE} connect "${IWD_SSID}" -P "${IWD_PASSPHRASE}"
+      else
+         iwctl station ${IFACE} connect "${IWD_SSID}"
+      fi
+
+      if [ $? -ne 0 ]; then
+         echo "ERROR: Failed to connect to ${IWD_SSID}"
+         exit 1
+      fi
+
+      # Wait for connection (timeout 30 seconds)
+      echo "Waiting for wireless connection..."
+      timeout=30
+      while [ $timeout -gt 0 ]; do
+         if iwctl station ${IFACE} show 2>/dev/null | grep -q "connected"; then
+            echo "Wireless connection established"
+            break
+         fi
+         sleep 1
+         timeout=$((timeout - 1))
+      done
+
+      if [ $timeout -eq 0 ]; then
+         echo "WARNING: Wireless connection timeout, continuing anyway"
+      fi
+
+      echo "iwd connection established for ${IFACE}"
+      ;;
+
+   down)
+      # Disconnect from network
+      echo "Disconnecting ${IFACE}"
+      iwctl station ${IFACE} disconnect 2>/dev/null
+
+      # Bring interface down
+      echo "Bringing down interface ${IFACE}"
+      ip link set ${IFACE} down
+
+      echo "Wireless interface ${IFACE} taken down successfully"
+      ;;
+
+   *)
+      echo "Usage: $0 <interface> {up|down}"
+      exit 1
+      ;;
+esac
+
+exit 0
+
+# End /lib/initd/network-services/iwd

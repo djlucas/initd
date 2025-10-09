@@ -1,0 +1,10 @@
+[Unit]
+Description=Test Service
+After=sysinit.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sleep 3600
+
+[Install]
+WantedBy=multi-user.target

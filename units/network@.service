@@ -1,0 +1,14 @@
+[Unit]
+Description=Network Configuration for %I
+After=basic.target
+Before=network.target
+ConditionPathExists=/etc/initd/sysconfig/network-%I.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/lib/initd/service-scripts/network-configure %I up
+ExecStop=/lib/initd/service-scripts/network-configure %I down
+
+[Install]
+WantedBy=multi-user.target

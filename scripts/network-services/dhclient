@@ -1,0 +1,76 @@
+#!/bin/bash
+########################################################################
+# Begin /lib/initd/network-services/dhclient
+#
+# Description : DHCP configuration using ISC dhclient
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+IFACE=$1
+ACTION=$2
+
+# Config already sourced by network-configure and exported
+
+PIDFILE="/var/run/dhclient-${IFACE}.pid"
+LEASEFILE="/var/lib/dhclient/dhclient-${IFACE}.leases"
+
+case "${ACTION}" in
+   up)
+      # Check if dhclient is available
+      if ! command -v dhclient >/dev/null 2>&1; then
+         echo "ERROR: dhclient not found in PATH"
+         exit 1
+      fi
+
+      # Bring interface up first
+      if ! ip link show ${IFACE} >/dev/null 2>&1; then
+         echo "ERROR: Interface ${IFACE} does not exist"
+         exit 1
+      fi
+
+      echo "Bringing up interface ${IFACE}"
+      ip link set ${IFACE} up
+
+      # Create lease directory if it doesn't exist
+      mkdir -p /var/lib/dhclient
+
+      # Start dhclient
+      echo "Starting dhclient on ${IFACE}"
+      dhclient -pf ${PIDFILE} -lf ${LEASEFILE} ${DHCP_OPTIONS} ${IFACE}
+
+      if [ $? -ne 0 ]; then
+         echo "ERROR: Failed to start dhclient"
+         exit 1
+      fi
+
+      echo "DHCP configuration started for ${IFACE}"
+      ;;
+
+   down)
+      # Stop dhclient if running
+      if [ -f "${PIDFILE}" ]; then
+         echo "Stopping dhclient on ${IFACE}"
+         dhclient -r -pf ${PIDFILE} ${IFACE}
+         rm -f ${PIDFILE}
+      fi
+
+      # Bring interface down
+      echo "Bringing down interface ${IFACE}"
+      ip link set ${IFACE} down
+
+      echo "Interface ${IFACE} taken down successfully"
+      ;;
+
+   *)
+      echo "Usage: $0 <interface> {up|down}"
+      exit 1
+      ;;
+esac
+
+exit 0
+
+# End /lib/initd/network-services/dhclient

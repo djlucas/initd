@@ -1,0 +1,118 @@
+.TH SUPERVISOR-MASTER 8 "2025" "initd 0.1.0" "System Manager's Manual"
+.SH NAME
+supervisor-master \- privileged supervisor component for initd
+.SH SYNOPSIS
+.B supervisor-master
+.SH DESCRIPTION
+.B supervisor-master
+is the privileged root component of the initd supervisor system. It handles
+all operations that require root privileges, including process creation,
+privilege dropping, and cgroup management on Linux systems.
+.PP
+This daemon implements privilege separation by design - it performs only
+the minimal operations that require root, delegating all service management
+logic to the unprivileged
+.BR supervisor-slave (8)
+process.
+.PP
+.B supervisor-master
+is typically started by
+.BR init (8)
+at system boot, but can also run standalone under other init systems.
+.SH RESPONSIBILITIES
+.TP
+.B Process Management
+Forks and executes service processes on behalf of supervisor-slave.
+Drops privileges to the specified User/Group before executing services.
+.TP
+.B IPC Communication
+Maintains a bidirectional IPC channel with supervisor-slave to receive
+privilege requests and send responses.
+.TP
+.B Cgroup Management (Linux only)
+Creates and configures cgroups for service isolation and resource control.
+.TP
+.B Supervisor Lifecycle
+Forks the unprivileged supervisor-slave process at startup and monitors
+its health. Restarts supervisor-slave if it exits unexpectedly.
+.SH OPERATION
+.B supervisor-master
+follows this operational flow:
+.IP 1. 4
+Fork and exec
+.B supervisor-slave
+as an unprivileged user
+.IP 2.
+Establish IPC communication channel (socketpair)
+.IP 3.
+Enter main loop:
+.RS
+.IP \(bu 2
+Receive privilege requests from supervisor-slave
+.IP \(bu
+Perform privileged operations
+.IP \(bu
+Send responses back to supervisor-slave
+.IP \(bu
+Monitor supervisor-slave health
+.RE
+.IP 4.
+On shutdown signal, coordinate graceful supervisor-slave termination
+.SH IPC PROTOCOL
+.B supervisor-master
+accepts the following request types from supervisor-slave:
+.TP
+.B REQ_START_SERVICE
+Fork and execute a service process. Includes unit name, executable path,
+arguments, UID/GID for privilege dropping, and environment variables.
+.TP
+.B REQ_STOP_SERVICE
+Send SIGTERM to a service process (or process group).
+.TP
+.B REQ_SHUTDOWN_COMPLETE
+Notification that supervisor-slave has completed shutdown sequence.
+.PP
+Responses include success/error status, PID of started services, and
+error messages.
+.SH SIGNALS
+.TP
+.B SIGTERM
+Initiates graceful shutdown. Signals supervisor-slave to shutdown, waits
+for completion, then exits.
+.TP
+.B SIGINT
+Same as SIGTERM.
+.TP
+.B SIGCHLD
+Monitors child processes. If supervisor-slave exits, supervisor-master
+will restart it unless shutdown was requested. Also tracks service process
+exits and notifies supervisor-slave.
+.SH FILES
+.TP
+.I /run/initd/supervisor-master.pid
+PID file (if enabled)
+.TP
+.I /run/initd/supervisor.sock
+Control socket managed by supervisor-slave
+.SH SECURITY
+.B supervisor-master
+implements defense-in-depth security:
+.IP \(bu 2
+Minimal code running as root (small attack surface)
+.IP \(bu
+All service management logic runs in unprivileged supervisor-slave
+.IP \(bu
+Services are executed with dropped privileges (setuid/setgid)
+.IP \(bu
+Request validation before performing privileged operations
+.IP \(bu
+No direct network exposure or user input handling
+.SH SEE ALSO
+.BR init (8),
+.BR supervisor-slave (8),
+.BR initctl (1),
+.BR systemctl (1)
+.SH AUTHOR
+Written for the initd project.
+.SH COPYRIGHT
+Copyright \(co 2025. Licensed under the MIT License.

@@ -1,0 +1,9 @@
+[Unit]
+Description=Echo service socket
+
+[Socket]
+ListenStream=0.0.0.0:7777
+IdleTimeout=30
+
+[Install]
+WantedBy=sockets.target

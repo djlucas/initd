@@ -1,0 +1,57 @@
+#!/bin/bash
+########################################################################
+# Begin network-configure
+#
+# Description : Network interface configuration dispatcher
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+# Usage       : network-configure <interface> {up|down}
+#
+########################################################################
+
+INTERFACE=$1
+ACTION=$2
+
+if [ -z "${INTERFACE}" ] || [ -z "${ACTION}" ]; then
+   echo "Usage: $0 <interface> {up|down}"
+   exit 1
+fi
+
+# Source the interface configuration
+CONFIG="/etc/initd/sysconfig/network-${INTERFACE}.conf"
+
+if [ ! -r "${CONFIG}" ]; then
+   echo "ERROR: Cannot read configuration file: ${CONFIG}"
+   exit 1
+fi
+
+# Source the config
+. ${CONFIG}
+
+# Validate SERVICE variable
+if [ -z "${SERVICE}" ]; then
+   echo "ERROR: SERVICE variable not set in ${CONFIG}"
+   exit 1
+fi
+
+# Check if service script exists
+SERVICE_SCRIPT="/lib/initd/network-services/${SERVICE}"
+
+if [ ! -x "${SERVICE_SCRIPT}" ]; then
+   echo "ERROR: Service script not found or not executable: ${SERVICE_SCRIPT}"
+   exit 1
+fi
+
+# Export variables for the service script
+export INTERFACE CONFIG
+
+# Execute the service script
+echo "Configuring ${INTERFACE} using ${SERVICE} service"
+${SERVICE_SCRIPT} ${INTERFACE} ${ACTION}
+
+exit $?
+
+# End network-configure

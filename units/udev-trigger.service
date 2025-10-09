@@ -1,0 +1,13 @@
+[Unit]
+Description=udev Coldplug Trigger
+DefaultDependencies=no
+After=udevd.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/lib/initd/service-scripts/udev-trigger
+
+[Install]
+WantedBy=sysinit.target

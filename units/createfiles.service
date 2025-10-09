@@ -1,0 +1,14 @@
+[Unit]
+Description=Create Files and Directories
+DefaultDependencies=no
+After=mountfs.service
+Before=sysinit.target
+ConditionPathExists=/etc/initd/sysconfig/createfiles.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/lib/initd/service-scripts/createfiles
+
+[Install]
+WantedBy=sysinit.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Setup Loopback Interface and Hostname
+DefaultDependencies=no
+After=mountvirtfs.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/lib/initd/service-scripts/localnet
+
+[Install]
+WantedBy=sysinit.target

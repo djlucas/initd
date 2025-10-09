@@ -1,0 +1,68 @@
+.TH IFDOWN 8 "2025" "initd 0.1.0" "System Administration"
+.SH NAME
+ifdown \- bring down a network interface
+.SH SYNOPSIS
+.B ifdown
+.I interface
+.SH DESCRIPTION
+.B ifdown
+brings down a network interface by stopping its corresponding network service
+unit. The interface must have a configuration file in
+.IR /etc/initd/sysconfig .
+.PP
+This command is a convenience wrapper around
+.BR initctl (1)
+that stops the templated network service for the specified interface.
+.SH ARGUMENTS
+.TP
+.I interface
+The name of the network interface to bring down (e.g., eth0, wlan0).
+.SH CONFIGURATION
+Each interface requires a configuration file at:
+.PP
+.EX
+    /etc/initd/sysconfig/network-\fIINTERFACE\fR.conf
+.EE
+.PP
+The configuration file specifies the network service type and parameters.
+See
+.BR ifup (8)
+for supported service types.
+.SH EXIT STATUS
+.TP
+.B 0
+Interface brought down successfully
+.TP
+.B 1
+Error (missing interface name, configuration file not found, or service failed to stop)
+.SH EXAMPLES
+Bring down eth0:
+.PP
+.EX
+    ifdown eth0
+.EE
+.PP
+Bring down wireless interface:
+.PP
+.EX
+    ifdown wlan0
+.EE
+.SH FILES
+.TP
+.I /etc/initd/sysconfig/network-*.conf
+Network interface configuration files
+.SH NOTES
+The interface configuration file must exist before running
+.BR ifdown .
+If the service is not running, this command may have no effect.
+.SH SEE ALSO
+.BR ifup (8),
+.BR initctl (1),
+.BR init (8),
+.BR supervisor-slave (8)
+.SH AUTHOR
+Written by DJ Lucas.
+.SH COPYRIGHT
+Copyright \(co 2025 DJ Lucas.
+.br
+License: MIT

@@ -1,0 +1,242 @@
+.TH INITCTL 1 "2025" "initd 0.1.0" "User Commands"
+.SH NAME
+initctl, systemctl \- control the initd system and service manager
+.SH SYNOPSIS
+.B initctl
+.RI [ OPTIONS ]
+.I COMMAND
+.RI [ UNIT ]
+.br
+.B systemctl
+.RI [ OPTIONS ]
+.I COMMAND
+.RI [ UNIT ]
+.SH DESCRIPTION
+.B initctl
+(also available as
+.BR systemctl
+for compatibility) is the command-line interface to the initd system and
+service manager. It controls daemons and other units managed by the init
+system.
+.PP
+.B initctl
+automatically routes commands to the appropriate daemon based on unit type:
+.IP \(bu 2
+.service units → supervisor-slave (/run/initd/supervisor.sock)
+.IP \(bu
+.timer units → timer-daemon (/run/initd/timer.sock)
+.IP \(bu
+.socket units → socket-activator (/run/initd/socket-activator.sock)
+.IP \(bu
+.target units → supervisor-slave
+.SH COMMANDS
+.SS Unit Commands
+.TP
+.B start \fIUNIT\fR
+Start (activate) one or more units specified on the command line.
+.TP
+.B stop \fIUNIT\fR
+Stop (deactivate) one or more units specified on the command line.
+.TP
+.B restart \fIUNIT\fR
+Restart one or more units. If the units are not running, they will be started.
+.TP
+.B reload \fIUNIT\fR
+Reload one or more units by sending SIGHUP to the service process.
+.TP
+.B status \fIUNIT\fR
+Show runtime status information about one or more units. Displays state,
+PID, and recent log entries.
+.TP
+.B is-active \fIUNIT\fR
+Check whether any of the specified units are active (running). Returns
+exit code 0 if active, non-zero otherwise.
+.TP
+.B is-enabled \fIUNIT\fR
+Check whether any of the specified units are enabled (will start at boot).
+Returns exit code 0 if enabled, non-zero otherwise.
+.TP
+.B enable \fIUNIT\fR
+Enable one or more units to start automatically at boot. Creates symbolic
+links in the appropriate .target.wants/ directories.
+.TP
+.B disable \fIUNIT\fR
+Disable one or more units from starting automatically at boot. Removes
+symbolic links from .target.wants/ directories.
+.SS System Commands
+.TP
+.B daemon-reload
+Reload unit files and regenerate dependency trees. This must be run after
+creating or modifying unit files.
+.TP
+.B list-units \fR[\fIPATTERN\fR]
+List units currently loaded in memory. Optionally filter by pattern.
+Shows unit name, load state, active state, and description.
+.TP
+.B list-timers \fR[\fIPATTERN\fR]
+List timer units with their next scheduled activation time. Shows when
+each timer will fire next.
+.TP
+.B list-sockets \fR[\fIPATTERN\fR]
+List socket units with their listening addresses and associated services.
+.TP
+.B isolate \fITARGET\fR
+Start the specified target and its dependencies, stopping all other units.
+Used to switch system states (e.g., rescue mode).
+.SS Power Commands
+.TP
+.B poweroff
+Shut down and power off the system.
+.TP
+.B reboot
+Shut down and reboot the system.
+.TP
+.B halt
+Halt the system without powering off.
+.TP
+.B suspend
+Suspend the system.
+.SH OPTIONS
+.TP
+.B \-\-all
+When listing units, show all units regardless of state (including inactive).
+.TP
+.B \-\-state=\fISTATE\fR
+Filter units by state (active, inactive, failed, etc.).
+.TP
+.B \-\-type=\fITYPE\fR
+Filter units by type (service, timer, socket, target).
+.TP
+.B \-\-no\-pager
+Do not pipe output into a pager.
+.TP
+.B \-\-quiet, \-q
+Suppress output.
+.TP
+.B \-h, \-\-help
+Show help message and exit.
+.TP
+.B \-\-version
+Show version information and exit.
+.SH UNIT SPECIFIERS
+When specifying units, the following rules apply:
+.IP \(bu 2
+Short names default to .service (e.g., 'nginx' → 'nginx.service')
+.IP \(bu
+Full names with extensions are used as-is (e.g., 'backup.timer')
+.IP \(bu
+Multiple units can be specified for most commands
+.SH DAEMON ROUTING
+.B initctl
+automatically determines which daemon to contact:
+.PP
+.RS
+.nf
+foo.service  → /run/initd/supervisor.sock
+foo.timer    → /run/initd/timer.sock
+foo.socket   → /run/initd/socket-activator.sock
+foo.target   → /run/initd/supervisor.sock
+foo (no ext) → /run/initd/supervisor.sock (assumed .service)
+.fi
+.RE
+.PP
+If the target daemon is not running, a helpful error message is displayed.
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+Generic failure
+.TP
+.B 2
+Invalid usage (wrong arguments)
+.TP
+.B 3
+Unit not found
+.TP
+.B 4
+Unit failed to start
+.TP
+.B 5
+Daemon not running
+.SH EXAMPLES
+.SS Service Management
+.nf
+# Start nginx
+initctl start nginx
+systemctl start nginx.service
+
+# Check status
+initctl status nginx
+systemctl status nginx
+
+# Restart with logs
+initctl restart sshd
+journalctl -u sshd -f
+.fi
+.SS Enable at Boot
+.nf
+# Enable service to start at boot
+systemctl enable nginx
+
+# Check if enabled
+systemctl is-enabled nginx
+.fi
+.SS Timer Management
+.nf
+# List all timers
+systemctl list-timers
+
+# Start a timer
+systemctl start backup.timer
+
+# Check timer status
+systemctl status backup.timer
+.fi
+.SS Socket Activation
+.nf
+# Enable socket activation
+systemctl enable sshd.socket
+systemctl start sshd.socket
+
+# List active sockets
+systemctl list-sockets
+.fi
+.SS System State
+.nf
+# Switch to rescue mode
+systemctl isolate rescue.target
+
+# Reload unit files
+systemctl daemon-reload
+
+# List all units
+systemctl list-units --all
+.fi
+.SH FILES
+.TP
+.I /run/initd/supervisor.sock
+Supervisor control socket
+.TP
+.I /run/initd/timer.sock
+Timer daemon control socket
+.TP
+.I /run/initd/socket-activator.sock
+Socket activator control socket
+.TP
+.I /etc/initd/system/
+Local unit file directory
+.TP
+.I /lib/initd/system/
+System unit file directory
+.SH SEE ALSO
+.BR init (8),
+.BR supervisor-slave (8),
+.BR timer-daemon (8),
+.BR socket-activator (8),
+.BR journalctl (1)
+.SH AUTHOR
+Written for the initd project.
+.SH COPYRIGHT
+Copyright \(co 2025. Licensed under the MIT License.

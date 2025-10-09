@@ -1,0 +1,6 @@
+[Unit]
+Description=System backup service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/backup-system

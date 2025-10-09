@@ -1,0 +1,262 @@
+#!/bin/bash
+# Begin /usr/bin/journalctl
+#
+# Wrapper script to query system logs with journalctl-compatible interface
+#
+# Authors: DJ Lucas
+
+VERSION="1.0.0"
+LOGFILE="/var/log/messages"
+PAGER=""
+FOLLOW=0
+REVERSE=0
+LINES=100
+UNIT=""
+PRIORITY=""
+SINCE=""
+UNTIL=""
+BOOT=""
+UNITDIRS="/etc/initd/system /lib/initd/system /etc/systemd/system /lib/systemd/system"
+
+# Detect available pager
+if command -v less >/dev/null 2>&1; then
+    PAGER="less"
+elif command -v more >/dev/null 2>&1; then
+    PAGER="more"
+fi
+
+function get_args(){
+  while test -n "${1}" ; do
+    case "${1}" in
+      -u | --unit)
+        check_arg $1 $2
+        UNIT="${2}"
+        # Expand short names to .service only if no extension
+        if ! echo "${UNIT}" | grep -q '\.' ; then
+            UNIT="${UNIT}.service"
+        fi
+        # Otherwise keep as-is (.timer, .socket, .target, etc.)
+        shift 2
+      ;;
+      -f | --follow)
+        FOLLOW=1
+        shift 1
+      ;;
+      -r | --reverse)
+        REVERSE=1
+        shift 1
+      ;;
+      -n | --lines)
+        check_arg $1 $2
+        LINES="${2}"
+        shift 2
+      ;;
+      -p | --priority)
+        check_arg $1 $2
+        PRIORITY="${2}"
+        shift 2
+      ;;
+      --since)
+        check_arg $1 $2
+        SINCE="${2}"
+        shift 2
+      ;;
+      --until)
+        check_arg $1 $2
+        UNTIL="${2}"
+        shift 2
+      ;;
+      -b | --boot)
+        BOOT="current"
+        shift 1
+      ;;
+      --no-pager)
+        PAGER=""
+        shift 1
+      ;;
+      -h | --help)
+        showhelp
+        exit 0
+      ;;
+      -V | --version)
+        echo -e "journalctl ${VERSION}\n"
+        exit 0
+      ;;
+      # Handle getopt style short args
+      -+([a-z,A-Z]))
+        arg="${1}"
+        newargs=$( echo ${1} | sed 's@-@@' | \
+                                 sed 's/.\{1\}/& /g' | \
+                                 sed 's/[^ ]* */-&/g')
+        newargs="${newargs} $(echo ${@} | sed "s@${arg}@@")"
+        get_args ${newargs}
+        break;
+      ;;
+      *)
+        showhelp
+        exit 1
+      ;;
+    esac
+  done
+}
+
+function check_arg(){
+  echo "${2}" | grep "^-" > /dev/null
+  if [ "$?" == "0" -o ! -n "$2" ]; then
+    echo "Error: $1 requires a valid argument."
+    exit 1
+  fi
+}
+
+function check_unit_exists(){
+  local unit="${1}"
+  local found=0
+
+  for dir in ${UNITDIRS}; do
+    if test -f "${dir}/${unit}"; then
+      found=1
+      break
+    fi
+  done
+
+  if test "${found}" == "0"; then
+    echo "Error: Unit ${unit} not found in any unit directory."
+    echo "Searched: ${UNITDIRS}"
+    exit 1
+  fi
+}
+
+function showhelp(){
+  echo ""
+  echo "$(basename ${0}) is a log query utility compatible with systemd's journalctl"
+  echo "interface. It queries traditional syslog files with journalctl-style options."
+  echo ""
+  echo "        -u, --unit [UNIT]"
+  echo "                         Show logs for the specified unit. Short names"
+  echo "                         without extension default to .service"
+  echo "                         (e.g., 'httpd' → 'httpd.service')"
+  echo "                         Explicit extensions are preserved"
+  echo "                         (e.g., 'backup.timer', 'sshd.socket')"
+  echo ""
+  echo "        -f, --follow"
+  echo "                         Follow the log output (like tail -f)"
+  echo ""
+  echo "        -r, --reverse"
+  echo "                         Show newest entries first"
+  echo ""
+  echo "        -n, --lines [N]"
+  echo "                         Show the last N lines (default: 100)"
+  echo ""
+  echo "        -p, --priority [PRIORITY]"
+  echo "                         Filter by priority (emerg, alert, crit, err,"
+  echo "                         warning, notice, info, debug)"
+  echo ""
+  echo "        --since [TIME]"
+  echo "                         Show entries since the specified time"
+  echo "                         Format: YYYY-MM-DD HH:MM:SS"
+  echo ""
+  echo "        --until [TIME]"
+  echo "                         Show entries until the specified time"
+  echo "                         Format: YYYY-MM-DD HH:MM:SS"
+  echo ""
+  echo "        -b, --boot"
+  echo "                         Show logs from current boot"
+  echo ""
+  echo "        --no-pager"
+  echo "                         Do not pipe output into a pager"
+  echo ""
+  echo "        -h, --help       Show this help message and exit"
+  echo ""
+  echo "        -V, --version    Show version information and exit"
+  echo ""
+  echo "Examples:"
+  echo "  $(basename ${0}) -u httpd            # Show logs for httpd.service"
+  echo "  $(basename ${0}) -u nginx -f         # Follow nginx.service logs"
+  echo "  $(basename ${0}) -u backup.timer     # Show logs for backup.timer"
+  echo "  $(basename ${0}) -u sshd.socket      # Show logs for sshd.socket"
+  echo "  $(basename ${0}) -r -n 50            # Show last 50 lines, newest first"
+  echo "  $(basename ${0}) -p err              # Show only error priority and above"
+  echo ""
+}
+
+function build_filter(){
+  local filter="cat ${LOGFILE}"
+
+  # Filter by unit
+  if test -n "${UNIT}"; then
+    filter="${filter} | grep '\\[${UNIT}\\]'"
+  fi
+
+  # Filter by priority
+  if test -n "${PRIORITY}"; then
+    case "${PRIORITY}" in
+      emerg|0)   filter="${filter} | grep -i 'emerg'" ;;
+      alert|1)   filter="${filter} | grep -i -E '(emerg|alert)'" ;;
+      crit|2)    filter="${filter} | grep -i -E '(emerg|alert|crit)'" ;;
+      err|3)     filter="${filter} | grep -i -E '(emerg|alert|crit|err|error)'" ;;
+      warning|4) filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn)'" ;;
+      notice|5)  filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn|notice)'" ;;
+      info|6)    filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn|notice|info)'" ;;
+      debug|7)   filter="${filter}" ;;
+    esac
+  fi
+
+  # Filter by time (basic implementation)
+  if test -n "${SINCE}"; then
+    # This is simplified - proper date parsing would be more complex
+    filter="${filter} | awk '\$0 >= \"${SINCE}\"'"
+  fi
+
+  if test -n "${UNTIL}"; then
+    filter="${filter} | awk '\$0 <= \"${UNTIL}\"'"
+  fi
+
+  # Boot filter (simplified - would need boot ID tracking)
+  if test -n "${BOOT}"; then
+    # Show logs since last boot time
+    if test -f /var/run/utmp; then
+      BOOTTIME=$(who -b | awk '{print $3, $4}')
+      filter="${filter} | awk '\$0 >= \"${BOOTTIME}\"'"
+    fi
+  fi
+
+  echo "${filter}"
+}
+
+# Process command line arguments
+get_args $@
+
+# Validate unit exists if specified
+if test -n "${UNIT}"; then
+  check_unit_exists "${UNIT}"
+fi
+
+# Check if log file exists
+if test ! -f "${LOGFILE}"; then
+  echo "Error: Log file ${LOGFILE} not found"
+  exit 1
+fi
+
+# Build filter command
+FILTER=$(build_filter)
+
+# Execute query
+if test "${FOLLOW}" == "1"; then
+  # Follow mode
+  if test -n "${UNIT}"; then
+    eval "tail -f ${LOGFILE} | grep --line-buffered '\\[${UNIT}\\]'"
+  else
+    tail -f ${LOGFILE}
+  fi
+else
+  # Normal query
+  if test "${REVERSE}" == "1"; then
+    # Show newest first
+    eval "${FILTER} | tail -n ${LINES} | tac" | ${PAGER}
+  else
+    # Show oldest first
+    eval "${FILTER} | tail -n ${LINES}" | ${PAGER}
+  fi
+fi
+
+# End /usr/bin/journalctl

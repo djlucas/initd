@@ -1,0 +1,108 @@
+#!/bin/bash
+########################################################################
+# Begin mountvirtfs
+#
+# Description : Ensure proc, sysfs, run, and dev are mounted
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+failed=0
+
+# Mount /run first (needed for logging)
+if ! mountpoint /run >/dev/null 2>&1; then
+   echo "Mounting /run"
+   mount /run || failed=1
+   [ "${failed}" = 0 ] && echo "Mounted /run"
+fi
+
+mkdir -p   /run/lock
+chmod 1777 /run/lock
+
+# Create /run/utmp
+> /run/utmp
+if grep -q '^utmp:' /etc/group 2>/dev/null; then
+   chmod 664 /run/utmp
+   chgrp utmp /run/utmp
+else
+   chmod 644 /run/utmp
+fi
+
+# Mount /proc
+if ! mountpoint /proc >/dev/null 2>&1; then
+   echo "Mounting /proc"
+   mount -o nosuid,noexec,nodev /proc || failed=1
+   [ "${failed}" = 0 ] && echo "Mounted /proc"
+fi
+
+# Mount /sys
+if ! mountpoint /sys >/dev/null 2>&1; then
+   echo "Mounting /sys"
+   mount -o nosuid,noexec,nodev /sys || failed=1
+   [ "${failed}" = 0 ] && echo "Mounted /sys"
+fi
+
+# Mount /dev
+if ! mountpoint /dev >/dev/null 2>&1; then
+   echo "Mounting /dev"
+   mount -o mode=0755,nosuid /dev  || failed=1
+   [ "${failed}" = 0 ] && echo "Mounted /dev"
+fi
+
+# Mount /dev/shm
+mkdir -p /dev/shm
+echo "Mounting /dev/shm"
+mount -o nosuid,nodev /dev/shm || failed=1
+[ "${failed}" = 0 ] && echo "Mounted /dev/shm"
+
+mkdir -p /dev/pts
+echo "Mounting /dev/pts"
+mount -o gid=5,mode=620 /dev/pts || failed=1
+[ "${failed}" = 0 ] && echo "Mounted /dev/pts"
+
+# Mount /sys/fs/cgroup
+mkdir -p /sys/fs/cgroup
+echo "Mounting /sys/fs/cgroup"
+mount -o nosuid,noexec,nodev /sys/fs/cgroup || failed=1
+[ "${failed}" = 0 ] && echo "Mounted /sys/fs/cgroup"
+
+if [ "${failed}" = 1 ]; then
+   echo "ERROR: Failed to mount virtual filesystems"
+   exit 1
+fi
+
+# Create /dev symlinks
+echo "Creating /dev/stdin symlink"
+ln -sf /proc/self/fd/0 /dev/stdin  || failed=1
+[ "${failed}" = 0 ] && echo "Created /dev/stdin"
+
+echo "Creating /dev/stdout symlink"
+ln -sf /proc/self/fd/1 /dev/stdout || failed=1
+[ "${failed}" = 0 ] && echo "Created /dev/stdout"
+
+echo "Creating /dev/stderr symlink"
+ln -sf /proc/self/fd/2 /dev/stderr || failed=1
+[ "${failed}" = 0 ] && echo "Created /dev/stderr"
+
+echo "Creating /dev/fd symlink"
+ln -sfn /proc/self/fd  /dev/fd     || failed=1
+[ "${failed}" = 0 ] && echo "Created /dev/fd"
+
+if [ -e /proc/kcore ]; then
+   echo "Creating /dev/core symlink"
+   ln -sf /proc/kcore  /dev/core   || failed=1
+   [ "${failed}" = 0 ] && echo "Created /dev/core"
+fi
+
+if [ "${failed}" = 1 ]; then
+   echo "ERROR: Failed to create /dev symlinks"
+   exit 1
+fi
+
+echo "Virtual filesystems mounted successfully"
+exit 0
+
+# End mountvirtfs

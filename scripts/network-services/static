@@ -1,0 +1,128 @@
+#!/bin/bash
+########################################################################
+# Begin /lib/initd/network-services/static
+#
+# Description : Static IP configuration service
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+IFACE=$1
+ACTION=$2
+
+# Config already sourced by network-configure and exported
+
+case "${ACTION}" in
+   up)
+      # Bring interface up first
+      if ! ip link show ${IFACE} >/dev/null 2>&1; then
+         echo "ERROR: Interface ${IFACE} does not exist"
+         exit 1
+      fi
+
+      echo "Bringing up interface ${IFACE}"
+      ip link set ${IFACE} up
+
+      # Validate required variables
+      if [ -z "${IP}" ]; then
+         echo "ERROR: IP variable not set in configuration"
+         exit 1
+      fi
+
+      if [ -z "${PREFIX}" ]; then
+         echo "WARNING: PREFIX not set, assuming /24"
+         PREFIX=24
+      fi
+
+      # Add primary IP address
+      echo "Adding primary IP: ${IP}/${PREFIX}"
+      ip addr add ${IP}/${PREFIX} dev ${IFACE}
+
+      if [ $? -ne 0 ]; then
+         echo "ERROR: Failed to add primary IP address"
+         exit 1
+      fi
+
+      # Add additional IP addresses
+      if [ -n "${ADDITIONAL_IPS}" ]; then
+         for addr in ${ADDITIONAL_IPS}; do
+            echo "Adding additional IP: ${addr}"
+            ip addr add ${addr} dev ${IFACE}
+         done
+      fi
+
+      # Add default gateway (if not already set)
+      if [ -n "${GATEWAY}" ]; then
+         if ip route | grep -q "^default"; then
+            echo "Default gateway already set, skipping"
+         else
+            echo "Setting default gateway: ${GATEWAY}"
+            ip route add default via ${GATEWAY} dev ${IFACE}
+         fi
+      fi
+
+      # Add static routes
+      if [ -n "${STATIC_ROUTES}" ]; then
+         echo "${STATIC_ROUTES}" | while IFS= read -r route; do
+            [ -z "${route}" ] && continue
+            echo "Adding static route: ${route}"
+            ip route add ${route} dev ${IFACE}
+         done
+      fi
+
+      echo "Interface ${IFACE} configured successfully"
+      ;;
+
+   down)
+      echo "Taking down interface ${IFACE}"
+
+      # Remove static routes first
+      if [ -n "${STATIC_ROUTES}" ]; then
+         echo "${STATIC_ROUTES}" | while IFS= read -r route; do
+            [ -z "${route}" ] && continue
+            echo "Removing static route: ${route}"
+            ip route del ${route} dev ${IFACE} 2>/dev/null
+         done
+      fi
+
+      # Remove default gateway if set
+      if [ -n "${GATEWAY}" ]; then
+         if ip route | grep -q "^default.*via ${GATEWAY}"; then
+            echo "Removing default gateway: ${GATEWAY}"
+            ip route del default via ${GATEWAY} 2>/dev/null
+         fi
+      fi
+
+      # Remove additional IPs
+      if [ -n "${ADDITIONAL_IPS}" ]; then
+         for addr in ${ADDITIONAL_IPS}; do
+            echo "Removing additional IP: ${addr}"
+            ip addr del ${addr} dev ${IFACE} 2>/dev/null
+         done
+      fi
+
+      # Remove primary IP
+      if [ -n "${IP}" ] && [ -n "${PREFIX}" ]; then
+         echo "Removing primary IP: ${IP}/${PREFIX}"
+         ip addr del ${IP}/${PREFIX} dev ${IFACE} 2>/dev/null
+      fi
+
+      # Bring interface down
+      echo "Bringing down interface ${IFACE}"
+      ip link set ${IFACE} down
+
+      echo "Interface ${IFACE} taken down successfully"
+      ;;
+
+   *)
+      echo "Usage: $0 <interface> {up|down}"
+      exit 1
+      ;;
+esac
+
+exit 0
+
+# End /lib/initd/network-services/static

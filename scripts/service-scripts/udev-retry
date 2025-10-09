@@ -1,0 +1,47 @@
+#!/bin/bash
+########################################################################
+# Begin udev-retry
+#
+# Description : Udev event retry (for failed/latent events)
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+# Note: This is typically only needed on systems without an initramfs
+#       where udev runs before root is remounted read-write
+#
+########################################################################
+
+echo "Retrying failed uevents"
+
+rundir=/run/udev
+
+# Copy rules generated before / was mounted read-write
+for file in ${rundir}/tmp-rules--*; do
+   dest=${file##*tmp-rules--}
+   [ "$dest" = '*' ] && break
+   echo "Copying temporary udev rule: ${dest}"
+   cat $file >> /etc/udev/rules.d/$dest
+   rm -f $file
+done
+
+# Re-trigger failed uevents if retry config exists
+if [ -f /etc/initd/sysconfig/udev_retry.conf ]; then
+   sed -e 's/#.*$//' /etc/initd/sysconfig/udev_retry.conf | grep -v '^$' | \
+   while read line ; do
+      for subsystem in $line ; do
+         echo "Re-triggering subsystem: ${subsystem}"
+         /bin/udevadm trigger --subsystem-match=$subsystem --action=add
+      done
+   done
+
+   # Wait for events to settle
+   echo "Waiting for udev to settle after retry"
+   /bin/udevadm settle
+fi
+
+echo "udev retry complete"
+exit 0
+
+# End udev-retry

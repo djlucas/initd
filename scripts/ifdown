@@ -1,0 +1,32 @@
+#!/bin/bash
+########################################################################
+# Begin /sbin/ifdown
+#
+# Description : Bring down a network interface
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+IFACE=$1
+
+if [ -z "${IFACE}" ]; then
+   echo "Usage: ifdown <interface>"
+   exit 1
+fi
+
+# Check if configuration exists
+CONFIG_FILE="/etc/initd/sysconfig/network-${IFACE}.conf"
+if [ ! -f "${CONFIG_FILE}" ]; then
+   echo "ERROR: Configuration file ${CONFIG_FILE} not found"
+   exit 1
+fi
+
+# Stop the network service
+initctl stop network@${IFACE}.service
+
+exit $?
+
+# End /sbin/ifdown

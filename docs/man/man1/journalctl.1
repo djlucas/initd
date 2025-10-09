@@ -1,0 +1,172 @@
+.TH JOURNALCTL 1 "2025" "initd 0.1.0" "User Commands"
+.SH NAME
+journalctl \- query system logs with systemd-compatible interface
+.SH SYNOPSIS
+.B journalctl
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+.B journalctl
+is a wrapper script that queries traditional syslog files using a
+systemd-compatible interface. It provides familiar journalctl options
+while working with standard syslog infrastructure (rsyslog, syslog-ng, etc.).
+.PP
+Logs are read from
+.I /var/log/messages
+and filtered according to the specified options.
+.SH OPTIONS
+.TP
+.BR \-u ", " \-\-unit =\fIUNIT\fR
+Show logs for the specified unit. Short names without an extension default
+to
+.IR .service .
+Explicit extensions are preserved
+.RI ( .timer ,
+.IR .socket ,
+.IR .target ).
+.IP
+The unit file must exist in one of the configured unit directories.
+.TP
+.BR \-f ", " \-\-follow
+Follow the log output, similar to
+.BR "tail \-f" .
+.TP
+.BR \-r ", " \-\-reverse
+Show newest entries first (reverse chronological order).
+.TP
+.BR \-n ", " \-\-lines =\fIN\fR
+Show the last
+.I N
+lines. Default is 100.
+.TP
+.BR \-p ", " \-\-priority =\fIPRIORITY\fR
+Filter by syslog priority. Valid values are:
+.BR emerg " (0),"
+.BR alert " (1),"
+.BR crit " (2),"
+.BR err " (3),"
+.BR warning " (4),"
+.BR notice " (5),"
+.BR info " (6),"
+.BR debug " (7)."
+Shows all messages at the specified priority and higher.
+.TP
+.BI \-\-since= TIME
+Show entries since the specified time.
+Format: YYYY-MM-DD HH:MM:SS
+.TP
+.BI \-\-until= TIME
+Show entries until the specified time.
+Format: YYYY-MM-DD HH:MM:SS
+.TP
+.BR \-b ", " \-\-boot
+Show logs from the current boot. Uses
+.I /var/run/utmp
+to determine boot time.
+.TP
+.B \-\-no\-pager
+Do not pipe output into a pager. By default, output is piped to
+.BR less (1)
+or
+.BR more (1)
+if available.
+.TP
+.BR \-h ", " \-\-help
+Show help message and exit.
+.TP
+.BR \-V ", " \-\-version
+Show version information and exit.
+.SH UNIT DIRECTORIES
+.B journalctl
+searches the following directories for unit files (in order):
+.IP \(bu 4
+.I /etc/initd/system
+.IP \(bu 4
+.I /lib/initd/system
+.IP \(bu 4
+.I /etc/systemd/system
+.IP \(bu 4
+.I /lib/systemd/system
+.SH LOG FORMAT
+Logs are expected in standard syslog format with unit names in brackets:
+.PP
+.EX
+    Oct  6 12:34:56 hostname supervisor[123]: [nginx.service] Server started
+.EE
+.SH EXAMPLES
+Show logs for nginx.service:
+.PP
+.EX
+    journalctl \-u nginx
+.EE
+.PP
+Follow logs for a specific timer:
+.PP
+.EX
+    journalctl \-u backup.timer \-f
+.EE
+.PP
+Show last 50 lines, newest first:
+.PP
+.EX
+    journalctl \-r \-n 50
+.EE
+.PP
+Show only error priority and above:
+.PP
+.EX
+    journalctl \-p err
+.EE
+.PP
+Show logs from current boot:
+.PP
+.EX
+    journalctl \-b
+.EE
+.PP
+Combine unit filter with follow mode:
+.PP
+.EX
+    journalctl \-u sshd.socket \-f
+.EE
+.SH FILES
+.TP
+.I /var/log/messages
+Default system log file
+.TP
+.I /var/run/utmp
+Used to determine boot time for
+.B \-\-boot
+option
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+Error (invalid arguments, unit not found, log file missing)
+.SH NOTES
+This is a compatibility wrapper that provides a journalctl-like interface
+to traditional syslog files. It does not use the systemd journal format.
+.PP
+Time filtering
+.RB ( \-\-since ,
+.BR \-\-until )
+uses basic string comparison and may not handle all date formats correctly.
+.PP
+The
+.B \-\-boot
+option uses
+.I /var/run/utmp
+which may not be available on all systems.
+.SH SEE ALSO
+.BR init (8),
+.BR supervisor-slave (8),
+.BR rsyslogd (8),
+.BR syslog (3),
+.BR initctl (1)
+.SH AUTHOR
+Written by DJ Lucas.
+.SH COPYRIGHT
+Copyright \(co 2025 DJ Lucas.
+.br
+License: MIT

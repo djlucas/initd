@@ -1,0 +1,14 @@
+[Unit]
+Description=Activate Swap
+DefaultDependencies=no
+After=udev-settle.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/swapon -a
+ExecStop=/sbin/swapoff -a
+
+[Install]
+WantedBy=sysinit.target

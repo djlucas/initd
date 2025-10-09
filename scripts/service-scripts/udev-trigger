@@ -1,0 +1,34 @@
+#!/bin/bash
+########################################################################
+# Begin udev-trigger
+#
+# Description : Trigger udev coldplug events
+#
+# Authors     : DJ Lucas - dj@linuxfromscratch.org
+#
+# Version     : initd 0.1.0
+#
+########################################################################
+
+echo "Triggering udev coldplug events"
+
+# Check for sysfs
+if ! grep -q '[[:space:]]sysfs' /proc/mounts; then
+   echo "ERROR: Unable to trigger devices without a SysFS filesystem"
+   exit 1
+fi
+
+# Traverse /sys to "coldplug" devices that have already been discovered
+echo "Triggering subsystems"
+/bin/udevadm trigger --action=add --type=subsystems
+
+echo "Triggering devices (add)"
+/bin/udevadm trigger --action=add --type=devices
+
+echo "Triggering devices (change)"
+/bin/udevadm trigger --action=change --type=devices
+
+echo "udev events triggered"
+exit 0
+
+# End udev-trigger

@@ -1,0 +1,228 @@
+.TH SOCKET-ACTIVATOR 8 "2025" "initd 0.1.0" "System Manager's Manual"
+.SH NAME
+socket-activator \- independent socket activation daemon for initd
+.SH SYNOPSIS
+.B socket-activator
+.SH DESCRIPTION
+.B socket-activator
+is an independent daemon that provides on-demand service activation via
+socket listening. It creates and monitors sockets (TCP, UDP, Unix domain),
+activating associated services when connections arrive.
+.PP
+As an independent daemon, socket-activator can run standalone without the
+supervisor, making it suitable for use in containers, BSD systems, and
+alongside other init systems.
+.SH KEY FEATURES
+.TP
+.B Socket Types
+Supports TCP stream, UDP datagram, Unix stream, and Unix datagram sockets
+via ListenStream= and ListenDatagram= directives.
+.TP
+.B Idle Timeout (Unique Feature)
+Automatically terminates idle services after a configurable timeout
+(IdleTimeout=). This is a differentiating feature not found in systemd.
+.TP
+.B File Descriptor Passing
+Passes listening socket to service as file descriptor 3, following
+systemd socket activation protocol.
+.TP
+.B On-Demand Activation
+Services are started only when connections arrive, saving system resources.
+.SH OPERATION
+.B socket-activator
+operates independently for each .socket unit:
+.IP 1. 4
+Create and bind socket(s) specified in .socket unit
+.IP 2.
+Listen for incoming connections
+.IP 3.
+On connection:
+.RS
+.IP \(bu 2
+Check if service is already running
+.IP \(bu
+If not running: activate service and pass socket FD
+.IP \(bu
+If running: pass connection to existing service
+.RE
+.IP 4.
+Monitor service activity
+.IP 5.
+If idle timeout expires: terminate service (SIGTERM)
+.SH SERVICE ACTIVATION
+When a connection arrives,
+.B socket-activator
+activates the service:
+.IP 1. 4
+Check if supervisor is running (test /run/initd/supervisor.sock)
+.IP 2.
+If supervisor available: send activation request with socket FD
+.IP 3.
+If no supervisor: fork/exec service directly
+.IP 4.
+Pass listening socket as FD 3 to service
+.IP 5.
+Start idle timeout monitoring
+.PP
+Services receive the socket on file descriptor 3 and can immediately
+begin accepting connections.
+.SH IDLE TIMEOUT
+The idle timeout feature (unique to initd) saves resources:
+.IP \(bu 2
+Track time since last connection/activity
+.IP \(bu
+When idle for IdleTimeout= seconds: send SIGTERM
+.IP \(bu
+Service terminates, socket remains listening
+.IP \(bu
+Next connection re-activates service
+.PP
+This is ideal for low-traffic services like SSH on embedded systems,
+development servers, or infrequently-used daemons.
+.SH UNIT DIRECTORIES
+Socket units are searched in priority order:
+.TP
+.I /etc/initd/system/*.socket
+Local administrator socket configurations
+.TP
+.I /lib/initd/system/*.socket
+Distribution-provided socket units
+.TP
+.I /etc/systemd/system/*.socket
+Systemd compatibility (admin configs)
+.TP
+.I /lib/systemd/system/*.socket
+Systemd compatibility (distribution units)
+.SH SOCKET UNIT FORMAT
+Socket units use the standard systemd .socket format with an initd extension:
+.PP
+.RS
+.nf
+[Unit]
+Description=SSH Socket
+
+[Socket]
+ListenStream=22
+IdleTimeout=300
+
+[Install]
+WantedBy=sockets.target
+.fi
+.RE
+.PP
+For a socket unit named 'sshd.socket', the associated service is 'sshd.service'
+by default (same base name with .service extension).
+.SH SUPPORTED DIRECTIVES
+.TP
+.B ListenStream=<address>
+Listen on TCP stream or Unix stream socket. Examples: '80', '0.0.0.0:8080',
+'/run/myapp.sock'
+.TP
+.B ListenDatagram=<address>
+Listen on UDP datagram or Unix datagram socket. Examples: '514', '*:5353',
+'/dev/log'
+.TP
+.B IdleTimeout=<seconds>
+Terminate service after N seconds of inactivity. Default: 0 (disabled).
+This is an initd-specific extension not in systemd.
+.SH CONTROL COMMANDS
+.B socket-activator
+accepts commands via
+.IR /run/initd/socket-activator.sock :
+.TP
+.B list-sockets
+List all loaded socket units with status
+.TP
+.B status <socket>
+Show detailed status for a specific socket
+.TP
+.B start <socket>
+Start listening on a socket
+.TP
+.B stop <socket>
+Stop listening on a socket (and terminate service if running)
+.TP
+.B enable <socket>
+Enable a socket to start at boot
+.TP
+.B disable <socket>
+Disable a socket from starting at boot
+.SH FILES
+.TP
+.I /run/initd/socket-activator.sock
+Control socket for accepting commands
+.TP
+.I /run/initd/socket-activator.pid
+PID file
+.SH SIGNALS
+.TP
+.B SIGTERM, SIGINT
+Graceful shutdown. Stops listening on all sockets and terminates activated services.
+.TP
+.B SIGHUP
+Reload socket units from disk
+.SH EXAMPLES
+.SS SSH Socket with Idle Timeout
+.nf
+# /etc/initd/system/sshd.socket
+[Unit]
+Description=OpenSSH Server Socket
+
+[Socket]
+ListenStream=22
+IdleTimeout=600
+
+[Install]
+WantedBy=sockets.target
+.fi
+.PP
+SSH daemon will start on first connection and terminate after 10 minutes idle.
+.SS HTTP Socket
+.nf
+# /etc/initd/system/httpd.socket
+[Unit]
+Description=HTTP Server Socket
+
+[Socket]
+ListenStream=80
+ListenStream=443
+
+[Install]
+WantedBy=sockets.target
+.fi
+.PP
+Web server activates on HTTP or HTTPS connection.
+.SS Unix Socket for IPC
+.nf
+# /etc/initd/system/myapp.socket
+[Unit]
+Description=My Application Socket
+
+[Socket]
+ListenStream=/run/myapp.sock
+IdleTimeout=60
+
+[Install]
+WantedBy=sockets.target
+.fi
+.SH PROTOCOL COMPATIBILITY
+Services using socket activation should:
+.IP 1. 4
+Check for systemd-style socket activation (SD_LISTEN_FDS_START=3)
+.IP 2.
+Read listening socket from file descriptor 3
+.IP 3.
+Begin accepting connections immediately
+.IP 4.
+Handle SIGTERM for graceful shutdown
+.PP
+Most systemd socket-activated services work without modification.
+.SH SEE ALSO
+.BR initctl (1),
+.BR systemctl (1),
+.BR supervisor-slave (8),
+.BR sd_listen_fds (3)
+.SH AUTHOR
+Written for the initd project.
+.SH COPYRIGHT
+Copyright \(co 2025. Licensed under the MIT License.
