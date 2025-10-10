@@ -84,6 +84,121 @@ static int lookup_user(const char *user, uid_t *uid, gid_t *gid) {
     return 0;
 }
 
+/* Request master to enable a unit */
+static int enable_unit(struct unit_file *unit) {
+    struct priv_request req = {0};
+    struct priv_response resp = {0};
+
+    req.type = REQ_ENABLE_UNIT;
+    strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
+    strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
+
+    fprintf(stderr, "slave: enabling %s\n", unit->name);
+
+    /* Send request to master */
+    if (send_request(master_socket, &req) < 0) {
+        return -1;
+    }
+
+    /* Receive response */
+    if (recv_response(master_socket, &resp) < 0) {
+        return -1;
+    }
+
+    if (resp.type == RESP_UNIT_ENABLED) {
+        return 0;
+    } else if (resp.type == RESP_ERROR) {
+        fprintf(stderr, "slave: failed to enable %s: %s\n", unit->name, resp.error_msg);
+        errno = resp.error_code;
+        return -1;
+    }
+
+    return -1;
+}
+
+/* Request master to disable a unit */
+static int disable_unit(struct unit_file *unit) {
+    struct priv_request req = {0};
+    struct priv_response resp = {0};
+
+    req.type = REQ_DISABLE_UNIT;
+    strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
+    strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
+
+    fprintf(stderr, "slave: disabling %s\n", unit->name);
+
+    /* Send request to master */
+    if (send_request(master_socket, &req) < 0) {
+        return -1;
+    }
+
+    /* Receive response */
+    if (recv_response(master_socket, &resp) < 0) {
+        return -1;
+    }
+
+    if (resp.type == RESP_UNIT_DISABLED) {
+        return 0;
+    } else if (resp.type == RESP_ERROR) {
+        fprintf(stderr, "slave: failed to disable %s: %s\n", unit->name, resp.error_msg);
+        errno = resp.error_code;
+        return -1;
+    }
+
+    return -1;
+}
+
+/* Check if a unit is enabled (requires IPC, but we'll implement a simple version) */
+static bool is_unit_enabled(struct unit_file *unit) {
+    /* For now, we'll just check if symlinks exist in the file system.
+     * This doesn't require root privileges, so we can do it directly.
+     * The enable/disable operations require root, but checking status doesn't. */
+
+    /* This is a simplified check - we look for the unit in common target .wants dirs */
+    char symlink_path[1024];
+
+    /* Check multi-user.target.wants */
+    snprintf(symlink_path, sizeof(symlink_path),
+             "/etc/initd/system/multi-user.target.wants/%s", unit->name);
+    if (access(symlink_path, F_OK) == 0) return true;
+
+    snprintf(symlink_path, sizeof(symlink_path),
+             "/lib/initd/system/multi-user.target.wants/%s", unit->name);
+    if (access(symlink_path, F_OK) == 0) return true;
+
+    /* Check default.target.wants */
+    snprintf(symlink_path, sizeof(symlink_path),
+             "/etc/initd/system/default.target.wants/%s", unit->name);
+    if (access(symlink_path, F_OK) == 0) return true;
+
+    snprintf(symlink_path, sizeof(symlink_path),
+             "/lib/initd/system/default.target.wants/%s", unit->name);
+    if (access(symlink_path, F_OK) == 0) return true;
+
+    /* Check if unit has WantedBy or RequiredBy */
+    for (int i = 0; i < unit->install.wanted_by_count; i++) {
+        snprintf(symlink_path, sizeof(symlink_path),
+                 "/etc/initd/system/%s.wants/%s", unit->install.wanted_by[i], unit->name);
+        if (access(symlink_path, F_OK) == 0) return true;
+
+        snprintf(symlink_path, sizeof(symlink_path),
+                 "/lib/initd/system/%s.wants/%s", unit->install.wanted_by[i], unit->name);
+        if (access(symlink_path, F_OK) == 0) return true;
+    }
+
+    for (int i = 0; i < unit->install.required_by_count; i++) {
+        snprintf(symlink_path, sizeof(symlink_path),
+                 "/etc/initd/system/%s.requires/%s", unit->install.required_by[i], unit->name);
+        if (access(symlink_path, F_OK) == 0) return true;
+
+        snprintf(symlink_path, sizeof(symlink_path),
+                 "/lib/initd/system/%s.requires/%s", unit->install.required_by[i], unit->name);
+        if (access(symlink_path, F_OK) == 0) return true;
+    }
+
+    return false;
+}
+
 /* Request master to stop a service */
 static int stop_service(struct unit_file *unit) {
     struct priv_request req = {0};

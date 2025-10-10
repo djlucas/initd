@@ -22,7 +22,7 @@ FAILED_TESTS=()
 
 # 1. cppcheck
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "1/5 Running cppcheck..." | tee -a "$SUMMARY_FILE"
+echo "1/6 Running cppcheck..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 # Run cppcheck but don't fail on style warnings - they're documented in the log
 meson compile -C build analyze-cppcheck 2>&1 | tee "$OUTPUT_DIR/cppcheck.log" || true
@@ -37,7 +37,7 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 2. flawfinder
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "2/5 Running flawfinder..." | tee -a "$SUMMARY_FILE"
+echo "2/6 Running flawfinder..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-flawfinder 2>&1 | tee "$OUTPUT_DIR/flawfinder.log"; then
     echo "✓ flawfinder passed" | tee -a "$SUMMARY_FILE"
@@ -49,7 +49,7 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 3. scan-build
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "3/5 Running scan-build..." | tee -a "$SUMMARY_FILE"
+echo "3/6 Running scan-build..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-scan 2>&1; then
     echo "✓ scan-build passed" | tee -a "$SUMMARY_FILE"
@@ -61,7 +61,7 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 4. sanitizers
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "4/5 Running sanitizers..." | tee -a "$SUMMARY_FILE"
+echo "4/6 Running sanitizers..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-sanitizers 2>&1; then
     echo "✓ sanitizers passed" | tee -a "$SUMMARY_FILE"
@@ -73,13 +73,25 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 5. valgrind
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "5/5 Running valgrind..." | tee -a "$SUMMARY_FILE"
+echo "5/6 Running valgrind..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-valgrind 2>&1; then
     echo "✓ valgrind passed" | tee -a "$SUMMARY_FILE"
 else
     echo "✗ valgrind failed" | tee -a "$SUMMARY_FILE"
     FAILED_TESTS+=("valgrind")
+fi
+echo "" | tee -a "$SUMMARY_FILE"
+
+# 6. shellcheck
+echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
+echo "6/6 Running shellcheck..." | tee -a "$SUMMARY_FILE"
+echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
+if meson compile -C build analyze-shellcheck 2>&1; then
+    echo "✓ shellcheck passed" | tee -a "$SUMMARY_FILE"
+else
+    echo "✗ shellcheck failed" | tee -a "$SUMMARY_FILE"
+    FAILED_TESTS+=("shellcheck")
 fi
 echo "" | tee -a "$SUMMARY_FILE"
 
@@ -96,6 +108,7 @@ if [ ${#FAILED_TESTS[@]} -eq 0 ]; then
     echo "  - scan-build:  $OUTPUT_DIR/scan-build.log" | tee -a "$SUMMARY_FILE"
     echo "  - sanitizers:  $OUTPUT_DIR/sanitizers.log" | tee -a "$SUMMARY_FILE"
     echo "  - valgrind:    $OUTPUT_DIR/valgrind.log" | tee -a "$SUMMARY_FILE"
+    echo "  - shellcheck:  $OUTPUT_DIR/shellcheck.log" | tee -a "$SUMMARY_FILE"
     exit 0
 else
     echo "✗ Failed tests: ${FAILED_TESTS[*]}" | tee -a "$SUMMARY_FILE"

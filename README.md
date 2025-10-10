@@ -255,7 +255,7 @@ Core init system functionality is implemented with comprehensive test coverage.
 The project includes extensive automated testing and static/dynamic analysis:
 
 **Test Suites:**
-- **10 test suites** with **83 individual tests** (100% passing)
+- **11 test suites** with **89 individual tests** (100% passing)
 - Calendar expression parser tests
 - Unit file parser and validation tests
 - Control protocol serialization tests
@@ -266,6 +266,38 @@ The project includes extensive automated testing and static/dynamic analysis:
 - State machine tests
 - Logging system tests
 - Integration tests
+- **Privileged operations tests** (requires root)
+
+**Running Tests:**
+```bash
+# Build and run all non-privileged tests (13 tests, 1 will be skipped)
+meson compile -C build
+meson test -C build
+
+# Run only non-privileged tests (12 tests)
+meson test -C build --no-suite privileged
+
+# Run privileged tests (requires root - 1 test with 6 sub-tests)
+sudo meson test -C build --suite privileged
+
+# Verbose output
+meson test -C build -v
+```
+
+**Privileged Test Suite:**
+The privileged operations test suite validates critical root-only functionality:
+- Converting systemd unit files to initd format
+- Enabling units (WantedBy and RequiredBy)
+- Disabling units
+- Checking if units are enabled
+- Handling units without Install sections
+
+These tests require root privileges because they:
+- Create files in system directories (`/lib/initd/system/`, `/etc/initd/system/`)
+- Create symlinks for unit dependencies
+- Validate real-world privilege separation scenarios
+
+When run without root, the test properly skips with exit code 77 (meson skip).
 
 **Static & Dynamic Analysis:**
 - **cppcheck** - Static code analysis
@@ -273,12 +305,6 @@ The project includes extensive automated testing and static/dynamic analysis:
 - **Clang scan-build** - Static analyzer with deeper checks
 - **AddressSanitizer/UndefinedBehaviorSanitizer** - Runtime memory error detection
 - **Valgrind** - Memory leak and error detection
-
-Build and run tests:
-```bash
-meson compile -C build
-meson test -C build -v
-```
 
 Run complete analysis suite:
 ```bash
@@ -295,6 +321,11 @@ meson compile -C build analyze-valgrind
 ```
 
 Analysis results are saved to `analysis-output/` with individual log files for review.
+
+**Code Quality:**
+- Zero compiler warnings (clean build with `-Wall -Wextra`)
+- All format truncation warnings resolved
+- Comprehensive test coverage for privilege-separated architecture
 
 ### What's Next
 - Cgroup integration (Linux)

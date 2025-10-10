@@ -29,7 +29,7 @@ function get_args(){
   while test -n "${1}" ; do
     case "${1}" in
       -u | --unit)
-        check_arg $1 $2
+        check_arg "${1}" "${2}"
         UNIT="${2}"
         # Expand short names to .service only if no extension
         if ! echo "${UNIT}" | grep -q '\.' ; then
@@ -47,22 +47,22 @@ function get_args(){
         shift 1
       ;;
       -n | --lines)
-        check_arg $1 $2
+        check_arg "${1}" "${2}"
         LINES="${2}"
         shift 2
       ;;
       -p | --priority)
-        check_arg $1 $2
+        check_arg "${1}" "${2}"
         PRIORITY="${2}"
         shift 2
       ;;
       --since)
-        check_arg $1 $2
+        check_arg "${1}" "${2}"
         SINCE="${2}"
         shift 2
       ;;
       --until)
-        check_arg $1 $2
+        check_arg "${1}" "${2}"
         UNTIL="${2}"
         shift 2
       ;;
@@ -85,11 +85,11 @@ function get_args(){
       # Handle getopt style short args
       -+([a-z,A-Z]))
         arg="${1}"
-        newargs=$( echo ${1} | sed 's@-@@' | \
+        newargs=$( echo "${1}" | sed 's@-@@' | \
                                  sed 's/.\{1\}/& /g' | \
                                  sed 's/[^ ]* */-&/g')
-        newargs="${newargs} $(echo ${@} | sed "s@${arg}@@")"
-        get_args ${newargs}
+        newargs="${newargs} $(echo "${@}" | sed "s@${arg}@@")"
+        get_args "${newargs}"
         break;
       ;;
       *)
@@ -102,8 +102,8 @@ function get_args(){
 
 function check_arg(){
   echo "${2}" | grep "^-" > /dev/null
-  if [ "$?" == "0" -o ! -n "$2" ]; then
-    echo "Error: $1 requires a valid argument."
+  if [ "${?}" == "0" ] || [ -z "${2}" ]; then
+    echo "Error: ${1} requires a valid argument."
     exit 1
   fi
 }
@@ -128,7 +128,7 @@ function check_unit_exists(){
 
 function showhelp(){
   echo ""
-  echo "$(basename ${0}) is a log query utility compatible with systemd's journalctl"
+  echo "$(basename "${0}") is a log query utility compatible with systemd's journalctl"
   echo "interface. It queries traditional syslog files with journalctl-style options."
   echo ""
   echo "        -u, --unit [UNIT]"
@@ -170,12 +170,12 @@ function showhelp(){
   echo "        -V, --version    Show version information and exit"
   echo ""
   echo "Examples:"
-  echo "  $(basename ${0}) -u httpd            # Show logs for httpd.service"
-  echo "  $(basename ${0}) -u nginx -f         # Follow nginx.service logs"
-  echo "  $(basename ${0}) -u backup.timer     # Show logs for backup.timer"
-  echo "  $(basename ${0}) -u sshd.socket      # Show logs for sshd.socket"
-  echo "  $(basename ${0}) -r -n 50            # Show last 50 lines, newest first"
-  echo "  $(basename ${0}) -p err              # Show only error priority and above"
+  echo "  $(basename "${0}") -u httpd            # Show logs for httpd.service"
+  echo "  $(basename "${0}") -u nginx -f         # Follow nginx.service logs"
+  echo "  $(basename "${0}") -u backup.timer     # Show logs for backup.timer"
+  echo "  $(basename "${0}") -u sshd.socket      # Show logs for sshd.socket"
+  echo "  $(basename "${0}") -r -n 50            # Show last 50 lines, newest first"
+  echo "  $(basename "${0}") -p err              # Show only error priority and above"
   echo ""
 }
 
@@ -198,6 +198,7 @@ function build_filter(){
       notice|5)  filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn|notice)'" ;;
       info|6)    filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn|notice|info)'" ;;
       debug|7)   filter="${filter}" ;;
+      *)         filter="${filter}" ;;
     esac
   fi
 
@@ -224,7 +225,7 @@ function build_filter(){
 }
 
 # Process command line arguments
-get_args $@
+get_args "$@"
 
 # Validate unit exists if specified
 if test -n "${UNIT}"; then
@@ -244,18 +245,18 @@ FILTER=$(build_filter)
 if test "${FOLLOW}" == "1"; then
   # Follow mode
   if test -n "${UNIT}"; then
-    eval "tail -f ${LOGFILE} | grep --line-buffered '\\[${UNIT}\\]'"
+    eval "tail -f \"${LOGFILE}\" | grep --line-buffered '\\[${UNIT}\\]'"
   else
-    tail -f ${LOGFILE}
+    tail -f "${LOGFILE}"
   fi
 else
   # Normal query
   if test "${REVERSE}" == "1"; then
     # Show newest first
-    eval "${FILTER} | tail -n ${LINES} | tac" | ${PAGER}
+    eval "${FILTER} | tail -n \"${LINES}\" | tac" | ${PAGER}
   else
     # Show oldest first
-    eval "${FILTER} | tail -n ${LINES}" | ${PAGER}
+    eval "${FILTER} | tail -n \"${LINES}\"" | ${PAGER}
   fi
 fi
 

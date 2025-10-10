@@ -56,6 +56,15 @@ if valgrind.found()
   )
 endif
 
+# 6. shellcheck - Shell script static analysis
+shellcheck = find_program('shellcheck', required: false)
+if shellcheck.found()
+  shellcheck_script = find_program(meson.project_source_root() / 'analysis' / 'meson-shellcheck.sh')
+  run_target('analyze-shellcheck',
+    command: [shellcheck_script, meson.project_source_root()]
+  )
+endif
+
 # Combined target to run all analysis tools
 run_target('analyze-all',
   command: [

@@ -2,8 +2,10 @@ option('dynamic-init', type: 'boolean', value: false,
   description: 'Build init dynamically linked (default: static)')
 
 option('supervisor-user', type: 'string', value: 'initd-supervisor',
-  description: 'Unprivileged user for supervisor-slave')
+  description: 'Unprivileged user for supervisor worker')
 
-# Reference implementation scripts (disabled by default)
-option('install-ref-scripts', type: 'boolean', value: false,
-  description: 'Install reference implementation scripts')
+option('timer-user', type: 'string', value: 'initd-timer',
+  description: 'Unprivileged user for timer worker')
+
+option('socket-user', type: 'string', value: 'initd-socket',
+  description: 'Unprivileged user for socket worker')

@@ -11,7 +11,7 @@ supervisor = executable(
   'initd-supervisor',
   supervisor_sources,
   c_args: supervisor_c_args,
-  dependencies: common_dep,
+  dependencies: [common_dep, privileged_ops_dep],
   install: true,
   install_dir: get_option('libexecdir') / 'initd',
 )

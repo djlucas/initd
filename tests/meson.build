@@ -58,6 +58,24 @@ test_integration = executable(
   dependencies: common_dep
 )
 
+test_privileged_ops = executable(
+  'test-privileged-ops',
+  'test-privileged-ops.c',
+  dependencies: [common_dep, privileged_ops_dep]
+)
+
+test_timer_ipc = executable(
+  'test-timer-ipc',
+  'test-timer-ipc.c',
+  dependencies: [common_dep, timer_ipc_dep]
+)
+
+test_socket_ipc = executable(
+  'test-socket-ipc',
+  'test-socket-ipc.c',
+  dependencies: [common_dep, socket_ipc_dep]
+)
+
 test('calendar parser', test_calendar)
 test('unit file parser', test_parser)
 test('control protocol', test_control)
@@ -68,3 +86,8 @@ test('dependency resolution', test_dependency)
 test('state machine', test_state)
 test('logging system', test_log)
 test('integration', test_integration)
+test('timer IPC protocol', test_timer_ipc)
+test('socket IPC protocol', test_socket_ipc)
+
+# Privileged tests - run separately with: meson test --suite privileged
+test('privileged operations', test_privileged_ops, suite: 'privileged')

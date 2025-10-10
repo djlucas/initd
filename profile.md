@@ -909,7 +909,7 @@ These changes should be made during Phase 2-3 to avoid refactoring later.
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**10 test suites with 83 individual tests - all passing**
+**11 test suites with 89 individual tests - all passing**
 
 1. **calendar parser** (7 tests) - Calendar expression parsing
 2. **unit file parser** (7 tests) - Unit file parsing & validation
@@ -921,6 +921,7 @@ These changes should be made during Phase 2-3 to avoid refactoring later.
 8. **state machine** (11 tests) - Unit state transitions
 9. **logging system** (10 tests) - Log buffering & syslog
 10. **integration** (10 tests) - End-to-end workflows
+11. **privileged operations** (6 tests) - Root-only operations (requires sudo)
 
 **Coverage:**
 - ✅ Unit file parsing (all types)
@@ -933,12 +934,31 @@ These changes should be made during Phase 2-3 to avoid refactoring later.
 - ✅ Socket activation
 - ✅ Calendar expressions
 - ✅ Integration workflows
+- ✅ Privileged operations (enable, disable, convert systemd units)
 
 **Build and run tests:**
 ```bash
+# Run all non-privileged tests (12 tests)
 meson compile -C build
+meson test -C build --no-suite privileged
+
+# Run privileged tests (requires root - 6 tests)
+sudo meson test -C build --suite privileged
+
+# Run all tests with verbose output
 meson test -C build -v
 ```
+
+**Privileged Test Suite:**
+The privileged operations test suite validates critical functionality that requires root:
+- Converting systemd unit files to initd format (file creation in `/lib/initd/system/`)
+- Enabling units with WantedBy (symlink creation in `/etc/initd/system/*.wants/`)
+- Enabling units with RequiredBy (symlink creation in `/etc/initd/system/*.requires/`)
+- Disabling units (symlink removal)
+- Checking if units are enabled
+- Handling units without Install sections
+
+These tests properly skip with exit code 77 when run without root privileges.
 
 ### Integration Tests (Planned)
 - Boot to rescue.target

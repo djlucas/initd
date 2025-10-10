@@ -7,9 +7,15 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests
+# Build and run all tests (13 tests, 1 will be skipped without root)
 meson compile -C build
 meson test -C build
+
+# Run only non-privileged tests (12 tests)
+meson test -C build --no-suite privileged
+
+# Run privileged tests (requires root)
+sudo meson test -C build --suite privileged
 
 # Run specific test
 meson test -C build "calendar parser"
@@ -22,6 +28,7 @@ meson test -C build "dependency resolution"
 meson test -C build "state machine"
 meson test -C build "logging system"
 meson test -C build "integration"
+meson test -C build "privileged operations"  # Requires root
 
 # Verbose output
 meson test -C build -v
@@ -150,14 +157,46 @@ Tests end-to-end workflows:
 - Service types and restart policies
 - Timer unit integration
 
+### test-privileged-ops (6 tests)
+Tests privileged operations that require root:
+- Converting systemd unit files to initd format
+- Enabling units with WantedBy directive
+- Enabling units with RequiredBy directive
+- Disabling units
+- Checking if units are enabled
+- Handling units without Install sections
+
+**Note:** This test requires root privileges because it:
+- Creates files in system directories (`/lib/initd/system/`, `/etc/initd/system/`)
+- Creates symlinks for unit dependencies (`*.wants`, `*.requires`)
+- Tests real-world privilege separation scenarios
+
+When run without root, the test properly skips with exit code 77.
+
+Run with: `sudo meson test -C build --suite privileged`
+
 ## Test Statistics
 
-**Total: 10 test suites, 83 individual tests - all passing ✅**
+**Total: 11 test suites, 89 individual tests - all passing ✅**
+
+**Regular tests:** 10 suites, 83 tests (no root required)
+**Privileged tests:** 1 suite, 6 tests (requires root)
 
 ## CI Integration
 
 Tests are designed to run in CI environments:
-- No root privileges required
-- No system modification
+- Most tests require no root privileges
+- Privileged tests properly skip when not root (exit code 77)
+- No permanent system modification
 - Fast execution (< 1 second per test)
 - Clear pass/fail output
+
+**Recommended CI workflow:**
+```yaml
+- name: Run regular tests
+  run: meson test -C build --no-suite privileged
+
+- name: Run privileged tests
+  run: sudo meson test -C build --suite privileged
+  # or: allow skip if running in unprivileged container
+```

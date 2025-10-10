@@ -4,6 +4,10 @@ project('initd', 'c',
   default_options: [
     'c_std=c23',
     'warning_level=3',
+    'prefix=/usr',
+    'sysconfdir=/etc',
+    'localstatedir=/var',
+    'libdir=lib',
   ]
 )
 

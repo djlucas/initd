@@ -25,6 +25,8 @@
 #include <pwd.h>
 #include <grp.h>
 #include "../common/ipc.h"
+#include "../common/privileged-ops.h"
+#include "../common/parser.h"
 
 #ifndef WORKER_PATH
 #define WORKER_PATH "/usr/libexecdir/initd/initd-supervisor-worker"
@@ -243,6 +245,70 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             resp->type = RESP_SERVICE_STOPPED;
         }
         break;
+
+    case REQ_ENABLE_UNIT: {
+        fprintf(stderr, "supervisor-master: enable unit request: %s\n", req->unit_path);
+        struct unit_file unit = {0};
+
+        if (parse_unit_file(req->unit_path, &unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse unit file");
+        } else if (enable_unit(&unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to enable unit");
+            free_unit_file(&unit);
+        } else {
+            resp->type = RESP_UNIT_ENABLED;
+            free_unit_file(&unit);
+            fprintf(stderr, "supervisor-master: enabled unit %s\n", req->unit_path);
+        }
+        break;
+    }
+
+    case REQ_DISABLE_UNIT: {
+        fprintf(stderr, "supervisor-master: disable unit request: %s\n", req->unit_path);
+        struct unit_file unit = {0};
+
+        if (parse_unit_file(req->unit_path, &unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse unit file");
+        } else if (disable_unit(&unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to disable unit");
+            free_unit_file(&unit);
+        } else {
+            resp->type = RESP_UNIT_DISABLED;
+            free_unit_file(&unit);
+            fprintf(stderr, "supervisor-master: disabled unit %s\n", req->unit_path);
+        }
+        break;
+    }
+
+    case REQ_CONVERT_UNIT: {
+        fprintf(stderr, "supervisor-master: convert unit request: %s\n", req->unit_path);
+        struct unit_file unit = {0};
+
+        if (parse_unit_file(req->unit_path, &unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse unit file");
+        } else if (convert_systemd_unit(&unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to convert unit");
+            free_unit_file(&unit);
+        } else {
+            resp->type = RESP_UNIT_CONVERTED;
+            strncpy(resp->converted_path, unit.path, sizeof(resp->converted_path) - 1);
+            free_unit_file(&unit);
+            fprintf(stderr, "supervisor-master: converted unit to %s\n", resp->converted_path);
+        }
+        break;
+    }
 
     case REQ_SHUTDOWN_COMPLETE:
         fprintf(stderr, "supervisor-master: slave shutdown complete\n");
