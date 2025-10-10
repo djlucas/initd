@@ -617,23 +617,39 @@ project/
 │   │   └── init.c
 │   ├── supervisor/
 │   │   ├── meson.build
-│   │   ├── master.c
-│   │   ├── slave.c
-│   │   ├── service.c
-│   │   ├── timer.c
-│   │   └── dependency.c
-│   ├── systemctl/
+│   │   ├── initd-supervisor.c         (master process)
+│   │   └── initd-supervisor-worker.c  (worker process)
+│   ├── timer-daemon/
 │   │   ├── meson.build
-│   │   └── systemctl.c
+│   │   ├── initd-timer.c              (master process)
+│   │   ├── initd-timer-worker.c       (worker process)
+│   │   ├── calendar.c
+│   │   └── calendar.h
 │   ├── socket-activator/
 │   │   ├── meson.build
-│   │   └── socket-activator.c
+│   │   ├── initd-socket.c             (master process)
+│   │   └── initd-socket-worker.c      (worker process)
+│   ├── initctl/
+│   │   ├── meson.build
+│   │   └── initctl.c
 │   └── common/
 │       ├── meson.build
-│       ├── ipc.c
-│       ├── protocol.c
+│       ├── ipc.c                      (supervisor master/worker IPC)
+│       ├── ipc.h
+│       ├── socket-ipc.c               (socket daemon IPC)
+│       ├── socket-ipc.h
+│       ├── timer-ipc.c                (timer daemon IPC)
+│       ├── timer-ipc.h
+│       ├── control.c                  (control protocol)
+│       ├── control.h
 │       ├── parser.c
-│       └── utils.c
+│       ├── parser.h
+│       ├── scanner.c
+│       ├── scanner.h
+│       ├── privileged-ops.c
+│       ├── privileged-ops.h
+│       ├── log.c
+│       └── log.h
 ├── units/
 │   ├── meson.build
 │   ├── rescue.target
@@ -643,8 +659,16 @@ project/
 ├── scripts/
 │   ├── meson.build
 │   ├── journalctl
-│   └── service-scripts/
-│       ├── network-configure
+│   ├── ifup
+│   ├── ifdown
+│   ├── service-scripts/
+│   │   ├── checkfs
+│   │   ├── console
+│   │   ├── createfiles
+│   │   └── ...
+│   └── network-services/
+│       ├── dhcpcd
+│       ├── static
 │       └── ...
 ├── tests/
 │   ├── meson.build
@@ -657,7 +681,24 @@ project/
 │   ├── test-dependency.c
 │   ├── test-state.c
 │   ├── test-log.c
-│   └── test-integration.c
+│   ├── test-integration.c
+│   ├── test-socket-ipc.c
+│   ├── test-timer-ipc.c
+│   ├── test-privileged-ops.c
+│   └── units/                         (test-only unit files)
+│       ├── test.service
+│       ├── backup.service
+│       ├── backup.timer
+│       └── ...
+├── analysis/
+│   ├── meson.build
+│   ├── meson-analyze-all.sh
+│   ├── meson-cppcheck.sh
+│   ├── meson-flawfinder.sh
+│   ├── meson-scan-build.sh
+│   ├── meson-sanitizers.sh
+│   ├── meson-valgrind.sh
+│   └── meson-shellcheck.sh
 └── docs/
     └── README.md
 ```
@@ -999,6 +1040,9 @@ meson compile -C build analyze-sanitizers
 
 # Memory leak detection
 meson compile -C build analyze-valgrind
+
+# Shell script static analysis
+meson compile -C build analyze-shellcheck
 ```
 
 **Analysis results** are saved to `analysis-output/` with individual log files:
@@ -1007,6 +1051,7 @@ meson compile -C build analyze-valgrind
 - `scan-build.log` - Clang analyzer results
 - `sanitizers.log` - AddressSanitizer/UndefinedBehaviorSanitizer results
 - `valgrind.log` - Memory leak detection results
+- `shellcheck.log` - Shell script analysis results
 - `analysis-summary.log` - Overall summary
 
 **Tools included**:
@@ -1017,6 +1062,7 @@ meson compile -C build analyze-valgrind
 - **UndefinedBehaviorSanitizer** - Undefined behavior detection
 - **LeakSanitizer** - Memory leak detection
 - **Valgrind** - Comprehensive memory analysis
+- **shellcheck** - Shell script static analysis
 
 All analysis tools are configured with dedicated build directories and proper logging.
 

@@ -82,23 +82,25 @@ Many of the service scripts for sysinit.target (checkfs, console, createfiles, l
 
 ```
 init (PID 1) - optional, not needed in standalone mode
-  └─ supervisor-master (root, minimal)
-      ├─ supervisor-slave (unprivileged, main logic)
+  └─ initd-supervisor (root, minimal master)
+      ├─ initd-supervisor-worker (unprivileged, main logic)
       │   ├─ Parses unit files
       │   ├─ Resolves dependencies
       │   ├─ Monitors services
       │   └─ Control socket: /run/initd/supervisor.sock
       └─ Spawns services with privilege dropping
 
-timer-daemon (independent)
-  ├─ Manages .timer units
-  ├─ Cron replacement functionality
-  └─ Control socket: /run/initd/timer.sock
+initd-timer (independent master)
+  └─ initd-timer-worker (unprivileged worker)
+      ├─ Manages .timer units
+      ├─ Cron replacement functionality
+      └─ Control socket: /run/initd/timer.sock
 
-socket-activator (independent)
-  ├─ Manages .socket units
-  ├─ On-demand service activation
-  └─ Control socket: /run/initd/socket-activator.sock
+initd-socket (independent master)
+  └─ initd-socket-worker (unprivileged worker)
+      ├─ Manages .socket units
+      ├─ On-demand service activation
+      └─ Control socket: /run/initd/socket-activator.sock
 
 initctl/systemctl
   └─ Routes commands to appropriate daemon based on unit type
@@ -107,9 +109,9 @@ initctl/systemctl
 **Key Components:**
 
 1. **init** - PID 1, zombie reaping, supervisor lifecycle (optional)
-2. **supervisor** (master + slave) - Service management daemon
-3. **timer-daemon** - Timer/cron functionality (independent, optional)
-4. **socket-activator** - On-demand service activation (independent, optional)
+2. **initd-supervisor** (master + worker) - Service management daemon with privilege separation
+3. **initd-timer** (master + worker) - Timer/cron functionality (independent, optional)
+4. **initd-socket** (master + worker) - On-demand service activation (independent, optional)
 5. **initctl/systemctl** - Control interface (routes to correct daemon)
 6. **journalctl** - Log query tool (syslog wrapper)
 
@@ -305,6 +307,7 @@ When run without root, the test properly skips with exit code 77 (meson skip).
 - **Clang scan-build** - Static analyzer with deeper checks
 - **AddressSanitizer/UndefinedBehaviorSanitizer** - Runtime memory error detection
 - **Valgrind** - Memory leak and error detection
+- **shellcheck** - Shell script static analysis
 
 Run complete analysis suite:
 ```bash
@@ -318,6 +321,7 @@ meson compile -C build analyze-flawfinder
 meson compile -C build analyze-scan
 meson compile -C build analyze-sanitizers
 meson compile -C build analyze-valgrind
+meson compile -C build analyze-shellcheck
 ```
 
 Analysis results are saved to `analysis-output/` with individual log files for review.
