@@ -1,25 +1,25 @@
-supervisor_master_sources = files('supervisor-master.c')
-supervisor_slave_sources = files('supervisor-slave.c')
+supervisor_sources = files('initd-supervisor.c')
+supervisor_worker_sources = files('initd-supervisor-worker.c')
 
 supervisor_c_args = [
-  '-DSLAVE_PATH="@0@"'.format(get_option('libexecdir') / 'initd' / 'supervisor-slave'),
+  '-DWORKER_PATH="@0@"'.format(get_option('libexecdir') / 'initd' / 'initd-supervisor-worker'),
   '-DSUPERVISOR_USER="@0@"'.format(get_option('supervisor-user')),
 ]
 
-# Build supervisor-master
-supervisor_master = executable(
-  'supervisor-master',
-  supervisor_master_sources,
+# Build initd-supervisor (privileged daemon)
+supervisor = executable(
+  'initd-supervisor',
+  supervisor_sources,
   c_args: supervisor_c_args,
   dependencies: common_dep,
   install: true,
   install_dir: get_option('libexecdir') / 'initd',
 )
 
-# Build supervisor-slave
-supervisor_slave = executable(
-  'supervisor-slave',
-  supervisor_slave_sources,
+# Build initd-supervisor-worker (unprivileged worker)
+supervisor_worker = executable(
+  'initd-supervisor-worker',
+  supervisor_worker_sources,
   c_args: supervisor_c_args,
   dependencies: common_dep,
   install: true,

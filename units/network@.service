@@ -3,6 +3,7 @@ Description=Network Configuration for %I
 After=basic.target
 Before=network.target
 ConditionPathExists=/etc/initd/sysconfig/network-%I.conf
+Provides=network
 
 [Service]
 Type=oneshot

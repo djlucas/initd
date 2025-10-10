@@ -3,6 +3,7 @@ Description=Setup Loopback Interface and Hostname
 DefaultDependencies=no
 After=mountvirtfs.service
 Before=sysinit.target
+Provides=$network
 
 [Service]
 Type=oneshot

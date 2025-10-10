@@ -1,0 +1,17 @@
+[Unit]
+Description=Kernel Logging Daemon
+Documentation=man:klogd(8)
+DefaultDependencies=no
+After=syslogd.service
+Before=basic.target
+Requires=syslogd.service
+Conflicts=shutdown.target syslog-ng.service rsyslog.service
+
+[Service]
+Type=forking
+ExecStart=/sbin/klogd
+Restart=on-failure
+StandardOutput=null
+
+[Install]
+WantedBy=basic.target

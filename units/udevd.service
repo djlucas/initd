@@ -3,6 +3,7 @@ Description=udev Daemon
 DefaultDependencies=no
 After=mountvirtfs.service
 Before=sysinit.target
+Provides=udev
 
 [Service]
 Type=simple

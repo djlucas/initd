@@ -1,0 +1,17 @@
+[Unit]
+Description=System Logging Daemon
+Documentation=man:syslogd(8)
+DefaultDependencies=no
+After=mountvirtfs.service
+Before=basic.target
+Conflicts=shutdown.target syslog-ng.service rsyslog.service
+Provides=syslog
+
+[Service]
+Type=forking
+ExecStart=/sbin/syslogd -m 0
+Restart=on-failure
+StandardOutput=null
+
+[Install]
+WantedBy=basic.target

@@ -467,6 +467,16 @@ static int load_timers(void) {
 }
 
 /* Handle control command */
+/* Find timer by unit name */
+static struct timer_instance *find_timer(const char *unit_name) {
+    for (struct timer_instance *t = timers; t; t = t->next) {
+        if (strcmp(t->unit->name, unit_name) == 0) {
+            return t;
+        }
+    }
+    return NULL;
+}
+
 static void handle_control_command(int client_fd) {
     struct control_request req = {0};
     struct control_response resp = {0};
@@ -476,15 +486,54 @@ static void handle_control_command(int client_fd) {
         return;
     }
 
-    fprintf(stderr, "timer-daemon: received command %s\n",
-            command_to_string(req.header.command));
+    fprintf(stderr, "timer-daemon: received command %s for unit %s\n",
+            command_to_string(req.header.command), req.unit_name);
 
     /* Set default response */
     resp.header.length = sizeof(resp);
     resp.header.command = req.header.command;
     resp.code = RESP_SUCCESS;
 
+    struct timer_instance *timer = find_timer(req.unit_name);
+
     switch (req.header.command) {
+    case CMD_ENABLE:
+        if (!timer) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
+        } else if (enable_unit(timer->unit) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to enable %s", req.unit_name);
+        } else {
+            timer->enabled = true;
+            snprintf(resp.message, sizeof(resp.message), "Enabled %s", req.unit_name);
+        }
+        break;
+
+    case CMD_DISABLE:
+        if (!timer) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
+        } else if (disable_unit(timer->unit) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to disable %s", req.unit_name);
+        } else {
+            timer->enabled = false;
+            snprintf(resp.message, sizeof(resp.message), "Disabled %s", req.unit_name);
+        }
+        break;
+
+    case CMD_IS_ENABLED:
+        if (!timer) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
+        } else {
+            bool enabled = is_unit_enabled(timer->unit);
+            resp.code = enabled ? RESP_SUCCESS : RESP_UNIT_INACTIVE;
+            snprintf(resp.message, sizeof(resp.message), "%s", enabled ? "enabled" : "disabled");
+        }
+        break;
+
     case CMD_LIST_TIMERS: {
         /* Build timer list */
         int count = 0;

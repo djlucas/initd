@@ -26,8 +26,8 @@
 #include <grp.h>
 #include "../common/ipc.h"
 
-#ifndef SLAVE_PATH
-#define SLAVE_PATH "/usr/libexec/initd/supervisor-slave"
+#ifndef WORKER_PATH
+#define WORKER_PATH "/usr/libexecdir/initd/initd-supervisor-worker"
 #endif
 
 #ifndef SUPERVISOR_USER
@@ -163,7 +163,7 @@ static pid_t start_slave(int slave_fd) {
 
         fprintf(stderr, "supervisor-slave: running as uid=%d, gid=%d\n", getuid(), getgid());
 
-        execl(SLAVE_PATH, "supervisor-slave", fd_str, NULL);
+        execl(WORKER_PATH, "initd-supervisor-worker", fd_str, NULL);
         perror("supervisor-master: exec slave");
         _exit(1);
     }

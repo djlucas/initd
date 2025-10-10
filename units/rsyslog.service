@@ -1,0 +1,18 @@
+[Unit]
+Description=System Logging Service (rsyslog)
+Documentation=man:rsyslogd(8) https://www.rsyslog.com/doc/
+DefaultDependencies=no
+After=mountvirtfs.service
+Before=basic.target
+Conflicts=shutdown.target syslogd.service klogd.service syslog-ng.service
+Provides=syslog
+
+[Service]
+Type=notify
+ExecStart=/usr/sbin/rsyslogd -n -iNONE
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+StandardOutput=null
+
+[Install]
+WantedBy=basic.target

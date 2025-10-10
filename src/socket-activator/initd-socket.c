@@ -514,6 +514,16 @@ static int load_sockets(void) {
 }
 
 /* Handle control command */
+/* Find socket by unit name */
+static struct socket_instance *find_socket(const char *unit_name) {
+    for (struct socket_instance *s = sockets; s; s = s->next) {
+        if (strcmp(s->unit->name, unit_name) == 0) {
+            return s;
+        }
+    }
+    return NULL;
+}
+
 static void handle_control_command(int client_fd) {
     struct control_request req = {0};
     struct control_response resp = {0};
@@ -523,8 +533,8 @@ static void handle_control_command(int client_fd) {
         return;
     }
 
-    fprintf(stderr, "socket-activator: received command %s\n",
-            command_to_string(req.header.command));
+    fprintf(stderr, "socket-activator: received command %s for unit %s\n",
+            command_to_string(req.header.command), req.unit_name);
 
     /* Set default response */
     resp.header.length = sizeof(resp);
@@ -640,21 +650,60 @@ static void handle_control_command(int client_fd) {
         return;
     }
 
-    /* Handle start/stop/enable/disable commands */
-    if (req.header.command == CMD_START || req.header.command == CMD_STOP ||
-        req.header.command == CMD_ENABLE || req.header.command == CMD_DISABLE ||
-        req.header.command == CMD_IS_ENABLED) {
+    /* Handle enable/disable commands */
+    struct socket_instance *sock = find_socket(req.unit_name);
+
+    switch (req.header.command) {
+    case CMD_ENABLE:
+        if (!sock) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Socket %s not found", req.unit_name);
+        } else if (enable_unit(sock->unit) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to enable %s", req.unit_name);
+        } else {
+            sock->enabled = true;
+            snprintf(resp.message, sizeof(resp.message), "Enabled %s", req.unit_name);
+        }
+        break;
+
+    case CMD_DISABLE:
+        if (!sock) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Socket %s not found", req.unit_name);
+        } else if (disable_unit(sock->unit) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to disable %s", req.unit_name);
+        } else {
+            sock->enabled = false;
+            snprintf(resp.message, sizeof(resp.message), "Disabled %s", req.unit_name);
+        }
+        break;
+
+    case CMD_IS_ENABLED:
+        if (!sock) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Socket %s not found", req.unit_name);
+        } else {
+            bool enabled = is_unit_enabled(sock->unit);
+            resp.code = enabled ? RESP_SUCCESS : RESP_UNIT_INACTIVE;
+            snprintf(resp.message, sizeof(resp.message), "%s", enabled ? "enabled" : "disabled");
+        }
+        break;
+
+    case CMD_START:
+    case CMD_STOP:
         resp.code = RESP_INVALID_COMMAND;
         snprintf(resp.message, sizeof(resp.message),
-                "Socket units are managed automatically by the activator");
-        send_control_response(client_fd, &resp);
-        close(client_fd);
-        return;
-    }
+                "Socket units are automatically started/stopped by the activator");
+        break;
 
-    resp.code = RESP_INVALID_COMMAND;
-    snprintf(resp.message, sizeof(resp.message),
-             "Socket activator: command not supported");
+    default:
+        resp.code = RESP_INVALID_COMMAND;
+        snprintf(resp.message, sizeof(resp.message),
+                 "Socket activator: command not supported");
+        break;
+    }
 
     send_control_response(client_fd, &resp);
     close(client_fd);
