@@ -4,10 +4,10 @@
 
 A lightweight, portable init system providing systemd unit file compatibility without the systemd ecosystem bloat. Designed for Linux, BSD, and GNU Hurd.
 
-**Version:** 0.1.0  
-**Language:** C (C23 standard)  
-**Build System:** Meson + Ninja  
-**License:** TBD
+**Version:** 0.1
+**Language:** C (C23 standard)
+**Build System:** Meson + Ninja
+**License:** MIT
 
 ## Core Philosophy
 
@@ -368,6 +368,9 @@ Standard systemd INI format
 - Restart (no, always, on-failure)
 - RestartSec
 - TimeoutStartSec, TimeoutStopSec
+- PrivateTmp (Linux only - mount namespaces)
+- LimitNOFILE (portable - setrlimit)
+- KillMode (portable - process groups)
 
 **[Timer]:**
 - OnCalendar
@@ -384,6 +387,120 @@ Standard systemd INI format
 
 **[Install]:**
 - WantedBy, RequiredBy
+
+### Service Directive Details
+
+#### PrivateTmp (Linux-only)
+
+**Purpose:** Provides isolated `/tmp` directory per service for security
+
+**Implementation:**
+- Uses Linux mount namespaces (`unshare(CLONE_NEWNS)`)
+- Creates private tmpfs mount on `/tmp` for the service
+- Size limit: 1GB per service
+- Permissions: 1777 (world-writable with sticky bit)
+
+**Platform Support:**
+- Linux: Full support via mount namespaces
+- BSD/Hurd: Stubbed with TODO (planned: create `/tmp/initd-<service>-<pid>` directory)
+
+**Usage:**
+```ini
+[Service]
+ExecStart=/usr/bin/myapp
+PrivateTmp=true    # or false, default: false
+```
+
+**Security Benefits:**
+- Prevents service from accessing other services' temp files
+- Cleans up automatically when service exits
+- Reduces attack surface for privilege escalation
+
+#### LimitNOFILE (Portable)
+
+**Purpose:** Control maximum number of open file descriptors
+
+**Implementation:**
+- Uses `setrlimit(RLIMIT_NOFILE)` (POSIX standard)
+- Applied before dropping privileges
+- Both soft and hard limits set to same value
+
+**Platform Support:**
+- Fully portable across all Unix-like systems
+- Uses standard POSIX setrlimit(2)
+
+**Usage:**
+```ini
+[Service]
+ExecStart=/usr/bin/myapp
+LimitNOFILE=65536       # Set to specific value
+# or
+LimitNOFILE=infinity    # Remove limit (sets RLIM_INFINITY)
+```
+
+**Values:**
+- Numeric: Specific limit (e.g., `65536`)
+- `infinity`: Unlimited file descriptors
+- Default: `-1` (not set, inherits system default)
+
+**Common Use Cases:**
+- Database servers (need many connections)
+- Web servers (many concurrent requests)
+- File servers (many open files)
+
+#### KillMode (Portable)
+
+**Purpose:** Fine-grained control over process termination
+
+**Implementation:**
+- Uses `setsid()` to create process groups (POSIX standard)
+- Uses `killpg()` for group termination (POSIX.1-2001/2008)
+- Fallback to `kill()` for single process
+
+**Platform Support:**
+- Fully portable across all Unix-like systems
+- Uses standard POSIX process groups
+
+**Modes:**
+
+1. **process** (default)
+   - Only kill main service process
+   - Child processes continue running
+   - Conservative, compatible with forking services
+
+2. **control-group**
+   - Kill entire process group
+   - Terminates service + all children
+   - Most thorough cleanup
+
+3. **mixed**
+   - SIGTERM to main process
+   - After 100ms delay: SIGKILL to entire process group
+   - Graceful shutdown attempt, then forceful cleanup
+
+4. **none**
+   - Don't send any signals
+   - Service must exit on its own
+   - Useful for services that handle shutdown internally
+
+**Usage:**
+```ini
+[Service]
+ExecStart=/usr/bin/myapp
+KillMode=control-group    # process, control-group, mixed, or none
+```
+
+**Technical Details:**
+- All services run in their own process group via `setsid()`
+- Process group ID == main service PID
+- `killpg(pid, signal)` kills all processes in group
+- Timeout handling: Wait `TimeoutStopSec`, then SIGKILL
+
+**Comparison with systemd:**
+- systemd uses cgroups for control-group mode (Linux-only)
+- initd uses process groups (portable, POSIX standard)
+- Functionally equivalent for most services
+- initd's approach works on BSD, Hurd, and other Unix systems
 
 ## Targets
 
@@ -950,7 +1067,7 @@ These changes should be made during Phase 2-3 to avoid refactoring later.
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**11 test suites with 89 individual tests - all passing**
+**14 test suites with 95 individual tests - all passing**
 
 1. **calendar parser** (7 tests) - Calendar expression parsing
 2. **unit file parser** (7 tests) - Unit file parsing & validation
@@ -962,28 +1079,32 @@ These changes should be made during Phase 2-3 to avoid refactoring later.
 8. **state machine** (11 tests) - Unit state transitions
 9. **logging system** (10 tests) - Log buffering & syslog
 10. **integration** (10 tests) - End-to-end workflows
-11. **privileged operations** (6 tests) - Root-only operations (requires sudo)
+11. **timer IPC protocol** (5 tests) - Timer daemon IPC communication
+12. **socket IPC protocol** (5 tests) - Socket daemon IPC communication
+13. **service features** (4 tests) - PrivateTmp, LimitNOFILE, KillMode parsing
+14. **privileged operations** (6 tests) - Root-only operations (requires sudo)
 
 **Coverage:**
 - ✅ Unit file parsing (all types)
 - ✅ Dependency resolution (After, Before, Requires, Wants, Conflicts)
 - ✅ State machine (all states and transitions)
-- ✅ IPC protocol (requests and responses)
+- ✅ IPC protocol (supervisor master/worker, timer, socket daemons)
 - ✅ Control protocol (commands and serialization)
 - ✅ Directory scanner (priority, filtering)
 - ✅ Logging system (buffering, syslog)
 - ✅ Socket activation
 - ✅ Calendar expressions
+- ✅ Service directives (PrivateTmp, LimitNOFILE, KillMode parsing)
 - ✅ Integration workflows
 - ✅ Privileged operations (enable, disable, convert systemd units)
 
 **Build and run tests:**
 ```bash
-# Run all non-privileged tests (12 tests)
+# Run all non-privileged tests (13 tests)
 meson compile -C build
 meson test -C build --no-suite privileged
 
-# Run privileged tests (requires root - 6 tests)
+# Run privileged tests (requires root - 1 test with 6 sub-tests)
 sudo meson test -C build --suite privileged
 
 # Run all tests with verbose output

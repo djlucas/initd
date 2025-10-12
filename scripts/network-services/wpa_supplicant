@@ -77,8 +77,8 @@ case "${ACTION}" in
       # Stop wpa_supplicant
       if [ -f "${PIDFILE}" ]; then
          echo "Stopping wpa_supplicant on ${IFACE}"
-         kill $(cat ${PIDFILE}) 2>/dev/null
-         rm -f ${PIDFILE}
+         kill $(cat "${PIDFILE}") 2>/dev/null
+         rm -f "${PIDFILE}"
       fi
 
       # Bring interface down

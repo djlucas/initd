@@ -64,6 +64,14 @@ struct unit_section {
     int provides_count;
 };
 
+/* Kill mode for service termination */
+enum kill_mode {
+    KILL_CONTROL_GROUP,  /* Kill all processes in the service's cgroup/pgrp */
+    KILL_PROCESS,        /* Kill only the main process */
+    KILL_MIXED,          /* SIGTERM to main, SIGKILL to others */
+    KILL_NONE            /* Don't kill anything */
+};
+
 /* [Service] section */
 struct service_section {
     enum service_type type;
@@ -82,6 +90,9 @@ struct service_section {
     int restart_sec;
     int timeout_start_sec;
     int timeout_stop_sec;
+    bool private_tmp;
+    enum kill_mode kill_mode;
+    int limit_nofile;    /* -1 = not set, 0 = unlimited (infinity) */
 };
 
 /* [Timer] section */

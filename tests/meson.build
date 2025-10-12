@@ -76,6 +76,12 @@ test_socket_ipc = executable(
   dependencies: [common_dep, socket_ipc_dep]
 )
 
+test_service_features = executable(
+  'test-service-features',
+  'test-service-features.c',
+  dependencies: common_dep
+)
+
 test('calendar parser', test_calendar)
 test('unit file parser', test_parser)
 test('control protocol', test_control)
@@ -88,6 +94,13 @@ test('logging system', test_log)
 test('integration', test_integration)
 test('timer IPC protocol', test_timer_ipc)
 test('socket IPC protocol', test_socket_ipc)
+test('service features', test_service_features)
 
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')
+
+# Create a ninja target for privileged tests
+bash = find_program('bash')
+run_target('test-privileged',
+  command: [bash, '-c', 'cd "$MESON_BUILD_ROOT" && meson test --suite initd:privileged']
+)

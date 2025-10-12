@@ -1,0 +1,15 @@
+[Unit]
+Description=Mount Network Filesystems
+Documentation=man:mount(8)
+Provides=$remote_fs
+After=network.target
+ConditionPathExists=/etc/fstab
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mount -a -O _netdev
+ExecStop=/usr/libexec/initd/service-scripts/netfs stop
+
+[Install]
+WantedBy=multi-user.target

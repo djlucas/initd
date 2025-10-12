@@ -25,4 +25,7 @@ int disable_unit(struct unit_file *unit);
 /* Check if unit is enabled */
 bool is_unit_enabled(struct unit_file *unit);
 
+/* Setup service environment (PrivateTmp, LimitNOFILE, etc.) before exec */
+int setup_service_environment(const struct service_section *service);
+
 #endif /* PRIVILEGED_OPS_H */

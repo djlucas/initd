@@ -1,0 +1,13 @@
+[Unit]
+Description=ISC KEA IPv6 DHCP daemon
+Documentation=man:kea-dhcp6(8)
+Wants=network-online.target mariadb.service
+Requires=kea-ctrl-agent.service
+After=network-online.target mariadb.service mysql.service
+
+[Service]
+ExecStart=/usr/sbin/kea-dhcp6 -c /etc/kea/kea-dhcp6.conf
+RuntimeDirectory=kea
+
+[Install]
+WantedBy=multi-user.target

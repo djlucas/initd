@@ -151,6 +151,48 @@ initctl/systemctl
 - **Not trying to replace everything** - Works with existing tools (elogind, syslog)
 - **Not Linux-only** - Portable by design
 
+### Supported Unit Types
+
+initd supports the essential systemd unit types:
+- ✅ `.service` - Service management
+- ✅ `.timer` - Scheduled task activation (cron replacement)
+- ✅ `.socket` - Socket-based activation
+- ✅ `.target` - Unit grouping and ordering
+
+Unit types **not supported** (use traditional alternatives):
+- ❌ `.mount` - Use `/etc/fstab` for filesystem mounts
+- ❌ `.automount` - Use `/etc/fstab` with auto mount options
+- ❌ `.swap` - Use `/etc/fstab` for swap configuration
+- ❌ `.path` - Path-based activation not implemented
+- ❌ `.device` - Hardware management not implemented
+- ❌ `.scope` - Runtime-created units (systemd internal)
+- ❌ `.slice` - cgroup hierarchy management (not implemented)
+
+### Supported Service Directives
+
+**[Service] Section:**
+- `Type=` - simple, forking, oneshot
+- `ExecStart=`, `ExecStop=`, `ExecReload=` - Service commands
+- `ExecStartPre=`, `ExecStartPost=` - Pre/post start commands
+- `User=`, `Group=` - Run as specific user/group
+- `WorkingDirectory=` - Set working directory
+- `Environment=` - Set environment variables
+- `EnvironmentFile=` - Load environment from file
+- `Restart=` - no, always, on-failure
+- `RestartSec=` - Delay before restart
+- `TimeoutStartSec=`, `TimeoutStopSec=` - Startup/shutdown timeouts
+- `PrivateTmp=` - Private /tmp namespace (Linux only)
+- `LimitNOFILE=` - File descriptor limit (portable)
+- `KillMode=` - process, control-group, mixed, none (portable)
+
+**Security & Resource Control:**
+- ✅ **PrivateTmp** - Isolated /tmp per service (Linux only, uses mount namespaces)
+- ✅ **LimitNOFILE** - Control max open files (portable, uses setrlimit)
+- ✅ **KillMode** - Fine-grained process termination control (portable, uses killpg)
+- ❌ **Other resource limits** - Not yet implemented
+- ❌ **Capabilities** - Not yet implemented
+- ❌ **SecureBits** - Not yet implemented
+
 ## Quick Start
 
 ### Building
@@ -257,26 +299,27 @@ Core init system functionality is implemented with comprehensive test coverage.
 The project includes extensive automated testing and static/dynamic analysis:
 
 **Test Suites:**
-- **11 test suites** with **89 individual tests** (100% passing)
+- **14 test suites** with **95 individual tests** (100% passing)
 - Calendar expression parser tests
 - Unit file parser and validation tests
 - Control protocol serialization tests
 - Socket activation tests
-- IPC communication tests
+- IPC communication tests (supervisor, timer, socket daemons)
 - Unit scanner tests
 - Dependency resolution tests
 - State machine tests
 - Logging system tests
+- Service features tests (PrivateTmp, LimitNOFILE, KillMode)
 - Integration tests
 - **Privileged operations tests** (requires root)
 
 **Running Tests:**
 ```bash
-# Build and run all non-privileged tests (13 tests, 1 will be skipped)
+# Build and run all tests (14 tests total)
 meson compile -C build
 meson test -C build
 
-# Run only non-privileged tests (12 tests)
+# Run only non-privileged tests (13 tests)
 meson test -C build --no-suite privileged
 
 # Run privileged tests (requires root - 1 test with 6 sub-tests)

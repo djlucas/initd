@@ -1,0 +1,16 @@
+[Unit]
+Description=Load/Save Random Seed
+Documentation=man:random(4)
+After=mountvirtfs.service
+Before=sysinit.target
+Provides=random
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'if [ -f /var/tmp/random-seed ]; then cat /var/tmp/random-seed >/dev/urandom; fi; dd if=/dev/urandom of=/var/tmp/random-seed count=1 2>/dev/null'
+ExecStop=/bin/dd if=/dev/urandom of=/var/tmp/random-seed count=1
+
+[Install]
+WantedBy=sysinit.target

@@ -1,0 +1,7 @@
+# Begin /etc/sysconfig/sendmail
+
+# Options to pass to sendmail.
+SENDMAIL_OPTS="-q5m"
+SENDMAIL_OPTARG=""
+
+# End /etc/sysconfig/sendmail

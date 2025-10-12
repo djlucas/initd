@@ -1,0 +1,13 @@
+[Unit]
+Description=ISC KEA IPv4 DHCP daemon
+Documentation=man:kea-dhcp4(8)
+Wants=network-online.target mariadb.service
+Requires=kea-ctrl-agent.service
+After=network-online.target mariadb.service mysql.service
+
+[Service]
+ExecStart=/usr/sbin/kea-dhcp4 -c /etc/kea/kea-dhcp4.conf
+RuntimeDirectory=kea
+
+[Install]
+WantedBy=multi-user.target

@@ -29,7 +29,7 @@ if [ ! -r "${CONFIG}" ]; then
 fi
 
 # Source the config
-. ${CONFIG}
+. "${CONFIG}"
 
 # Validate SERVICE variable
 if [ -z "${SERVICE}" ]; then

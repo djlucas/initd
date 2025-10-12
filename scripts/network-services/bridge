@@ -1,0 +1,119 @@
+#!/bin/bash
+########################################################################
+# Begin /usr/libexec/initd/network-services/bridge
+#
+# Description : Bridge Network Service Script
+#
+# Authors     : DJ Lucas - dj@lucasit.com
+#
+# Version     : 0.1
+#
+# Notes       : Creates and manages network bridge interfaces
+#
+########################################################################
+
+. /lib/lsb/init-functions
+
+IFACE="${1}"
+BRIDGE="${BRIDGE}"
+BRIDGE_INTERFACES="${BRIDGE_INTERFACES}"
+BRIDGE_STP="${BRIDGE_STP:-off}"
+BRIDGE_FD="${BRIDGE_FD:-0}"
+BRIDGE_MAXWAIT="${BRIDGE_MAXWAIT:-10}"
+
+case "${2}" in
+    up)
+        log_info_msg "Creating bridge ${IFACE}..."
+
+        # Create the bridge interface
+        ip link add name "${IFACE}" type bridge
+        evaluate_retval
+
+        # Set bridge parameters
+        if [ -n "${BRIDGE_STP}" ]; then
+            log_info_msg "  Setting STP to ${BRIDGE_STP}..."
+            STP_VALUE=$([ "${BRIDGE_STP}" = "on" ] && echo 1 || echo 0)
+            ip link set "${IFACE}" type bridge stp_state "${STP_VALUE}"
+            evaluate_retval
+        fi
+
+        if [ -n "${BRIDGE_FD}" ]; then
+            log_info_msg "  Setting forward delay to ${BRIDGE_FD}..."
+            ip link set "${IFACE}" type bridge forward_delay "${BRIDGE_FD}"
+            evaluate_retval
+        fi
+
+        # Add interfaces to the bridge
+        if [ -n "${BRIDGE_INTERFACES}" ]; then
+            for port in ${BRIDGE_INTERFACES}; do
+                log_info_msg "  Adding ${port} to bridge ${IFACE}..."
+
+                # Bring the port interface up (no IP)
+                ip link set "${port}" up
+
+                # Add to bridge
+                ip link set "${port}" master "${IFACE}"
+                evaluate_retval
+            done
+        fi
+
+        # Configure IP address if specified
+        if [ -n "${IP}" ]; then
+            log_info_msg "  Configuring IP ${IP}..."
+            ip addr add "${IP}${PREFIX:+/$PREFIX}" dev "${IFACE}"
+            evaluate_retval
+        fi
+
+        # Bring bridge up
+        log_info_msg "  Bringing up ${IFACE}..."
+        ip link set "${IFACE}" up
+        evaluate_retval
+
+        # Set default gateway if specified
+        if [ -n "${GATEWAY}" ]; then
+            log_info_msg "  Setting default gateway ${GATEWAY}..."
+            ip route add default via "${GATEWAY}" dev "${IFACE}"
+            evaluate_retval
+        fi
+        ;;
+
+    down)
+        log_info_msg "Destroying bridge ${IFACE}..."
+
+        # Remove default route if it exists
+        if [ -n "${GATEWAY}" ]; then
+            log_info_msg "  Removing default gateway..."
+            ip route del default via "${GATEWAY}" dev "${IFACE}" 2>/dev/null
+            evaluate_retval
+        fi
+
+        # Remove interfaces from bridge
+        if [ -n "${BRIDGE_INTERFACES}" ]; then
+            for port in ${BRIDGE_INTERFACES}; do
+                log_info_msg "  Removing ${port} from bridge..."
+                ip link set "${port}" nomaster 2>/dev/null
+                ip link set "${port}" down 2>/dev/null
+                evaluate_retval
+            done
+        fi
+
+        # Bring bridge down
+        log_info_msg "  Bringing down ${IFACE}..."
+        ip link set "${IFACE}" down
+        evaluate_retval
+
+        # Delete the bridge
+        log_info_msg "  Deleting bridge ${IFACE}..."
+        ip link delete "${IFACE}" type bridge
+        evaluate_retval
+        ;;
+
+    *)
+        echo "Usage: ${0} <interface> {up|down}"
+        exit 1
+        ;;
+esac
+
+exit 0
+
+# End /usr/libexec/initd/network-services/bridge

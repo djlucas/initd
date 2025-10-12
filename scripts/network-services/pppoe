@@ -27,7 +27,14 @@ case "${ACTION}" in
       fi
 
       # Check if pppoe plugin is available
-      if [ ! -f /usr/lib/pppd/*/rp-pppoe.so ] && [ ! -f /usr/lib64/pppd/*/rp-pppoe.so ]; then
+      PLUGIN_FOUND=0
+      for plugin in /usr/lib/pppd/*/rp-pppoe.so /usr/lib64/pppd/*/rp-pppoe.so; do
+         if [ -f "${plugin}" ]; then
+            PLUGIN_FOUND=1
+            break
+         fi
+      done
+      if [ "${PLUGIN_FOUND}" -eq 0 ]; then
          echo "ERROR: rp-pppoe.so plugin not found"
          exit 1
       fi
@@ -94,8 +101,8 @@ EOF
       # Find and kill pppd process for this interface
       if [ -f "${PIDFILE}" ]; then
          echo "Stopping PPPoE connection on ${IFACE}"
-         kill $(cat ${PIDFILE}) 2>/dev/null
-         rm -f ${PIDFILE}
+         kill $(cat "${PIDFILE}") 2>/dev/null
+         rm -f "${PIDFILE}"
       else
          # Try to find by linkname
          pkill -f "pppd.*linkname ${IFACE}"

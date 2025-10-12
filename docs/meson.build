@@ -4,6 +4,9 @@
 install_man('man/man1/journalctl.1')
 install_man('man/man1/initctl.1')
 
+# Section 5 - File formats
+install_man('man/man5/initd.unit.5')
+
 # Section 8 - System administration
 install_man('man/man8/init.8')
 install_man('man/man8/supervisor-master.8')

@@ -1,0 +1,75 @@
+#!/bin/bash
+########################################################################
+# Begin /usr/libexec/initd/network-services/dhclient
+#
+# Description : DHCP configuration using ISC dhclient
+#
+# Authors     : DJ Lucas - dj@lucasit.com
+#
+# Version     : initd 0.1
+#
+########################################################################
+
+IFACE="${1}"
+ACTION="${2}"
+
+# Config already sourced by network-configure and exported
+
+case "${ACTION}" in
+   up)
+      # Check if dhclient is available
+      if ! command -v dhclient >/dev/null 2>&1; then
+         echo "ERROR: dhclient not found in PATH"
+         exit 1
+      fi
+
+      # Bring interface up first
+      if ! ip link show "${IFACE}" >/dev/null 2>&1; then
+         echo "ERROR: Interface ${IFACE} does not exist"
+         exit 1
+      fi
+
+      echo "Bringing up interface ${IFACE}"
+      ip link set "${IFACE}" up
+
+      # Start dhclient
+      echo "Starting dhclient on ${IFACE}"
+      dhclient ${DHCP_OPTIONS} "${IFACE}"
+
+      if [ "${?}" -ne 0 ]; then
+         echo "ERROR: Failed to start dhclient"
+         exit 1
+      fi
+
+      echo "DHCP configuration started for ${IFACE}"
+      ;;
+
+   down)
+      # Check if dhclient is running for this interface
+      if pidof dhclient >/dev/null 2>&1; then
+         echo "Stopping dhclient on ${IFACE}"
+         dhclient -r "${IFACE}"
+
+         # Wait a moment for dhclient to release
+         sleep 1
+
+         # Kill if still running
+         pkill -f "dhclient.*${IFACE}"
+      fi
+
+      # Bring interface down
+      echo "Bringing down interface ${IFACE}"
+      ip link set "${IFACE}" down
+
+      echo "Interface ${IFACE} taken down successfully"
+      ;;
+
+   *)
+      echo "Usage: ${0} <interface> {up|down}"
+      exit 1
+      ;;
+esac
+
+exit 0
+
+# End /usr/libexec/initd/network-services/dhclient

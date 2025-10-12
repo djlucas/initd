@@ -13,12 +13,25 @@ echo
 # Create output directory if it doesn't exist
 mkdir -p "${OUTPUT_DIR}"
 
-# Find all shell scripts (executable files in scripts/ and .sh files in analysis/)
-SCRIPT_FILES=$(find "${PROJECT_ROOT}/scripts" -type f -executable 2>/dev/null)
+# Find all shell scripts by examining file contents
+# 1. All files in scripts/ (regardless of executable bit)
+# 2. All .sh files in analysis/
+SCRIPT_FILES=$(find "${PROJECT_ROOT}/scripts" -type f 2>/dev/null)
 ANALYSIS_SCRIPTS=$(find "${PROJECT_ROOT}/analysis" -name "*.sh" -type f 2>/dev/null)
 
 # Combine the lists
 ALL_SCRIPTS="${SCRIPT_FILES} ${ANALYSIS_SCRIPTS}"
+
+# Filter to only actual shell scripts (have #!/bin/bash or #!/bin/sh shebang)
+SHELL_SCRIPTS=""
+for file in ${ALL_SCRIPTS}; do
+    if head -n 1 "${file}" 2>/dev/null | grep -q '^#!/bin/\(ba\)\?sh'; then
+        SHELL_SCRIPTS="${SHELL_SCRIPTS} ${file}"
+    fi
+done
+
+# Use filtered list
+ALL_SCRIPTS="${SHELL_SCRIPTS}"
 
 if [ -z "${ALL_SCRIPTS}" ]; then
     echo "No shell scripts found to analyze"

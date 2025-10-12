@@ -210,6 +210,7 @@ static int stop_service(struct unit_file *unit) {
 
     req.type = REQ_STOP_SERVICE;
     req.service_pid = unit->pid;
+    req.kill_mode = unit->config.service.kill_mode;
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
 
     fprintf(stderr, "slave: stopping %s (pid %d)\n", unit->name, unit->pid);
@@ -270,6 +271,11 @@ static pid_t start_service(struct unit_file *unit) {
             fprintf(stderr, "slave: failed to lookup user %s\n", unit->config.service.user);
             return -1;
         }
+
+        /* Copy service configuration for environment setup */
+        req.private_tmp = unit->config.service.private_tmp;
+        req.limit_nofile = unit->config.service.limit_nofile;
+        req.kill_mode = unit->config.service.kill_mode;
     }
 
     /* Send request to master */

@@ -30,6 +30,10 @@ struct priv_request {
     char **exec_args;       /* For START_SERVICE (NULL-terminated) */
     uid_t run_uid;          /* User to run as */
     gid_t run_gid;          /* Group to run as */
+    /* Service configuration for setup_service_environment */
+    bool private_tmp;       /* PrivateTmp= */
+    int limit_nofile;       /* LimitNOFILE= (-1 = not set) */
+    int kill_mode;          /* KillMode= (enum kill_mode) */
 };
 
 /* Response types from daemon to worker */

@@ -7,13 +7,18 @@
  * SPDX-License-Identifier: MIT
  */
 
-#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
+#ifdef __linux__
+#include <sched.h>
+#include <sys/mount.h>
+#endif
 #include "privileged-ops.h"
 #include "unit.h"
 #include "log.h"
@@ -229,4 +234,61 @@ bool is_unit_enabled(struct unit_file *unit) {
     }
 
     return false;
+}
+
+/* Setup service environment before exec (PrivateTmp, LimitNOFILE, etc.)
+ * Called in child process before exec, while still running as root
+ * Returns 0 on success, -1 on error
+ */
+int setup_service_environment(const struct service_section *service) {
+#ifdef __linux__
+    /* PrivateTmp - Create private mount namespace with tmpfs /tmp */
+    if (service->private_tmp) {
+        if (unshare(CLONE_NEWNS) < 0) {
+            log_msg(LOG_ERR, "init", "Failed to create mount namespace for PrivateTmp: %s", strerror(errno));
+            return -1;
+        }
+
+        /* Mount private tmpfs on /tmp */
+        if (mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777,size=1G") < 0) {
+            log_msg(LOG_ERR, "init", "Failed to mount private /tmp: %s", strerror(errno));
+            return -1;
+        }
+
+        log_msg(LOG_INFO, "init", "Created private /tmp for service");
+    }
+#else
+    /* TODO: On non-Linux, create real directory: mkdir /tmp/initd-<service>-<pid> and chdir() to it */
+    if (service->private_tmp) {
+        log_msg(LOG_WARNING, "init", "PrivateTmp not supported on this platform, ignoring");
+    }
+#endif
+
+    /* LimitNOFILE - Set file descriptor limit */
+    if (service->limit_nofile >= 0) {
+        struct rlimit rlim;
+
+        if (service->limit_nofile == 0) {
+            /* infinity - set to maximum */
+            rlim.rlim_cur = RLIM_INFINITY;
+            rlim.rlim_max = RLIM_INFINITY;
+        } else {
+            rlim.rlim_cur = service->limit_nofile;
+            rlim.rlim_max = service->limit_nofile;
+        }
+
+        if (setrlimit(RLIMIT_NOFILE, &rlim) < 0) {
+            log_msg(LOG_ERR, "init", "Failed to set RLIMIT_NOFILE to %d: %s",
+                     service->limit_nofile, strerror(errno));
+            return -1;
+        }
+
+        if (service->limit_nofile == 0) {
+            log_msg(LOG_INFO, "init", "Set RLIMIT_NOFILE to infinity");
+        } else {
+            log_msg(LOG_INFO, "init", "Set RLIMIT_NOFILE to %d", service->limit_nofile);
+        }
+    }
+
+    return 0;
 }

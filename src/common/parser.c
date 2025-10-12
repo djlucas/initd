@@ -116,6 +116,24 @@ static int parse_service_key(struct service_section *service, const char *key, c
         service->timeout_start_sec = atoi(value);
     } else if (strcmp(key, "TimeoutStopSec") == 0) {
         service->timeout_stop_sec = atoi(value);
+    } else if (strcmp(key, "PrivateTmp") == 0) {
+        if (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "1") == 0) {
+            service->private_tmp = true;
+        } else {
+            service->private_tmp = false;
+        }
+    } else if (strcmp(key, "KillMode") == 0) {
+        if (strcmp(value, "control-group") == 0) service->kill_mode = KILL_CONTROL_GROUP;
+        else if (strcmp(value, "process") == 0) service->kill_mode = KILL_PROCESS;
+        else if (strcmp(value, "mixed") == 0) service->kill_mode = KILL_MIXED;
+        else if (strcmp(value, "none") == 0) service->kill_mode = KILL_NONE;
+        else service->kill_mode = KILL_PROCESS; /* Default to process */
+    } else if (strcmp(key, "LimitNOFILE") == 0) {
+        if (strcmp(value, "infinity") == 0) {
+            service->limit_nofile = 0; /* 0 = unlimited */
+        } else {
+            service->limit_nofile = atoi(value);
+        }
     } else {
         return -1; /* Unknown key */
     }
@@ -202,6 +220,11 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     const char *name = strrchr(path, '/');
     name = name ? name + 1 : path;
     strncpy(unit->name, name, sizeof(unit->name) - 1);
+
+    /* Set defaults for new fields */
+    unit->config.service.kill_mode = KILL_PROCESS;  /* Default: only kill main process */
+    unit->config.service.limit_nofile = -1;         /* Default: not set (inherit system default) */
+    unit->config.service.private_tmp = false;        /* Default: no private /tmp */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

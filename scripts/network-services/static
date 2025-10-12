@@ -26,51 +26,98 @@ case "${ACTION}" in
       echo "Bringing up interface ${IFACE}"
       ip link set ${IFACE} up
 
-      # Validate required variables
-      if [ -z "${IP}" ]; then
-         echo "ERROR: IP variable not set in configuration"
-         exit 1
-      fi
+      # IPv4 Configuration
+      if [ -n "${IP}" ]; then
+         if [ -z "${PREFIX}" ]; then
+            echo "WARNING: PREFIX not set, assuming /24"
+            PREFIX=24
+         fi
 
-      if [ -z "${PREFIX}" ]; then
-         echo "WARNING: PREFIX not set, assuming /24"
-         PREFIX=24
-      fi
+         # Add primary IPv4 address
+         echo "Adding primary IPv4: ${IP}/${PREFIX}"
+         ip addr add ${IP}/${PREFIX} dev ${IFACE}
 
-      # Add primary IP address
-      echo "Adding primary IP: ${IP}/${PREFIX}"
-      ip addr add ${IP}/${PREFIX} dev ${IFACE}
+         if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to add primary IPv4 address"
+            exit 1
+         fi
 
-      if [ $? -ne 0 ]; then
-         echo "ERROR: Failed to add primary IP address"
-         exit 1
-      fi
+         # Add additional IPv4 addresses
+         if [ -n "${ADDITIONAL_IPS}" ]; then
+            for addr in ${ADDITIONAL_IPS}; do
+               echo "Adding additional IPv4: ${addr}"
+               ip addr add ${addr} dev ${IFACE}
+            done
+         fi
 
-      # Add additional IP addresses
-      if [ -n "${ADDITIONAL_IPS}" ]; then
-         for addr in ${ADDITIONAL_IPS}; do
-            echo "Adding additional IP: ${addr}"
-            ip addr add ${addr} dev ${IFACE}
-         done
-      fi
+         # Add default IPv4 gateway (if not already set)
+         if [ -n "${GATEWAY}" ]; then
+            if ip -4 route | grep -q "^default"; then
+               echo "IPv4 default gateway already set, skipping"
+            else
+               echo "Setting IPv4 default gateway: ${GATEWAY}"
+               ip route add default via ${GATEWAY} dev ${IFACE}
+            fi
+         fi
 
-      # Add default gateway (if not already set)
-      if [ -n "${GATEWAY}" ]; then
-         if ip route | grep -q "^default"; then
-            echo "Default gateway already set, skipping"
-         else
-            echo "Setting default gateway: ${GATEWAY}"
-            ip route add default via ${GATEWAY} dev ${IFACE}
+         # Add IPv4 static routes
+         if [ -n "${STATIC_ROUTES}" ]; then
+            echo "${STATIC_ROUTES}" | while IFS= read -r route; do
+               [ -z "${route}" ] && continue
+               echo "Adding IPv4 static route: ${route}"
+               ip route add ${route} dev ${IFACE}
+            done
          fi
       fi
 
-      # Add static routes
-      if [ -n "${STATIC_ROUTES}" ]; then
-         echo "${STATIC_ROUTES}" | while IFS= read -r route; do
-            [ -z "${route}" ] && continue
-            echo "Adding static route: ${route}"
-            ip route add ${route} dev ${IFACE}
-         done
+      # IPv6 Configuration
+      if [ -n "${IP6}" ]; then
+         if [ -z "${PREFIX6}" ]; then
+            echo "WARNING: PREFIX6 not set, assuming /64"
+            PREFIX6=64
+         fi
+
+         # Add primary IPv6 address
+         echo "Adding primary IPv6: ${IP6}/${PREFIX6}"
+         ip addr add ${IP6}/${PREFIX6} dev ${IFACE}
+
+         if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to add primary IPv6 address"
+            exit 1
+         fi
+
+         # Add additional IPv6 addresses
+         if [ -n "${ADDITIONAL_IP6S}" ]; then
+            for addr in ${ADDITIONAL_IP6S}; do
+               echo "Adding additional IPv6: ${addr}"
+               ip addr add ${addr} dev ${IFACE}
+            done
+         fi
+
+         # Add default IPv6 gateway (if not already set)
+         if [ -n "${GATEWAY6}" ]; then
+            if ip -6 route | grep -q "^default"; then
+               echo "IPv6 default gateway already set, skipping"
+            else
+               echo "Setting IPv6 default gateway: ${GATEWAY6}"
+               ip -6 route add default via ${GATEWAY6} dev ${IFACE}
+            fi
+         fi
+
+         # Add IPv6 static routes
+         if [ -n "${STATIC_ROUTES6}" ]; then
+            echo "${STATIC_ROUTES6}" | while IFS= read -r route; do
+               [ -z "${route}" ] && continue
+               echo "Adding IPv6 static route: ${route}"
+               ip -6 route add ${route} dev ${IFACE}
+            done
+         fi
+      fi
+
+      # Validate that at least one IP was configured
+      if [ -z "${IP}" ] && [ -z "${IP6}" ]; then
+         echo "ERROR: Neither IP nor IP6 variable set in configuration"
+         exit 1
       fi
 
       echo "Interface ${IFACE} configured successfully"
@@ -79,34 +126,65 @@ case "${ACTION}" in
    down)
       echo "Taking down interface ${IFACE}"
 
-      # Remove static routes first
-      if [ -n "${STATIC_ROUTES}" ]; then
-         echo "${STATIC_ROUTES}" | while IFS= read -r route; do
+      # Remove IPv6 static routes first
+      if [ -n "${STATIC_ROUTES6}" ]; then
+         echo "${STATIC_ROUTES6}" | while IFS= read -r route; do
             [ -z "${route}" ] && continue
-            echo "Removing static route: ${route}"
-            ip route del ${route} dev ${IFACE} 2>/dev/null
+            echo "Removing IPv6 static route: ${route}"
+            ip -6 route del ${route} dev ${IFACE} 2>/dev/null
          done
       fi
 
-      # Remove default gateway if set
-      if [ -n "${GATEWAY}" ]; then
-         if ip route | grep -q "^default.*via ${GATEWAY}"; then
-            echo "Removing default gateway: ${GATEWAY}"
-            ip route del default via ${GATEWAY} 2>/dev/null
+      # Remove IPv6 default gateway if set
+      if [ -n "${GATEWAY6}" ]; then
+         if ip -6 route | grep -q "^default.*via ${GATEWAY6}"; then
+            echo "Removing IPv6 default gateway: ${GATEWAY6}"
+            ip -6 route del default via ${GATEWAY6} 2>/dev/null
          fi
       fi
 
-      # Remove additional IPs
-      if [ -n "${ADDITIONAL_IPS}" ]; then
-         for addr in ${ADDITIONAL_IPS}; do
-            echo "Removing additional IP: ${addr}"
+      # Remove additional IPv6 addresses
+      if [ -n "${ADDITIONAL_IP6S}" ]; then
+         for addr in ${ADDITIONAL_IP6S}; do
+            echo "Removing additional IPv6: ${addr}"
             ip addr del ${addr} dev ${IFACE} 2>/dev/null
          done
       fi
 
-      # Remove primary IP
+      # Remove primary IPv6 address
+      if [ -n "${IP6}" ] && [ -n "${PREFIX6}" ]; then
+         echo "Removing primary IPv6: ${IP6}/${PREFIX6}"
+         ip addr del ${IP6}/${PREFIX6} dev ${IFACE} 2>/dev/null
+      fi
+
+      # Remove IPv4 static routes
+      if [ -n "${STATIC_ROUTES}" ]; then
+         echo "${STATIC_ROUTES}" | while IFS= read -r route; do
+            [ -z "${route}" ] && continue
+            echo "Removing IPv4 static route: ${route}"
+            ip route del ${route} dev ${IFACE} 2>/dev/null
+         done
+      fi
+
+      # Remove IPv4 default gateway if set
+      if [ -n "${GATEWAY}" ]; then
+         if ip route | grep -q "^default.*via ${GATEWAY}"; then
+            echo "Removing IPv4 default gateway: ${GATEWAY}"
+            ip route del default via ${GATEWAY} 2>/dev/null
+         fi
+      fi
+
+      # Remove additional IPv4 addresses
+      if [ -n "${ADDITIONAL_IPS}" ]; then
+         for addr in ${ADDITIONAL_IPS}; do
+            echo "Removing additional IPv4: ${addr}"
+            ip addr del ${addr} dev ${IFACE} 2>/dev/null
+         done
+      fi
+
+      # Remove primary IPv4 address
       if [ -n "${IP}" ] && [ -n "${PREFIX}" ]; then
-         echo "Removing primary IP: ${IP}/${PREFIX}"
+         echo "Removing primary IPv4: ${IP}/${PREFIX}"
          ip addr del ${IP}/${PREFIX} dev ${IFACE} 2>/dev/null
       fi
 

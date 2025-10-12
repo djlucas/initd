@@ -1,0 +1,15 @@
+# Begin /etc/sysconfig/samba
+
+# Options to pass to nmbd.
+NMBD_OPTS=
+
+# Options to pass to samba.
+SAMBA_OPTS=
+
+# Options to pass to smbd.
+SMBD_OPTS=
+
+# Options to pass to winbindd.
+WINBINDD_OPTS=
+
+# End /etc/sysconfig/samba

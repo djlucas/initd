@@ -1,0 +1,17 @@
+[Unit]
+Description=Getty on %I
+Documentation=man:agetty(8)
+After=sysinit.target
+Before=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/sbin/agetty --noclear %I 38400 linux
+Restart=always
+RestartSec=0
+
+# Job control is required for getty
+IgnoreSIGHUP=no
+
+[Install]
+WantedBy=multi-user.target

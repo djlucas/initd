@@ -23,7 +23,7 @@ mkdir -p   /run/lock
 chmod 1777 /run/lock
 
 # Create /run/utmp
-> /run/utmp
+: > /run/utmp
 if grep -q '^utmp:' /etc/group 2>/dev/null; then
    chmod 664 /run/utmp
    chgrp utmp /run/utmp

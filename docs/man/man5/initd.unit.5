@@ -1,0 +1,463 @@
+.TH INITD.UNIT 5 "2025" "initd 0.1" "File Formats"
+.SH NAME
+initd.unit \- initd unit file format
+.SH SYNOPSIS
+.nf
+/etc/initd/system/*.{service,timer,socket,target}
+/lib/initd/system/*.{service,timer,socket,target}
+.fi
+.SH DESCRIPTION
+Unit files are plain text INI-style configuration files that encode information
+about services, timers, sockets, and targets managed by
+.BR initd .
+Unit files are compatible with the systemd unit file format, allowing reuse of
+existing unit files where beneficial.
+.PP
+Unit files are loaded from multiple directories with the following priority:
+.IP 1. 4
+.I /etc/initd/system/
+\- Local administrator configurations (highest priority)
+.IP 2.
+.I /lib/initd/system/
+\- Distribution-provided units
+.IP 3.
+.I /etc/systemd/system/
+\- Compatibility with systemd units
+.IP 4.
+.I /lib/systemd/system/
+\- Compatibility with systemd units (lowest priority)
+.PP
+When the same unit file exists in multiple directories, the file from the
+higher-priority directory is used.
+.SH UNIT FILE STRUCTURE
+Unit files consist of sections denoted by
+.B [Section]
+headers, followed by key-value pairs in the format
+.BR Key=Value .
+.PP
+Common sections:
+.IP \(bu 2
+.B [Unit]
+\- Generic unit information and dependencies
+.IP \(bu
+.B [Service]
+\- Service-specific configuration
+.IP \(bu
+.B [Timer]
+\- Timer-specific configuration
+.IP \(bu
+.B [Socket]
+\- Socket-specific configuration
+.IP \(bu
+.B [Install]
+\- Installation information for enable/disable
+.SH [UNIT] SECTION
+The
+.B [Unit]
+section contains generic information about the unit that is not dependent on
+the type of unit.
+.TP
+.B Description=
+A human-readable description of the unit.
+.TP
+.B After=
+Space-separated list of unit names. This unit will be started after the
+specified units are active. Used for ordering only, not dependencies.
+.TP
+.B Before=
+Space-separated list of unit names. This unit will be started before the
+specified units. Used for ordering only, not dependencies.
+.TP
+.B Requires=
+Space-separated list of unit names. This unit requires the specified units
+to be active. If any required unit fails, this unit will fail.
+.TP
+.B Wants=
+Space-separated list of unit names. This unit wants the specified units
+to be active. If a wanted unit fails, this unit continues running.
+.TP
+.B Conflicts=
+Space-separated list of unit names. This unit conflicts with the specified
+units. Starting this unit will stop conflicting units.
+.TP
+.B ConditionPathExists=
+Absolute path to a file or directory. The unit will be skipped if the path
+does not exist.
+.TP
+.B Provides=
+Symbolic name for this unit. Other units can depend on this name, and any
+unit providing it will satisfy the dependency.
+.SH [SERVICE] SECTION
+The
+.B [Service]
+section contains service-specific configuration.
+.SS Command Configuration
+.TP
+.B Type=
+Service type. One of:
+.RS
+.IP \(bu 2
+.B simple
+\- The process specified by ExecStart is the main process (default)
+.IP \(bu
+.B forking
+\- The process forks and the parent exits; PIDFile should be set
+.IP \(bu
+.B oneshot
+\- Short-lived process; RemainAfterExit controls restart behavior
+.RE
+.TP
+.B ExecStart=
+Command line to execute to start the service. Must be an absolute path.
+Shell syntax is not supported; use
+.B /bin/sh -c "..."
+for shell commands. Required.
+.TP
+.B ExecStartPre=
+Command line to execute before ExecStart. May be specified multiple times.
+.TP
+.B ExecStartPost=
+Command line to execute after ExecStart. May be specified multiple times.
+.TP
+.B ExecStop=
+Command line to execute to stop the service. If not specified, the service
+is terminated by sending SIGTERM.
+.TP
+.B ExecReload=
+Command line to execute to reload the service configuration. Typically sends
+SIGHUP to the main process.
+.SS Process Configuration
+.TP
+.B User=
+User name or UID to run the service as. If not specified, runs as root.
+.TP
+.B Group=
+Group name or GID to run the service as. If not specified, uses the user's
+primary group.
+.TP
+.B WorkingDirectory=
+Working directory to use for the service process. If not specified, uses
+the root directory.
+.TP
+.B PIDFile=
+Absolute path to PID file. Used with Type=forking to track the main process.
+.SS Environment Configuration
+.TP
+.B Environment=
+Set environment variables. Format:
+.BR "KEY=VALUE" .
+May be specified multiple times.
+.TP
+.B EnvironmentFile=
+Absolute path to a file containing environment variables in
+.BR KEY=VALUE
+format, one per line. Lines starting with # are comments.
+.SS Restart Configuration
+.TP
+.B Restart=
+Restart policy. One of:
+.RS
+.IP \(bu 2
+.B no
+\- Never restart (default)
+.IP \(bu
+.B always
+\- Always restart regardless of exit code
+.IP \(bu
+.B on-failure
+\- Restart only on failure (non-zero exit code)
+.RE
+.TP
+.B RestartSec=
+Time to wait before restarting a service. Takes a time value in seconds
+(optionally with unit suffix: s, min, h). Default: 100ms.
+.SS Timeout Configuration
+.TP
+.B TimeoutStartSec=
+Time to wait for service startup. If the service does not become active
+within this time, it is considered failed. Default: 90s.
+.TP
+.B TimeoutStopSec=
+Time to wait for service shutdown. If the service does not stop within
+this time, it is forcefully terminated with SIGKILL. Default: 90s.
+.TP
+.B RemainAfterExit=
+Boolean. If true, the service is considered active even after the process
+exits. Useful for Type=oneshot. Default: false.
+.SS Security and Resource Control
+.TP
+.B PrivateTmp=
+Boolean. If true, the service gets a private /tmp directory that is isolated
+from other services. Implemented using mount namespaces on Linux. Not
+supported on other platforms. Default: false.
+.TP
+.B LimitNOFILE=
+Maximum number of open file descriptors for the service. May be a number or
+.B infinity
+to remove the limit. Default: inherit from system.
+.TP
+.B KillMode=
+Specifies how processes of this service should be terminated. One of:
+.RS
+.IP \(bu 2
+.B process
+\- Only terminate the main process (default)
+.IP \(bu
+.B control-group
+\- Terminate all processes in the service's process group
+.IP \(bu
+.B mixed
+\- SIGTERM to main process, then SIGKILL to all processes after 100ms
+.IP \(bu
+.B none
+\- Don't send any signals; service must exit on its own
+.RE
+.IP
+All services run in their own process group. KillMode determines which
+processes receive termination signals.
+.SH [TIMER] SECTION
+The
+.B [Timer]
+section contains timer-specific configuration. Timer units activate
+associated service units at scheduled times.
+.TP
+.B OnCalendar=
+Calendar event expression. Format:
+.BR "DayOfWeek Year-Month-Day Hour:Minute:Second" .
+Supports shortcuts: daily, weekly, monthly, hourly.
+.TP
+.B OnBootSec=
+Time to wait after boot before activating. Takes a time value.
+.TP
+.B OnStartupSec=
+Time to wait after the timer is started before activating.
+.TP
+.B OnUnitActiveSec=
+Time to wait after the unit was last activated.
+.TP
+.B OnUnitInactiveSec=
+Time to wait after the unit was last deactivated.
+.TP
+.B Persistent=
+Boolean. If true, catch up on missed runs after system boot. Default: false.
+.TP
+.B RandomizedDelaySec=
+Random delay to add to timer events to prevent multiple timers from firing
+simultaneously.
+.SH [SOCKET] SECTION
+The
+.B [Socket]
+section contains socket-specific configuration. Socket units listen on
+network or Unix sockets and activate associated services on connection.
+.TP
+.B ListenStream=
+TCP socket or Unix stream socket to listen on. For TCP:
+.BR [address]:port .
+For Unix:
+.BR /path/to/socket .
+May be specified multiple times.
+.TP
+.B ListenDatagram=
+UDP socket or Unix datagram socket to listen on. Same format as ListenStream.
+May be specified multiple times.
+.TP
+.B Accept=
+Boolean. If true, a separate service instance is spawned for each connection
+(inetd-style). If false, all connections are passed to one service instance.
+Default: false.
+.TP
+.B IdleTimeout=
+Time to wait before stopping an idle service. This is an initd-specific
+extension not present in systemd. Takes a time value.
+.SH [INSTALL] SECTION
+The
+.B [Install]
+section contains installation information used by
+.BR "initctl enable"
+and
+.BR "initctl disable" .
+.TP
+.B WantedBy=
+Space-separated list of target units. When this unit is enabled, symbolic
+links are created in the .wants/ directories of the specified targets.
+.TP
+.B RequiredBy=
+Space-separated list of target units. When this unit is enabled, symbolic
+links are created in the .requires/ directories of the specified targets.
+.TP
+.B Also=
+Space-separated list of units that should be enabled/disabled along with
+this unit.
+.SH UNIT TYPES
+.SS Service Units (.service)
+Service units describe system services. They are the most common unit type
+and describe how to start, stop, and restart services.
+.SS Timer Units (.timer)
+Timer units activate associated service units at scheduled times. The service
+unit should have the same base name (e.g., backup.timer activates
+backup.service).
+.SS Socket Units (.socket)
+Socket units activate associated service units on incoming connections. The
+service receives the connected socket as file descriptor 3.
+.SS Target Units (.target)
+Target units group other units together, similar to SysV runlevels. They
+have no specific configuration beyond the [Unit] section.
+.SH UNSUPPORTED UNIT TYPES
+The following systemd unit types are not supported:
+.IP \(bu 2
+.B .mount
+\- Use /etc/fstab instead
+.IP \(bu
+.B .automount
+\- Use /etc/fstab with auto mount options
+.IP \(bu
+.B .swap
+\- Use /etc/fstab for swap configuration
+.IP \(bu
+.B .path
+\- Path-based activation not implemented
+.IP \(bu
+.B .device
+\- Hardware management not implemented
+.IP \(bu
+.B .scope
+\- Runtime-created units (systemd internal)
+.IP \(bu
+.B .slice
+\- cgroup hierarchy management (not implemented)
+.SH SPECIFIERS
+Unit files support the following specifiers that are replaced at runtime:
+.TP
+.B %I
+Instance name for template units (e.g., eth0 for network@eth0.service)
+.TP
+.B %i
+Same as %I but with escaping for file system paths
+.TP
+.B %p
+Unit name prefix (everything before the @)
+.SH EXAMPLES
+.SS Simple Service
+.nf
+[Unit]
+Description=My Application
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/myapp --foreground
+User=myapp
+Group=myapp
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+.fi
+.SS Forking Service with Security
+.nf
+[Unit]
+Description=Web Server
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/run/webserver.pid
+ExecStart=/usr/sbin/webserver
+ExecReload=/bin/kill -HUP $MAINPID
+User=www
+Group=www
+PrivateTmp=true
+LimitNOFILE=65536
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+.fi
+.SS Template Service
+.nf
+[Unit]
+Description=Configure %I network interface
+After=network-pre.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sysconfig/ifconfig.%I
+ExecStart=/usr/libexec/initd/network-services/static %I up
+ExecStop=/usr/libexec/initd/network-services/static %I down
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+.fi
+.SS Timer Unit
+.nf
+[Unit]
+Description=Daily Backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target
+.fi
+.SS Socket Unit
+.nf
+[Unit]
+Description=SSH Socket
+
+[Socket]
+ListenStream=22
+Accept=no
+IdleTimeout=5min
+
+[Install]
+WantedBy=sockets.target
+.fi
+.SH FILES
+.TP
+.I /etc/initd/system/*.service
+Local service unit files
+.TP
+.I /lib/initd/system/*.service
+System service unit files
+.TP
+.I /etc/sysconfig/*
+Environment configuration files for services
+.SH SEE ALSO
+.BR initctl (1),
+.BR systemctl (1),
+.BR init (8),
+.BR supervisor-slave (8),
+.BR timer-daemon (8),
+.BR socket-activator (8)
+.SH NOTES
+.SS Differences from systemd
+.IP \(bu 2
+.B IdleTimeout=
+in socket units is an initd extension
+.IP \(bu
+.B PrivateTmp=
+is Linux-only (systemd supports it everywhere)
+.IP \(bu
+.B KillMode=
+uses process groups instead of cgroups for portability
+.IP \(bu
+Many advanced systemd directives are not supported
+.SS Platform Compatibility
+.IP \(bu 2
+.B PrivateTmp=
+only works on Linux (uses mount namespaces)
+.IP \(bu
+.B KillMode=
+and
+.B LimitNOFILE=
+are portable (POSIX standard)
+.IP \(bu
+Services run in process groups for proper lifecycle management
+.SH AUTHOR
+Written for the initd project.
+.SH COPYRIGHT
+Copyright \(co 2025. Licensed under the MIT License.

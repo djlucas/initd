@@ -187,6 +187,24 @@ static pid_t start_service_process(struct priv_request *req) {
     if (pid == 0) {
         /* Child: will become service */
 
+        /* Create new process group so we can kill all children with killpg() */
+        if (setsid() < 0) {
+            perror("supervisor-master: setsid");
+            /* Non-fatal, continue anyway */
+        }
+
+        /* Setup service environment (PrivateTmp, LimitNOFILE) BEFORE dropping privileges */
+        struct service_section svc_config = {
+            .private_tmp = req->private_tmp,
+            .limit_nofile = req->limit_nofile,
+            .kill_mode = req->kill_mode
+        };
+
+        if (setup_service_environment(&svc_config) < 0) {
+            fprintf(stderr, "supervisor-master: failed to setup service environment\n");
+            _exit(1);
+        }
+
         /* Drop privileges if User/Group specified */
         if (req->run_gid != 0) {
             if (setgid(req->run_gid) < 0) {
@@ -201,9 +219,6 @@ static pid_t start_service_process(struct priv_request *req) {
                 _exit(1);
             }
         }
-
-        /* TODO: Set up cgroups (Linux only) */
-        /* TODO: Set up namespaces if configured */
 
         /* Exec service */
         execl("/bin/sh", "sh", "-c", req->exec_path, NULL);
@@ -236,13 +251,64 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         break;
 
     case REQ_STOP_SERVICE:
-        fprintf(stderr, "supervisor-master: stop service request: pid %d\n", req->service_pid);
-        if (kill(req->service_pid, SIGTERM) < 0) {
-            resp->type = RESP_ERROR;
-            resp->error_code = errno;
-            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
-        } else {
+        fprintf(stderr, "supervisor-master: stop service request: pid %d (kill_mode=%d)\n",
+                req->service_pid, req->kill_mode);
+
+        /* Handle different kill modes */
+        switch (req->kill_mode) {
+        case KILL_NONE:
+            /* Don't kill anything */
+            fprintf(stderr, "supervisor-master: KillMode=none, not sending signal\n");
             resp->type = RESP_SERVICE_STOPPED;
+            break;
+
+        case KILL_PROCESS:
+            /* Kill only the main process (default) */
+            if (kill(req->service_pid, SIGTERM) < 0) {
+                resp->type = RESP_ERROR;
+                resp->error_code = errno;
+                snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
+            } else {
+                resp->type = RESP_SERVICE_STOPPED;
+            }
+            break;
+
+        case KILL_CONTROL_GROUP:
+            /* Kill entire process group */
+            if (killpg(req->service_pid, SIGTERM) < 0) {
+                /* If killpg fails (not a process group leader), fallback to kill */
+                if (kill(req->service_pid, SIGTERM) < 0) {
+                    resp->type = RESP_ERROR;
+                    resp->error_code = errno;
+                    snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service group");
+                } else {
+                    resp->type = RESP_SERVICE_STOPPED;
+                }
+            } else {
+                resp->type = RESP_SERVICE_STOPPED;
+            }
+            break;
+
+        case KILL_MIXED:
+            /* SIGTERM to main process, SIGKILL to rest of group */
+            kill(req->service_pid, SIGTERM);
+            /* Sleep briefly to let main process exit gracefully */
+            usleep(100000); /* 100ms */
+            /* Kill remaining processes in group */
+            killpg(req->service_pid, SIGKILL);
+            resp->type = RESP_SERVICE_STOPPED;
+            break;
+
+        default:
+            /* Fallback to process mode */
+            if (kill(req->service_pid, SIGTERM) < 0) {
+                resp->type = RESP_ERROR;
+                resp->error_code = errno;
+                snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
+            } else {
+                resp->type = RESP_SERVICE_STOPPED;
+            }
+            break;
         }
         break;
 

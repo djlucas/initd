@@ -7,11 +7,11 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (13 tests, 1 will be skipped without root)
+# Build and run all tests (14 tests, 1 will be skipped without root)
 meson compile -C build
 meson test -C build
 
-# Run only non-privileged tests (12 tests)
+# Run only non-privileged tests (13 tests)
 meson test -C build --no-suite privileged
 
 # Run privileged tests (requires root)
@@ -28,6 +28,9 @@ meson test -C build "dependency resolution"
 meson test -C build "state machine"
 meson test -C build "logging system"
 meson test -C build "integration"
+meson test -C build "timer IPC protocol"
+meson test -C build "socket IPC protocol"
+meson test -C build "service features"
 meson test -C build "privileged operations"  # Requires root
 
 # Verbose output
@@ -175,11 +178,39 @@ When run without root, the test properly skips with exit code 77.
 
 Run with: `sudo meson test -C build --suite privileged`
 
+### test-timer-ipc (5 tests)
+Tests timer daemon IPC communication:
+- Timer add request serialization
+- Timer remove request serialization
+- Timer list request serialization
+- Timer status request serialization
+- Timer activation notification serialization
+
+### test-socket-ipc (5 tests)
+Tests socket activator IPC communication:
+- Socket add request serialization
+- Socket remove request serialization
+- Socket list request serialization
+- Socket status request serialization
+- Socket activation notification serialization
+
+### test-service-features (4 tests)
+Tests service directive parsing:
+- **PrivateTmp parsing** - Tests true/false/yes/1 parsing
+- **LimitNOFILE parsing** - Tests numeric values, "infinity", and default (-1)
+- **KillMode parsing** - Tests all four modes (process, control-group, mixed, none) and default
+- **Combined features** - Tests all three directives together in one service file
+
+**Key features tested:**
+- PrivateTmp=true|false (default: false)
+- LimitNOFILE=N|infinity (default: -1 = not set)
+- KillMode=process|control-group|mixed|none (default: process)
+
 ## Test Statistics
 
-**Total: 11 test suites, 89 individual tests - all passing ✅**
+**Total: 14 test suites, 95 individual tests - all passing ✅**
 
-**Regular tests:** 10 suites, 83 tests (no root required)
+**Regular tests:** 13 suites, 89 tests (no root required)
 **Privileged tests:** 1 suite, 6 tests (requires root)
 
 ## CI Integration
