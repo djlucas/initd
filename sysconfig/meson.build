@@ -4,13 +4,13 @@
 # Config file to services mapping
 # Note: winbindd shares the samba config file
 config_to_services = {
-  'git-daemon': ['git-daemon'],
-  'nfs-utils': ['nfs-server', 'nfsd', 'rpc-idmapd', 'rpc-mountd', 'rpc-statd', 'rpc-statd-notify'],
-  'samba': ['samba', 'nmbd', 'smbd', 'smbdat', 'winbindd'],
-  'saslauthd': ['saslauthd'],
-  'sendmail': ['sendmail', 'sm-client'],
-  'slapd': ['slapd'],
-  'svnserve': ['svnserve'],
+  'optional/git-daemon': ['git-daemon'],
+  'optional/nfs-utils': ['nfs-server', 'nfsd', 'rpc-idmapd', 'rpc-mountd', 'rpc-statd', 'rpc-statd-notify'],
+  'optional/samba': ['samba', 'nmbd', 'smbd', 'smbdat', 'winbindd'],
+  'optional/saslauthd': ['saslauthd'],
+  'optional/sendmail': ['sendmail', 'sm-client'],
+  'optional/slapd': ['slapd'],
+  'optional/svnserve': ['svnserve'],
 }
 
 # Install each config file with all services that need it

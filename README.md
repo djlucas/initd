@@ -211,6 +211,51 @@ Unit files go in:
 
 Or use existing systemd unit directories for compatibility.
 
+### Directory Structure
+
+The project follows a consistent organization:
+
+**Unit Files:**
+- `units/reference/` - Core system units (installed by default)
+- `units/optional/` - Optional BLFS service units (installed on demand)
+
+**Configuration Files:**
+- `sysconfig/reference/` - Configuration files for reference units
+- `sysconfig/optional/` - Configuration files for optional services
+
+### Installation
+
+**Main Installation:**
+```bash
+# Install core components and reference units
+DESTDIR=/path/to/staging ninja -C build install
+
+# Install reference units with symlinks (enables core services)
+DESTDIR=/path/to/staging ninja -C build install-reference
+```
+
+**Optional Services:**
+```bash
+# Install individual optional services (51 available)
+DESTDIR=/path/to/staging ninja -C build install-acpid
+DESTDIR=/path/to/staging ninja -C build install-samba
+DESTDIR=/path/to/staging ninja -C build install-httpd
+# ... etc for any of 51 optional services
+
+# Or install all optional services at once
+DESTDIR=/path/to/staging ninja -C build install-everything
+```
+
+**Configuration File Protection:**
+
+When reinstalling services, existing configuration files in `/etc/sysconfig/` are preserved:
+- First reinstall: `config.new`
+- Second reinstall: `config.new-1`
+- Third reinstall: `config.new-2`
+- And so on...
+
+This allows administrators to compare new defaults with their customizations without losing changes.
+
 ### Usage
 
 ```bash

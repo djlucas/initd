@@ -27,34 +27,34 @@ reference_targets = files(
 # Service files for reference installation
 # Core system services that are installed and enabled by default
 reference_services = files(
-  'checkfs.service',
-  'console.service',
-  'createfiles.service',
-  'getty@.service',
-  'klogd.service',
-  'localnet.service',
-  'modules-load.service',
-  'mountfs.service',
-  'mountvirtfs.service',
-  'netfs.service',
-  'network@.service',
-  'remount-root.service',
-  'swap.service',
-  'sysctl.service',
-  'syslogd.service',
-  'udev-retry.service',
-  'udev-settle.service',
-  'udev-trigger.service',
-  'udevd.service',
+  'reference/checkfs.service',
+  'reference/console.service',
+  'reference/createfiles.service',
+  'reference/getty@.service',
+  'reference/klogd.service',
+  'reference/localnet.service',
+  'reference/modules-load.service',
+  'reference/mountfs.service',
+  'reference/mountvirtfs.service',
+  'reference/netfs.service',
+  'reference/network@.service',
+  'reference/remount-root.service',
+  'reference/swap.service',
+  'reference/sysctl.service',
+  'reference/syslogd.service',
+  'reference/udev-retry.service',
+  'reference/udev-settle.service',
+  'reference/udev-trigger.service',
+  'reference/udevd.service',
 )
 
 # Configuration files
 reference_configs = files(
-  'sysconfig/console.conf',
-  'sysconfig/createfiles.conf',
-  'sysconfig/modules.conf',
-  'sysconfig/network-eth0.conf.example',
-  'sysconfig/udev_retry.conf',
+  '../sysconfig/reference/console.conf',
+  '../sysconfig/reference/createfiles.conf',
+  '../sysconfig/reference/modules.conf',
+  '../sysconfig/reference/network-eth0.conf.example',
+  '../sysconfig/reference/udev_retry.conf',
 )
 
 # Install reference targets and services
@@ -155,32 +155,33 @@ install -D -m 644 "$SRCDIR/basic.target" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/sysinit.target" -t "$LIBDIR/initd/system"
 
 # Install services
-install -D -m 644 "$SRCDIR/checkfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/console.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/createfiles.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/getty@.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/klogd.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/localnet.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/modules-load.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/mountfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/mountvirtfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/netfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/network@.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/remount-root.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/swap.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/sysctl.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/syslogd.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/udev-retry.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/udev-settle.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/udev-trigger.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/udevd.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/checkfs.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/console.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/createfiles.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/getty@.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/klogd.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/localnet.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/modules-load.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/mountfs.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/mountvirtfs.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/netfs.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/network@.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/remount-root.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/swap.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/sysctl.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/syslogd.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/udev-retry.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/udev-settle.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/udev-trigger.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/udevd.service" -t "$LIBDIR/initd/system"
 
 # Install configs
-install -D -m 644 "$SRCDIR/sysconfig/console.conf" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SRCDIR/sysconfig/createfiles.conf" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SRCDIR/sysconfig/modules.conf" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SRCDIR/sysconfig/network-eth0.conf.example" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SRCDIR/sysconfig/udev_retry.conf" -t "$SYSCONFDIR/sysconfig"
+SYSCONFIGSRCDIR="@3@"
+install -D -m 644 "$SYSCONFIGSRCDIR/reference/console.conf" -t "$SYSCONFDIR/sysconfig"
+install -D -m 644 "$SYSCONFIGSRCDIR/reference/createfiles.conf" -t "$SYSCONFDIR/sysconfig"
+install -D -m 644 "$SYSCONFIGSRCDIR/reference/modules.conf" -t "$SYSCONFDIR/sysconfig"
+install -D -m 644 "$SYSCONFIGSRCDIR/reference/network-eth0.conf.example" -t "$SYSCONFDIR/sysconfig"
+install -D -m 644 "$SYSCONFIGSRCDIR/reference/udev_retry.conf" -t "$SYSCONFDIR/sysconfig"
 
 # Create wants directories
 mkdir -p "$SYSCONFDIR/initd/system/multi-user.target.wants"
@@ -195,5 +196,5 @@ done
 for service in checkfs.service console.service createfiles.service localnet.service modules-load.service mountfs.service mountvirtfs.service random-seed.service remount-root.service swap.service sysctl.service udev-retry.service udev-settle.service udev-trigger.service udevd.service; do
   ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/sysinit.target.wants/$service"
 done
-'''.format(meson.current_source_dir(), '/' + get_option('prefix') / get_option('libdir'), get_option('sysconfdir'))]
+'''.format(meson.current_source_dir(), '/' + get_option('prefix') / get_option('libdir'), get_option('sysconfdir'), meson.project_source_root() / 'sysconfig')]
 )

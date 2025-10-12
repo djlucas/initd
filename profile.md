@@ -722,6 +722,61 @@ project('PROJECTNAME', 'c',
 - `systemd-compat` - Install systemd compatibility symlinks
 - `dynamic-init` - Build init dynamically linked (default: static)
 
+### Installation Targets
+
+**Core Installation:**
+```bash
+# Build the project
+ninja -C build
+
+# Install core components
+DESTDIR=/staging/path ninja -C build install
+
+# Install reference units (core system services with symlinks)
+DESTDIR=/staging/path ninja -C build install-reference
+```
+
+**Optional Service Installation:**
+
+The build system provides 51 individual install targets for optional BLFS services:
+
+```bash
+# Install specific optional services
+DESTDIR=/staging/path ninja -C build install-acpid
+DESTDIR=/staging/path ninja -C build install-samba
+DESTDIR=/staging/path ninja -C build install-httpd
+DESTDIR=/staging/path ninja -C build install-postgresql
+# ... and 47 more
+
+# Or install all optional services at once
+DESTDIR=/staging/path ninja -C build install-everything
+```
+
+**Available optional services:**
+acpid, dhcpcd-at, exim, git-daemon, gpm, haveged, httpd, iptables, kea-ctrl-agent, kea-ddns-server, kea-dhcp4-server, kea-dhcp6-server, krb5-kadmind, krb5-kdc, krb5-kpropd, lightdm, mariadb, named, nfs-client, nfs-server, nfsd, nftables, nmbd, ntpd, php-fpm, postfix, postgresql, proftpd, random-seed, rpc-idmapd, rpc-mountd, rpc-statd-notify, rpc-statd, rsyncd, rsync-at, rsyslog, samba, saslauthd, sendmail, slapd, sm-client, smbd, smbd-at, sshd, ssh-at, svnserve, syslog-ng, sysmond, unbound, vsftpd, winbindd
+
+**Configuration File Protection:**
+
+Optional install targets protect existing configuration files in `/etc/sysconfig/`:
+
+- If config doesn't exist: installed as-is
+- If config exists: new version installed with `.new` suffix
+- On subsequent installs: `.new-1`, `.new-2`, `.new-3`, etc.
+
+Example progression:
+```
+/etc/sysconfig/samba          (original, preserved)
+/etc/sysconfig/samba.new      (first reinstall)
+/etc/sysconfig/samba.new-1    (second reinstall)
+/etc/sysconfig/samba.new-2    (third reinstall)
+```
+
+This allows administrators to:
+- Compare new defaults with their customizations
+- Merge changes manually using `diff`
+- Never lose configuration customizations
+- Audit changes between versions
+
 ### Directory Structure
 
 ```
@@ -769,10 +824,33 @@ project/
 │       └── log.h
 ├── units/
 │   ├── meson.build
-│   ├── rescue.target
+│   ├── default.target
 │   ├── multi-user.target
-│   ├── graphical.target
-│   └── ...
+│   ├── basic.target
+│   ├── sysinit.target
+│   ├── reference/              (core system units)
+│   │   ├── checkfs.service
+│   │   ├── console.service
+│   │   ├── getty@.service
+│   │   └── ...
+│   └── optional/               (BLFS optional services)
+│       ├── meson.build
+│       ├── acpid.service
+│       ├── samba.service
+│       ├── httpd.service
+│       └── ...
+├── sysconfig/
+│   ├── meson.build
+│   ├── reference/              (core system configs)
+│   │   ├── console.conf
+│   │   ├── createfiles.conf
+│   │   ├── modules.conf
+│   │   └── ...
+│   └── optional/               (BLFS service configs)
+│       ├── samba
+│       ├── nfs-utils
+│       ├── git-daemon
+│       └── ...
 ├── scripts/
 │   ├── meson.build
 │   ├── journalctl
