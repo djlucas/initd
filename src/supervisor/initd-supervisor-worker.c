@@ -407,7 +407,7 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 
 /* Create and bind control socket */
 static int create_control_socket(void) {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("slave: socket");
         return -1;

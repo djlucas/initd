@@ -80,7 +80,7 @@ static int setup_signals(void) {
 static int create_ipc_socket(int *master_fd, int *slave_fd) {
     int sv[2];
 
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
         perror("supervisor-master: socketpair");
         return -1;
     }

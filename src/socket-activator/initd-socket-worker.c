@@ -99,7 +99,7 @@ static int create_control_socket(void) {
     int fd;
     struct sockaddr_un addr;
 
-    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("socket-activator: socket");
         return -1;
@@ -142,7 +142,7 @@ static int create_listen_socket(struct socket_instance *sock) {
 
     /* Unix stream socket */
     if (s->listen_stream && s->listen_stream[0] == '/') {
-        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
             perror("socket-activator: socket");
             return -1;
@@ -188,7 +188,7 @@ static int create_listen_socket(struct socket_instance *sock) {
         strncpy(host, s->listen_stream, host_len);
         host[host_len] = '\0';
 
-        fd = socket(AF_INET, SOCK_STREAM, 0);
+        fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
             perror("socket-activator: socket");
             return -1;
@@ -226,7 +226,7 @@ static int create_listen_socket(struct socket_instance *sock) {
 
     /* Unix datagram socket */
     if (s->listen_datagram && s->listen_datagram[0] == '/') {
-        fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
             perror("socket-activator: socket");
             return -1;
@@ -265,7 +265,7 @@ static int create_listen_socket(struct socket_instance *sock) {
         strncpy(host, s->listen_datagram, host_len);
         host[host_len] = '\0';
 
-        fd = socket(AF_INET, SOCK_DGRAM, 0);
+        fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
             perror("socket-activator: socket");
             return -1;

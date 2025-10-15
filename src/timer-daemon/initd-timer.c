@@ -160,7 +160,7 @@ static int spawn_worker(void) {
     gid_t worker_gid = 0;
 
     /* Create socketpair for IPC */
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) < 0) {
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) < 0) {
         perror("initd-timer: socketpair");
         return -1;
     }

@@ -58,7 +58,7 @@ int recv_control_response(int fd, struct control_response *resp) {
 
 /* Connect to supervisor control socket */
 int connect_to_supervisor(void) {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("socket");
         return -1;
@@ -79,7 +79,7 @@ int connect_to_supervisor(void) {
 
 /* Connect to timer daemon control socket */
 int connect_to_timer_daemon(void) {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("socket");
         return -1;
@@ -100,7 +100,7 @@ int connect_to_timer_daemon(void) {
 
 /* Connect to socket activator control socket */
 int connect_to_socket_activator(void) {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("socket");
         return -1;

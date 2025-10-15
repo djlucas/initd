@@ -80,7 +80,7 @@ static int create_control_socket(void) {
     int fd;
     struct sockaddr_un addr;
 
-    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("timer-daemon: socket");
         return -1;
@@ -228,7 +228,7 @@ static int activate_via_supervisor(const char *service_name) {
     struct control_response resp = {0};
 
     /* Connect to supervisor */
-    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         return -1;
     }
