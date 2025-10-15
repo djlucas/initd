@@ -457,8 +457,12 @@ static int main_loop(void) {
             /* Send response */
             if (send_response(ipc_socket, &resp) < 0) {
                 fprintf(stderr, "supervisor-master: IPC write failed\n");
+                free_request(&req);
                 break;
             }
+
+            /* Free dynamically allocated request fields */
+            free_request(&req);
         }
 
         /* Reap zombies */

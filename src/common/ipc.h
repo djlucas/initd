@@ -64,4 +64,7 @@ int recv_request(int fd, struct priv_request *req);
 int send_response(int fd, const struct priv_response *resp);
 int recv_response(int fd, struct priv_response *resp);
 
+/* Cleanup function for dynamically allocated request fields */
+void free_request(struct priv_request *req);
+
 #endif /* IPC_H */
