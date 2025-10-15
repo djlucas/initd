@@ -45,6 +45,9 @@ static bool unit_provides(struct unit_file *unit, const char *service_name);
 static int stop_unit_recursive(struct unit_file *unit);
 static int start_unit_recursive(struct unit_file *unit);
 
+/* Maximum recursion depth for dependency resolution */
+#define MAX_RECURSION_DEPTH 100
+
 /* Signal handlers */
 static void sigterm_handler(int sig) {
     (void)sig;
@@ -627,17 +630,39 @@ static void handle_control_command(int client_fd) {
     close(client_fd);
 }
 
-/* Stop a unit (recursive, reverse dependency order) */
-static int stop_unit_recursive(struct unit_file *unit) {
+/* Stop a unit (recursive, reverse dependency order, with depth limit) */
+static int stop_unit_recursive_depth(struct unit_file *unit, int depth) {
     if (!unit) return -1;
-    if (unit->state == STATE_INACTIVE) return 0; /* Already stopped */
 
-    /* First, stop units that depend on this one */
+    /* Check recursion depth limit */
+    if (depth > MAX_RECURSION_DEPTH) {
+        fprintf(stderr, "slave: maximum recursion depth exceeded stopping %s\n", unit->name);
+        log_msg(LOG_ERR, unit->name, "maximum recursion depth exceeded (possible circular dependency)");
+        return -1;
+    }
+
+    /* Already stopped */
+    if (unit->state == STATE_INACTIVE) return 0;
+
+    /* SECURITY: Detect circular dependencies - if already deactivating, we have a cycle */
+    if (unit->state == STATE_DEACTIVATING) {
+        fprintf(stderr, "slave: circular dependency detected stopping %s\n", unit->name);
+        log_msg(LOG_ERR, unit->name, "circular dependency detected during shutdown");
+        return 0; /* Don't fail shutdown, just skip this unit */
+    }
+
+    /* Mark as deactivating to detect cycles */
+    unit->state = STATE_DEACTIVATING;
+    fprintf(stderr, "slave: stopping %s\n", unit->name);
+
+    /* First, stop units that depend on this one (reverse dependency order) */
     for (int i = 0; i < unit_count; i++) {
         struct unit_file *other = units[i];
-        if (other == unit || other->state != STATE_ACTIVE) continue;
+        if (other == unit || (other->state != STATE_ACTIVE && other->state != STATE_DEACTIVATING)) {
+            continue;
+        }
 
-        /* Check if 'other' depends on 'unit' */
+        /* Check if 'other' depends on 'unit' (Requires or Wants) */
         bool depends_on_us = false;
         for (int j = 0; j < other->unit.requires_count; j++) {
             if (strcmp(other->unit.requires[j], unit->name) == 0) {
@@ -656,44 +681,85 @@ static int stop_unit_recursive(struct unit_file *unit) {
 
         /* Stop dependent units first */
         if (depends_on_us) {
-            stop_unit_recursive(other);
+            stop_unit_recursive_depth(other, depth + 1);
         }
     }
 
     /* Now stop this unit */
-    fprintf(stderr, "slave: stopping %s\n", unit->name);
-
     if (unit->type == UNIT_SERVICE) {
         stop_service(unit);
+        /* stop_service sets state to STATE_INACTIVE */
     } else if (unit->type == UNIT_TARGET) {
         /* Targets don't run, just mark inactive */
         unit->state = STATE_INACTIVE;
+        log_msg(LOG_INFO, unit->name, "target deactivated");
     }
 
     return 0;
 }
 
-/* Start a unit and its dependencies (recursive) */
-static int start_unit_recursive(struct unit_file *unit) {
-    if (!unit) return -1;
-    if (unit->state == STATE_ACTIVE) return 0; /* Already running */
+/* Public wrapper without depth parameter */
+static int stop_unit_recursive(struct unit_file *unit) {
+    return stop_unit_recursive_depth(unit, 0);
+}
 
+/* Start a unit and its dependencies (recursive with depth limit) */
+static int start_unit_recursive_depth(struct unit_file *unit, int depth) {
+    if (!unit) return -1;
+
+    /* Check recursion depth limit */
+    if (depth > MAX_RECURSION_DEPTH) {
+        fprintf(stderr, "slave: maximum recursion depth exceeded starting %s\n", unit->name);
+        log_msg(LOG_ERR, unit->name, "maximum recursion depth exceeded (possible circular dependency)");
+        return -1;
+    }
+
+    /* Already running */
+    if (unit->state == STATE_ACTIVE) return 0;
+
+    /* SECURITY: Detect circular dependencies - if already activating, we have a cycle */
+    if (unit->state == STATE_ACTIVATING) {
+        fprintf(stderr, "slave: circular dependency detected starting %s\n", unit->name);
+        log_msg(LOG_ERR, unit->name, "circular dependency detected");
+        unit->state = STATE_FAILED;
+        return -1;
+    }
+
+    /* Mark as activating to detect cycles */
+    unit->state = STATE_ACTIVATING;
     fprintf(stderr, "slave: starting %s\n", unit->name);
 
-    /* Start dependencies first (Requires) */
+    /* Start hard dependencies first (Requires) */
     for (int i = 0; i < unit->unit.requires_count; i++) {
         struct unit_file *dep = find_unit(unit->unit.requires[i]);
-        if (dep && start_unit_recursive(dep) < 0) {
+        if (dep && start_unit_recursive_depth(dep, depth + 1) < 0) {
             fprintf(stderr, "slave: failed to start required dependency %s\n", unit->unit.requires[i]);
+            log_msg(LOG_ERR, unit->name, "failed to start required dependency %s", unit->unit.requires[i]);
+            unit->state = STATE_FAILED;
             return -1;
         }
     }
 
-    /* Start soft dependencies (Wants) */
+    /* Start soft dependencies (Wants) - don't fail if they fail */
     for (int i = 0; i < unit->unit.wants_count; i++) {
         struct unit_file *dep = find_unit(unit->unit.wants[i]);
         if (dep) {
-            start_unit_recursive(dep); /* Don't fail on soft deps */
+            start_unit_recursive_depth(dep, depth + 1); /* Don't fail on soft deps */
+        }
+    }
+
+    /* Wait for After= dependencies to be active (ordering constraint) */
+    for (int i = 0; i < unit->unit.after_count; i++) {
+        struct unit_file *dep = find_unit(unit->unit.after[i]);
+        if (dep && dep->state != STATE_ACTIVE && dep->state != STATE_FAILED) {
+            /* Dependency not ready - start it if needed */
+            if (dep->state == STATE_INACTIVE) {
+                if (start_unit_recursive_depth(dep, depth + 1) < 0) {
+                    fprintf(stderr, "slave: After= dependency %s failed\n", unit->unit.after[i]);
+                    log_msg(LOG_WARNING, unit->name, "After= dependency %s failed", unit->unit.after[i]);
+                    /* Continue anyway - After is ordering, not requirement */
+                }
+            }
         }
     }
 
@@ -701,15 +767,23 @@ static int start_unit_recursive(struct unit_file *unit) {
     if (unit->type == UNIT_SERVICE) {
         if (start_service(unit) < 0) {
             fprintf(stderr, "slave: failed to start %s\n", unit->name);
+            log_msg(LOG_ERR, unit->name, "failed to start service");
             unit->state = STATE_FAILED;
             return -1;
         }
+        /* start_service sets state to STATE_ACTIVE on success */
     } else if (unit->type == UNIT_TARGET) {
         /* Targets don't run, just mark active */
         unit->state = STATE_ACTIVE;
+        log_msg(LOG_INFO, unit->name, "target activated");
     }
 
     return 0;
+}
+
+/* Public wrapper without depth parameter */
+static int start_unit_recursive(struct unit_file *unit) {
+    return start_unit_recursive_depth(unit, 0);
 }
 
 /* Main loop: manage services */
