@@ -203,24 +203,50 @@ static void kill_remaining_processes(void) {
 static void do_shutdown(void) {
     fprintf(stderr, "init: shutdown requested (type %d)\n", shutdown_type);
 
-    /* If supervisor is still running, send SIGTERM */
-    if (supervisor_pid > 0) {
-        fprintf(stderr, "init: signaling supervisor to shutdown\n");
-        kill(supervisor_pid, SIGTERM);
+    /* RACE PREVENTION: Block SIGCHLD during critical section to prevent
+     * concurrent reap_zombies() from modifying supervisor_pid while we're
+     * trying to kill/wait for it. Without this, supervisor could die between
+     * our check and kill(), or be restarted with a new PID, causing us to
+     * signal the wrong process. */
+    sigset_t oldmask, blockmask;
+    sigemptyset(&blockmask);
+    sigaddset(&blockmask, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &blockmask, &oldmask);
+
+    /* Critical section: supervisor_pid operations are now atomic */
+    pid_t supervisor_to_shutdown = supervisor_pid;
+
+    if (supervisor_to_shutdown > 0) {
+        fprintf(stderr, "init: signaling supervisor to shutdown (pid %d)\n", supervisor_to_shutdown);
+        kill(supervisor_to_shutdown, SIGTERM);
 
         /* Wait for supervisor to exit (with timeout) */
         int timeout = supervisor_timeout;
-        while (supervisor_pid > 0 && timeout > 0) {
+        while (timeout > 0) {
             sleep(1);
-            reap_zombies();
+
+            /* Manually reap with signals still blocked */
+            int status;
+            pid_t pid = waitpid(supervisor_to_shutdown, &status, WNOHANG);
+            if (pid == supervisor_to_shutdown) {
+                fprintf(stderr, "init: supervisor-master exited gracefully (status %d)\n",
+                        WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+                supervisor_pid = 0;
+                break;
+            } else if (pid < 0 && errno == ECHILD) {
+                /* Supervisor already reaped */
+                supervisor_pid = 0;
+                break;
+            }
+
             timeout--;
         }
 
-        /* Force kill if still running */
-        if (supervisor_pid > 0) {
+        /* Force kill if still running after timeout */
+        if (timeout == 0 && kill(supervisor_to_shutdown, 0) == 0) {
             fprintf(stderr, "init: supervisor timeout, sending SIGKILL\n");
-            kill(supervisor_pid, SIGKILL);
-            waitpid(supervisor_pid, NULL, 0);
+            kill(supervisor_to_shutdown, SIGKILL);
+            waitpid(supervisor_to_shutdown, NULL, 0);
             supervisor_pid = 0;
 
             /* SAFETY: If we had to SIGKILL the supervisor, it may have left
@@ -228,6 +254,9 @@ static void do_shutdown(void) {
             kill_remaining_processes();
         }
     }
+
+    /* Restore signal mask - critical section complete */
+    sigprocmask(SIG_SETMASK, &oldmask, NULL);
 
     /* Final sync */
     sync();
