@@ -22,73 +22,68 @@
 #include "privileged-ops.h"
 #include "unit.h"
 #include "log.h"
+#include "path-security.h"
 
 /* Convert systemd unit to initd by copying to /lib/initd/system */
 int convert_systemd_unit(struct unit_file *unit) {
     char initd_path[MAX_PATH];
     char systemd_path[MAX_PATH];
-    FILE *in, *out;
-    char buffer[4096];
-    size_t bytes;
+    struct stat st;
+
+    /* SECURITY: Validate unit name first - reject path traversal attempts */
+    if (!validate_unit_name(unit->name)) {
+        log_msg(LOG_ERR, unit->name, "invalid unit name (possible path traversal attempt)");
+        errno = EINVAL;
+        return -1;
+    }
 
     /* Check if this is a systemd unit */
     if (strstr(unit->path, "/systemd/") == NULL) {
         return 0; /* Not a systemd unit, no conversion needed */
     }
 
+    /* SECURITY: Validate source path is in an allowed systemd directory */
+    if (!validate_path_in_directory(unit->path, "/lib/systemd/system") &&
+        !validate_path_in_directory(unit->path, "/usr/lib/systemd/system") &&
+        !validate_path_in_directory(unit->path, "/etc/systemd/system")) {
+        log_msg(LOG_ERR, unit->name, "source path %s is not in an allowed systemd directory", unit->path);
+        errno = EACCES;
+        return -1;
+    }
+
     /* Copy original path */
     strncpy(systemd_path, unit->path, sizeof(systemd_path) - 1);
+    systemd_path[sizeof(systemd_path) - 1] = '\0';
 
-    /* Create initd path */
+    /* Create initd path using validated unit name */
     snprintf(initd_path, sizeof(initd_path), "/lib/initd/system/%s", unit->name);
 
-    /* Check if already converted */
-    if (access(initd_path, F_OK) == 0) {
+    /* SECURITY: Use lstat instead of access to prevent TOCTOU */
+    if (lstat(initd_path, &st) == 0) {
+        /* File exists - verify it's a regular file, not a symlink */
+        if (!S_ISREG(st.st_mode)) {
+            log_msg(LOG_ERR, unit->name, "existing file %s is not a regular file", initd_path);
+            errno = EINVAL;
+            return -1;
+        }
+
         /* Update unit path to initd version */
         strncpy(unit->path, initd_path, sizeof(unit->path) - 1);
+        unit->path[sizeof(unit->path) - 1] = '\0';
         log_msg(LOG_INFO, unit->name, "using existing converted unit at %s", initd_path);
         return 0;
     }
 
-    /* Open files */
-    in = fopen(systemd_path, "r");
-    if (!in) {
-        log_msg(LOG_ERR, unit->name, "failed to open %s: %s", systemd_path, strerror(errno));
+    /* SECURITY: Use secure_copy_file which uses O_NOFOLLOW and mkstemp */
+    if (secure_copy_file(systemd_path, initd_path, 0644) < 0) {
+        log_msg(LOG_ERR, unit->name, "failed to copy %s to %s: %s",
+                systemd_path, initd_path, strerror(errno));
         return -1;
     }
-
-    out = fopen(initd_path, "w");
-    if (!out) {
-        log_msg(LOG_ERR, unit->name, "failed to create %s: %s", initd_path, strerror(errno));
-        fclose(in);
-        return -1;
-    }
-
-    /* Copy file as-is */
-    while ((bytes = fread(buffer, 1, sizeof(buffer), in)) > 0) {
-        if (fwrite(buffer, 1, bytes, out) != bytes) {
-            log_msg(LOG_ERR, unit->name, "failed to write to %s: %s", initd_path, strerror(errno));
-            fclose(in);
-            fclose(out);
-            unlink(initd_path);
-            return -1;
-        }
-    }
-
-    /* Check for read error (not just EOF) */
-    if (ferror(in)) {
-        log_msg(LOG_ERR, unit->name, "failed to read from %s: %s", systemd_path, strerror(errno));
-        fclose(in);
-        fclose(out);
-        unlink(initd_path);
-        return -1;
-    }
-
-    fclose(in);
-    fclose(out);
 
     /* Update unit path */
     strncpy(unit->path, initd_path, sizeof(unit->path) - 1);
+    unit->path[sizeof(unit->path) - 1] = '\0';
 
     log_msg(LOG_INFO, unit->name, "converted systemd unit from %s to %s", systemd_path, initd_path);
     return 0;
@@ -99,8 +94,24 @@ int enable_unit(struct unit_file *unit) {
     char link_path[1536];  /* Room for path + "/" + unit name */
     char target_dir[1024];
 
+    /* SECURITY: Validate unit name */
+    if (!validate_unit_name(unit->name)) {
+        log_msg(LOG_ERR, unit->name, "invalid unit name (possible path traversal attempt)");
+        errno = EINVAL;
+        return -1;
+    }
+
     /* Convert systemd unit if needed */
     if (convert_systemd_unit(unit) < 0) {
+        return -1;
+    }
+
+    /* SECURITY: Validate unit->path is in allowed directory */
+    if (!validate_path_in_directory(unit->path, "/lib/initd/system") &&
+        !validate_path_in_directory(unit->path, "/etc/initd/system") &&
+        !validate_path_in_directory(unit->path, "/usr/lib/initd/system")) {
+        log_msg(LOG_ERR, unit->name, "unit path %s is not in an allowed directory", unit->path);
+        errno = EACCES;
         return -1;
     }
 
@@ -108,14 +119,21 @@ int enable_unit(struct unit_file *unit) {
     for (int i = 0; i < unit->install.wanted_by_count; i++) {
         const char *target = unit->install.wanted_by[i];
 
+        /* SECURITY: Validate target name */
+        if (!validate_target_name(target)) {
+            log_msg(LOG_ERR, unit->name, "invalid target name: %s", target);
+            continue;  /* Skip this target but don't fail the whole operation */
+        }
+
         /* Create target wants directory */
         snprintf(target_dir, sizeof(target_dir), "/etc/initd/system/%s.wants", target);
         mkdir(target_dir, 0755);
 
-        /* Create symlink */
+        /* Create symlink using validated components */
         snprintf(link_path, sizeof(link_path), "%s/%s", target_dir, unit->name);
 
-        if (symlink(unit->path, link_path) < 0) {
+        /* SECURITY: Use secure_create_symlink with validation */
+        if (secure_create_symlink(unit->path, link_path) < 0) {
             if (errno == EEXIST) {
                 /* Already enabled */
                 continue;
@@ -133,14 +151,21 @@ int enable_unit(struct unit_file *unit) {
     for (int i = 0; i < unit->install.required_by_count; i++) {
         const char *target = unit->install.required_by[i];
 
+        /* SECURITY: Validate target name */
+        if (!validate_target_name(target)) {
+            log_msg(LOG_ERR, unit->name, "invalid target name: %s", target);
+            continue;
+        }
+
         /* Create target requires directory */
         snprintf(target_dir, sizeof(target_dir), "/etc/initd/system/%s.requires", target);
         mkdir(target_dir, 0755);
 
-        /* Create symlink */
+        /* Create symlink using validated components */
         snprintf(link_path, sizeof(link_path), "%s/%s", target_dir, unit->name);
 
-        if (symlink(unit->path, link_path) < 0) {
+        /* SECURITY: Use secure_create_symlink with validation */
+        if (secure_create_symlink(unit->path, link_path) < 0) {
             if (errno == EEXIST) {
                 continue;
             }
@@ -161,9 +186,22 @@ int enable_unit(struct unit_file *unit) {
 int disable_unit(struct unit_file *unit) {
     char link_path[1024];
 
+    /* SECURITY: Validate unit name */
+    if (!validate_unit_name(unit->name)) {
+        log_msg(LOG_ERR, unit->name, "invalid unit name (possible path traversal attempt)");
+        errno = EINVAL;
+        return -1;
+    }
+
     /* Remove from WantedBy targets */
     for (int i = 0; i < unit->install.wanted_by_count; i++) {
         const char *target = unit->install.wanted_by[i];
+
+        /* SECURITY: Validate target name */
+        if (!validate_target_name(target)) {
+            log_msg(LOG_ERR, unit->name, "invalid target name: %s", target);
+            continue;
+        }
 
         snprintf(link_path, sizeof(link_path),
                  "/etc/initd/system/%s.wants/%s", target, unit->name);
@@ -184,6 +222,12 @@ int disable_unit(struct unit_file *unit) {
     /* Remove from RequiredBy targets */
     for (int i = 0; i < unit->install.required_by_count; i++) {
         const char *target = unit->install.required_by[i];
+
+        /* SECURITY: Validate target name */
+        if (!validate_target_name(target)) {
+            log_msg(LOG_ERR, unit->name, "invalid target name: %s", target);
+            continue;
+        }
 
         snprintf(link_path, sizeof(link_path),
                  "/etc/initd/system/%s.requires/%s", target, unit->name);
@@ -209,9 +253,19 @@ bool is_unit_enabled(struct unit_file *unit) {
     char link_path[1024];
     struct stat st;
 
+    /* SECURITY: Validate unit name */
+    if (!validate_unit_name(unit->name)) {
+        return false;
+    }
+
     /* Check if any WantedBy symlink exists */
     for (int i = 0; i < unit->install.wanted_by_count; i++) {
         const char *target = unit->install.wanted_by[i];
+
+        /* SECURITY: Validate target name */
+        if (!validate_target_name(target)) {
+            continue;
+        }
 
         snprintf(link_path, sizeof(link_path),
                  "/etc/initd/system/%s.wants/%s", target, unit->name);
@@ -224,6 +278,11 @@ bool is_unit_enabled(struct unit_file *unit) {
     /* Check if any RequiredBy symlink exists */
     for (int i = 0; i < unit->install.required_by_count; i++) {
         const char *target = unit->install.required_by[i];
+
+        /* SECURITY: Validate target name */
+        if (!validate_target_name(target)) {
+            continue;
+        }
 
         snprintf(link_path, sizeof(link_path),
                  "/etc/initd/system/%s.requires/%s", target, unit->name);

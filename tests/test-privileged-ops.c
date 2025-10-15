@@ -28,25 +28,20 @@
 /* Test directories - use real system paths since we're running as root */
 #define TEST_LIB_DIR "/lib/initd/system"
 #define TEST_ETC_DIR "/etc/initd/system"
-#define TEST_SYSTEMD_DIR "/tmp/initd-test/lib/systemd/system"
+#define TEST_SYSTEMD_DIR "/lib/systemd/system"
 
 /* Setup test environment */
 static void setup_test_env(void) {
     /* Create system directories if they don't exist */
     system("mkdir -p /lib/initd/system");
     system("mkdir -p /etc/initd/system");
-
-    /* Create temporary systemd directory for test units */
-    system("rm -rf /tmp/initd-test");
-    system("mkdir -p " TEST_SYSTEMD_DIR);
+    system("mkdir -p /lib/systemd/system");
 }
 
 /* Cleanup test environment */
 static void cleanup_test_env(void) {
-    /* Clean up temporary systemd directory */
-    system("rm -rf /tmp/initd-test");
-
     /* Clean up test files from system directories */
+    system("rm -f /lib/systemd/system/test.service");
     system("rm -f /lib/initd/system/test.service");
     system("rm -f /lib/initd/system/required.service");
     system("rm -f /lib/initd/system/disable-test.service");

@@ -27,6 +27,7 @@
 #include "../common/ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
+#include "../common/path-security.h"
 #include "service-registry.h"
 
 #ifndef WORKER_PATH
@@ -264,6 +265,17 @@ static pid_t start_service_process(struct priv_request *req, uid_t validated_uid
     return pid;
 }
 
+/* Validate unit path from worker is in allowed directory */
+static bool validate_unit_path_from_worker(const char *path) {
+    /* SECURITY: Worker-supplied paths must be in whitelisted directories only */
+    return validate_path_in_directory(path, "/lib/initd/system") ||
+           validate_path_in_directory(path, "/etc/initd/system") ||
+           validate_path_in_directory(path, "/usr/lib/initd/system") ||
+           validate_path_in_directory(path, "/lib/systemd/system") ||
+           validate_path_in_directory(path, "/usr/lib/systemd/system") ||
+           validate_path_in_directory(path, "/etc/systemd/system");
+}
+
 /* Handle privileged request from slave */
 static int handle_request(struct priv_request *req, struct priv_response *resp) {
     memset(resp, 0, sizeof(*resp));
@@ -271,6 +283,15 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
     switch (req->type) {
     case REQ_START_SERVICE: {
         fprintf(stderr, "supervisor-master: start service request: %s\n", req->unit_name);
+
+        /* SECURITY: Validate unit path is in allowed directory before parsing */
+        if (!validate_unit_path_from_worker(req->unit_path)) {
+            fprintf(stderr, "supervisor-master: SECURITY: invalid unit path: %s\n", req->unit_path);
+            resp->type = RESP_ERROR;
+            resp->error_code = EACCES;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
+            break;
+        }
 
         /* SECURITY: Master must parse unit file to get authoritative User/Group values.
          * Never trust worker-supplied run_uid/run_gid as compromised worker could
@@ -431,6 +452,16 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
     case REQ_ENABLE_UNIT: {
         fprintf(stderr, "supervisor-master: enable unit request: %s\n", req->unit_path);
+
+        /* SECURITY: Validate unit path is in allowed directory */
+        if (!validate_unit_path_from_worker(req->unit_path)) {
+            fprintf(stderr, "supervisor-master: SECURITY: invalid unit path: %s\n", req->unit_path);
+            resp->type = RESP_ERROR;
+            resp->error_code = EACCES;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
+            break;
+        }
+
         struct unit_file unit = {0};
 
         if (parse_unit_file(req->unit_path, &unit) < 0) {
@@ -452,6 +483,16 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
     case REQ_DISABLE_UNIT: {
         fprintf(stderr, "supervisor-master: disable unit request: %s\n", req->unit_path);
+
+        /* SECURITY: Validate unit path is in allowed directory */
+        if (!validate_unit_path_from_worker(req->unit_path)) {
+            fprintf(stderr, "supervisor-master: SECURITY: invalid unit path: %s\n", req->unit_path);
+            resp->type = RESP_ERROR;
+            resp->error_code = EACCES;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
+            break;
+        }
+
         struct unit_file unit = {0};
 
         if (parse_unit_file(req->unit_path, &unit) < 0) {
@@ -473,6 +514,16 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
     case REQ_CONVERT_UNIT: {
         fprintf(stderr, "supervisor-master: convert unit request: %s\n", req->unit_path);
+
+        /* SECURITY: Validate unit path is in allowed directory */
+        if (!validate_unit_path_from_worker(req->unit_path)) {
+            fprintf(stderr, "supervisor-master: SECURITY: invalid unit path: %s\n", req->unit_path);
+            resp->type = RESP_ERROR;
+            resp->error_code = EACCES;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
+            break;
+        }
+
         struct unit_file unit = {0};
 
         if (parse_unit_file(req->unit_path, &unit) < 0) {

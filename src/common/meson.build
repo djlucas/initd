@@ -20,6 +20,7 @@ common_dep = declare_dependency(
 # Privileged operations library (only for daemons, not workers)
 privileged_ops_sources = files(
   'privileged-ops.c',
+  'path-security.c',
 )
 
 privileged_ops_lib = static_library(
