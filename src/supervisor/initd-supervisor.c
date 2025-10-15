@@ -177,7 +177,7 @@ static pid_t start_slave(int slave_fd) {
 }
 
 /* Start a service process with privilege dropping */
-static pid_t start_service_process(struct priv_request *req) {
+static pid_t start_service_process(struct priv_request *req, uid_t validated_uid, gid_t validated_gid) {
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -205,24 +205,57 @@ static pid_t start_service_process(struct priv_request *req) {
             _exit(1);
         }
 
-        /* Drop privileges if User/Group specified */
-        if (req->run_gid != 0) {
-            if (setgid(req->run_gid) < 0) {
+        /* Validate exec_path is absolute (prevent relative path attacks) */
+        if (req->exec_path[0] != '/') {
+            fprintf(stderr, "supervisor-master: exec_path must be absolute: %s\n", req->exec_path);
+            _exit(1);
+        }
+
+        /* Check for directory traversal attempts */
+        if (strstr(req->exec_path, "..") != NULL) {
+            fprintf(stderr, "supervisor-master: exec_path contains '..': %s\n", req->exec_path);
+            _exit(1);
+        }
+
+        /* Drop privileges using VALIDATED UID/GID from master's unit file parsing */
+        if (validated_gid != 0) {
+            /* Clear supplementary groups first */
+            if (setgroups(1, &validated_gid) < 0) {
+                perror("supervisor-master: setgroups");
+                _exit(1);
+            }
+
+            if (setgid(validated_gid) < 0) {
                 perror("supervisor-master: setgid");
                 _exit(1);
             }
         }
 
-        if (req->run_uid != 0) {
-            if (setuid(req->run_uid) < 0) {
+        if (validated_uid != 0) {
+            if (setuid(validated_uid) < 0) {
                 perror("supervisor-master: setuid");
                 _exit(1);
             }
         }
 
-        /* Exec service */
-        execl("/bin/sh", "sh", "-c", req->exec_path, NULL);
-        perror("supervisor-master: exec service");
+        /* Verify we cannot regain privileges */
+        if (validated_uid != 0) {
+            if (setuid(0) == 0 || seteuid(0) == 0) {
+                fprintf(stderr, "supervisor-master: SECURITY: can still become root after dropping privileges!\n");
+                _exit(1);
+            }
+        }
+
+        /* Exec service using argv (NO SHELL - prevents injection) */
+        if (req->exec_args != NULL && req->exec_args[0] != NULL) {
+            execv(req->exec_path, req->exec_args);
+        } else {
+            /* Fallback: no args provided, exec with single arg */
+            char *argv[] = {req->exec_path, NULL};
+            execv(req->exec_path, argv);
+        }
+
+        perror("supervisor-master: execv");
         _exit(1);
     }
 
@@ -235,10 +268,65 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
     memset(resp, 0, sizeof(*resp));
 
     switch (req->type) {
-    case REQ_START_SERVICE:
+    case REQ_START_SERVICE: {
         fprintf(stderr, "supervisor-master: start service request: %s\n", req->unit_name);
 
-        pid_t pid = start_service_process(req);
+        /* SECURITY: Master must parse unit file to get authoritative User/Group values.
+         * Never trust worker-supplied run_uid/run_gid as compromised worker could
+         * request uid=0 to escalate privileges. */
+        struct unit_file unit = {0};
+
+        if (parse_unit_file(req->unit_path, &unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse unit file");
+            break;
+        }
+
+        /* Extract and validate User/Group from parsed unit file */
+        uid_t validated_uid = 0;  /* Default: root */
+        gid_t validated_gid = 0;
+
+        if (unit.config.service.user[0] != '\0') {
+            struct passwd *pw = getpwnam(unit.config.service.user);
+            if (!pw) {
+                fprintf(stderr, "supervisor-master: user '%s' not found\n", unit.config.service.user);
+                resp->type = RESP_ERROR;
+                resp->error_code = EINVAL;
+                snprintf(resp->error_msg, sizeof(resp->error_msg), "User '%s' not found", unit.config.service.user);
+                free_unit_file(&unit);
+                break;
+            }
+            validated_uid = pw->pw_uid;
+            fprintf(stderr, "supervisor-master: service will run as user %s (uid=%d)\n",
+                    unit.config.service.user, validated_uid);
+        }
+
+        if (unit.config.service.group[0] != '\0') {
+            struct group *gr = getgrnam(unit.config.service.group);
+            if (!gr) {
+                fprintf(stderr, "supervisor-master: group '%s' not found\n", unit.config.service.group);
+                resp->type = RESP_ERROR;
+                resp->error_code = EINVAL;
+                snprintf(resp->error_msg, sizeof(resp->error_msg), "Group '%s' not found", unit.config.service.group);
+                free_unit_file(&unit);
+                break;
+            }
+            validated_gid = gr->gr_gid;
+            fprintf(stderr, "supervisor-master: service will run as group %s (gid=%d)\n",
+                    unit.config.service.group, validated_gid);
+        } else if (validated_uid != 0) {
+            /* If User specified but Group not specified, use user's primary group */
+            struct passwd *pw = getpwuid(validated_uid);
+            if (pw) {
+                validated_gid = pw->pw_gid;
+            }
+        }
+
+        /* Start service with validated credentials */
+        pid_t pid = start_service_process(req, validated_uid, validated_gid);
+        free_unit_file(&unit);
+
         if (pid < 0) {
             resp->type = RESP_ERROR;
             resp->error_code = errno;
@@ -249,6 +337,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             fprintf(stderr, "supervisor-master: started %s (pid %d)\n", req->unit_name, pid);
         }
         break;
+    }
 
     case REQ_STOP_SERVICE:
         fprintf(stderr, "supervisor-master: stop service request: pid %d (kill_mode=%d)\n",

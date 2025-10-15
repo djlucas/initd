@@ -29,9 +29,9 @@ void test_request_serialization(void) {
     struct priv_request req = {0};
     req.type = REQ_START_SERVICE;
     strncpy(req.unit_name, "test.service", sizeof(req.unit_name) - 1);
+    strncpy(req.unit_path, "/etc/initd/test.service", sizeof(req.unit_path) - 1);
     strncpy(req.exec_path, "/bin/test", sizeof(req.exec_path) - 1);
-    req.run_uid = 1000;
-    req.run_gid = 1000;
+    /* Note: run_uid/run_gid ignored by master (gets from unit file) but still serialized */
 
     /* Send */
     assert(send_request(fds[0], &req) == 0);
@@ -43,9 +43,8 @@ void test_request_serialization(void) {
     /* Verify */
     assert(recv_req.type == REQ_START_SERVICE);
     assert(strcmp(recv_req.unit_name, "test.service") == 0);
+    assert(strcmp(recv_req.unit_path, "/etc/initd/test.service") == 0);
     assert(strcmp(recv_req.exec_path, "/bin/test") == 0);
-    assert(recv_req.run_uid == 1000);
-    assert(recv_req.run_gid == 1000);
 
     free_request(&recv_req);
     close(fds[0]);
@@ -188,9 +187,8 @@ void test_exec_args_serialization(void) {
     struct priv_request req = {0};
     req.type = REQ_START_SERVICE;
     strncpy(req.unit_name, "test.service", sizeof(req.unit_name) - 1);
+    strncpy(req.unit_path, "/etc/initd/test.service", sizeof(req.unit_path) - 1);
     strncpy(req.exec_path, "/bin/test", sizeof(req.exec_path) - 1);
-    req.run_uid = 1000;
-    req.run_gid = 1000;
 
     /* Allocate exec_args */
     char *args[] = {"/bin/test", "-arg1", "--arg2=value", NULL};
@@ -206,6 +204,7 @@ void test_exec_args_serialization(void) {
     /* Verify */
     assert(recv_req.type == REQ_START_SERVICE);
     assert(strcmp(recv_req.unit_name, "test.service") == 0);
+    assert(strcmp(recv_req.unit_path, "/etc/initd/test.service") == 0);
     assert(strcmp(recv_req.exec_path, "/bin/test") == 0);
     assert(recv_req.exec_args != NULL);
     assert(strcmp(recv_req.exec_args[0], "/bin/test") == 0);
