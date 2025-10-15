@@ -5,7 +5,7 @@ DefaultDependencies=no
 After=mountvirtfs.service
 Before=basic.target
 Conflicts=shutdown.target syslog-ng.service rsyslog.service
-Provides=syslog
+Provides=$syslog
 
 [Service]
 Type=forking

@@ -1,0 +1,39 @@
+#!/bin/bash
+########################################################################
+# Begin network-wait-online
+#
+# Description : Wait for network connectivity
+#
+# Author      : initd project
+#
+########################################################################
+
+. /lib/lsb/init-functions
+
+# Try NetworkManager's nm-online if available
+if [ -x /usr/bin/nm-online ]; then
+    /usr/bin/nm-online -q -t 30
+    exit $?
+fi
+
+# Generic fallback: wait for default route and connectivity
+TIMEOUT=30
+COUNT=0
+
+while [ $COUNT -lt $TIMEOUT ]; do
+    # Check for default route
+    if ip route | grep -q '^default'; then
+        # Try to verify connectivity (optional - might fail in restricted networks)
+        # Just having a default route is usually sufficient
+        exit 0
+    fi
+
+    sleep 1
+    COUNT=$((COUNT + 1))
+done
+
+# Timeout reached
+log_warning_msg "Network connectivity timeout after ${TIMEOUT} seconds"
+exit 1
+
+# End network-wait-online

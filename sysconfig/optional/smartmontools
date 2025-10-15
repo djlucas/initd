@@ -1,0 +1,3 @@
+# Additional options for smartd daemon
+# See smartd(8) for valid options
+smartd_opts=""

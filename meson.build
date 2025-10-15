@@ -26,28 +26,3 @@ subdir('sysconfig')
 subdir('docs')
 subdir('tests')
 subdir('analysis')
-
-# Tarball creation target - creates both .tar.xz and .tar.gz
-run_target('tarball',
-  command: [
-    'bash', '-c',
-    '''
-    VER=''' + meson.project_version() + '''
-    SRCDIR="''' + meson.project_source_root() + '''"
-    BUILDDIR="''' + meson.project_build_root() + '''"
-
-    cd "${SRCDIR}/.."
-    rm -rf initd-${VER}
-    cp -ra "${SRCDIR}" initd-${VER}
-    rm -rf initd-${VER}/{build,.git,analysis-output,profile.md}
-
-    tar -cJf "${BUILDDIR}/initd-${VER}.tar.xz" initd-${VER}
-    tar -czf "${BUILDDIR}/initd-${VER}.tar.gz" initd-${VER}
-
-    rm -rf initd-${VER}
-
-    echo "Created ${BUILDDIR}/initd-${VER}.tar.xz"
-    echo "Created ${BUILDDIR}/initd-${VER}.tar.gz"
-    '''
-  ]
-)

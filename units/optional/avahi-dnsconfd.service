@@ -1,0 +1,14 @@
+[Unit]
+Description=Avahi mDNS/DNS-SD Configuration Daemon
+Documentation=man:avahi-dnsconfd(8)
+After=avahi-daemon.service
+Requires=avahi-daemon.service
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/avahi-dnsconfd -D
+ExecStop=/usr/sbin/avahi-dnsconfd -k
+ExecReload=/usr/sbin/avahi-dnsconfd -r
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,3 @@
+# Firewalld configuration
+# Additional command line arguments for firewalld
+FIREWALLD_ARGS=""

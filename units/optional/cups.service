@@ -1,0 +1,13 @@
+[Unit]
+Description=CUPS Scheduler
+Documentation=man:cupsd(8)
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/cupsd
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

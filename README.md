@@ -30,6 +30,7 @@ systemd files or code are reused here.
 - **Systemd Compatible** - Use existing unit files where beneficial
 - **Truly Portable** - Multi-platform Unix-like support
 - **Unix Philosophy** - Each component does one thing well
+- **No Lock-in** - Zero defaults, complete freedom to design your own target system
 
 ## Key Features
 
@@ -65,7 +66,7 @@ systemd files or code are reused here.
 
 ## Credits
 
-Many of the service scripts for sysinit.target (checkfs, console, createfiles, localnet, modules-load, mountvirtfs, udev-retry, udev-trigger) were adapted from the [LFS-bootscripts](https://github.com/lfs-book/lfs/tree/trunk/bootscripts) project.
+Many of the service scripts for sysinit.target (checkfs, console, createfiles, localnet, modules-load, mountvirtfs, udev-retry, udev-trigger) were adapted from the [Linux From Scratch bootscripts](https://github.com/lfs-book/lfs/tree/trunk/bootscripts) project.
 
 ## Architecture
 
@@ -144,6 +145,12 @@ initctl/systemctl
   - Integrates with traditional Unix tools
   - Leverages proven components
 
+- **Zero Defaults, Complete Freedom**
+  - Default install contains **nothing** - no targets, no services
+  - Provides mechanism, not policy
+  - Design your own target hierarchy or use the reference implementation
+  - No forced boot sequence or system organization
+
 ## What initd Is NOT
 
 - **Not a systemd fork** - Written from scratch
@@ -198,9 +205,14 @@ Unit types **not supported** (use traditional alternatives):
 ### Building
 
 ```bash
+# Generate build files with Meson
 meson setup build
-meson compile -C build
-sudo meson install -C build
+
+# Build with Ninja
+ninja -C build
+
+# Install (requires root)
+sudo ninja -C build install
 ```
 
 ### Configuration
@@ -216,8 +228,8 @@ Or use existing systemd unit directories for compatibility.
 The project follows a consistent organization:
 
 **Unit Files:**
-- `units/reference/` - Core system units (installed by default)
-- `units/optional/` - Optional BLFS service units (installed on demand)
+- `units/reference/` - Core system units
+- `units/optional/` - Optional service units (installed on demand)
 
 **Configuration Files:**
 - `sysconfig/reference/` - Configuration files for reference units
@@ -225,14 +237,31 @@ The project follows a consistent organization:
 
 ### Installation
 
+**Important: Zero Default Policy**
+
+The default installation (`ninja install`) installs **only the core binaries** - no targets, no services, no configuration. This is intentional:
+
+✅ **Provides complete freedom** - Design your own system organization
+✅ **No forced policy** - Choose your own boot sequence and dependencies
+✅ **No lock-in** - Not tied to any particular init philosophy
+
 **Main Installation:**
 ```bash
-# Install core components and reference units
+# Install ONLY core binaries (init, supervisor, timer, socket, initctl)
+# NO targets or services are installed by default
 DESTDIR=/path/to/staging ninja -C build install
 
-# Install reference units with symlinks (enables core services)
+# Install reference implementation (17 targets + 19 core services)
+# This gives you a working system as a starting point
 DESTDIR=/path/to/staging ninja -C build install-reference
 ```
+
+**Reference Implementation Includes:**
+- All system targets (basic, multi-user, graphical, network, etc.)
+- Core system services (getty, udev, syslog, network, etc.)
+- Enabled symlinks for automatic boot
+
+You can use the reference implementation as-is, modify it, or ignore it completely and build your own.
 
 **Optional Services:**
 ```bash
@@ -360,18 +389,14 @@ The project includes extensive automated testing and static/dynamic analysis:
 
 **Running Tests:**
 ```bash
-# Build and run all tests (14 tests total)
-meson compile -C build
-meson test -C build
+# Build all tests
+ninja -C build
 
-# Run only non-privileged tests (13 tests)
-meson test -C build --no-suite privileged
+# Run all tests (14 tests total - includes non-privileged tests)
+ninja -C build test
 
 # Run privileged tests (requires root - 1 test with 6 sub-tests)
-sudo meson test -C build --suite privileged
-
-# Verbose output
-meson test -C build -v
+sudo ninja -C build test-privileged
 ```
 
 **Privileged Test Suite:**
@@ -399,17 +424,17 @@ When run without root, the test properly skips with exit code 77 (meson skip).
 
 Run complete analysis suite:
 ```bash
-meson compile -C build analyze-all
+ninja -C build analyze-all
 ```
 
 Individual analysis tools:
 ```bash
-meson compile -C build analyze-cppcheck
-meson compile -C build analyze-flawfinder
-meson compile -C build analyze-scan
-meson compile -C build analyze-sanitizers
-meson compile -C build analyze-valgrind
-meson compile -C build analyze-shellcheck
+ninja -C build analyze-cppcheck
+ninja -C build analyze-flawfinder
+ninja -C build analyze-scan
+ninja -C build analyze-sanitizers
+ninja -C build analyze-valgrind
+ninja -C build analyze-shellcheck
 ```
 
 Analysis results are saved to `analysis-output/` with individual log files for review.
@@ -434,8 +459,8 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 
 ### Build
 - C23-capable compiler (GCC 14+, Clang 18+)
-- Meson build system
-- Ninja
+- Meson (build system generator)
+- Ninja (build tool)
 - pkg-config
 
 ### Optional

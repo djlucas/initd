@@ -1,0 +1,14 @@
+[Unit]
+Description=Automounts filesystems on demand
+After=network.target
+Before=remote-fs.target
+
+[Service]
+Type=forking
+EnvironmentFile=/etc/sysconfig/autofs
+ExecStart=/usr/sbin/automount --timeout 60
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

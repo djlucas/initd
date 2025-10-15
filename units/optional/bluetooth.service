@@ -1,0 +1,15 @@
+[Unit]
+Description=Bluetooth service
+Documentation=man:bluetoothd(8)
+After=dbus.service
+Requires=dbus.service
+ConditionPathIsDirectory=/sys/class/bluetooth
+
+[Service]
+Type=dbus
+BusName=org.bluez
+ExecStart=/usr/sbin/bluetoothd
+NotifyAccess=main
+
+[Install]
+WantedBy=multi-user.target

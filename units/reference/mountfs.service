@@ -1,8 +1,9 @@
 [Unit]
 Description=Mount All Filesystems
 DefaultDependencies=no
-After=remount-root.service
-Before=sysinit.target
+After=remount-root.service udev-settle.service
+Before=sysinit.target local-fs.target
+Provides=$local_fs
 
 [Service]
 Type=oneshot

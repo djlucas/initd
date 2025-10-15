@@ -21,6 +21,7 @@ install_data(
   'service-scripts/mountvirtfs',
   'service-scripts/netfs',
   'service-scripts/network-configure',
+  'service-scripts/network-wait-online',
   'service-scripts/udev-retry',
   'service-scripts/udev-trigger',
   install_dir: get_option('libexecdir') / 'initd' / 'service-scripts',

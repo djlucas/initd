@@ -5,7 +5,7 @@ DefaultDependencies=no
 After=mountvirtfs.service
 Before=basic.target
 Conflicts=shutdown.target syslogd.service klogd.service syslog-ng.service
-Provides=syslog
+Provides=$syslog
 
 [Service]
 Type=notify

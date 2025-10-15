@@ -1,0 +1,12 @@
+[Unit]
+Description=Save/Restore Sound Card State
+After=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/alsactl restore
+ExecStop=/usr/sbin/alsactl store
+
+[Install]
+WantedBy=multi-user.target

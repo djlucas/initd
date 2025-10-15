@@ -1,6 +1,7 @@
 [Unit]
 Description=Internet domain name server
 After=network.target
+Provides=$named
 
 [Service]
 ExecStart=/usr/sbin/named -f -u named -t /srv/named -c /etc/named.conf

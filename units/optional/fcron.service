@@ -1,0 +1,11 @@
+[Unit]
+Description=Fcron task scheduler
+Documentation=man:fcron(8) man:fcrontab(1)
+After=local-fs.target
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/fcron
+
+[Install]
+WantedBy=multi-user.target

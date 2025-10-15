@@ -1,0 +1,13 @@
+[Unit]
+Description=Dovecot IMAP/POP3 email server
+Documentation=man:dovecot(1) man:dovecot-lda(1) man:doveconf(1)
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/dovecot
+ExecReload=/bin/kill -HUP $MAINPID
+PIDFile=/run/dovecot/master.pid
+
+[Install]
+WantedBy=multi-user.target

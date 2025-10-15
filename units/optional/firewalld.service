@@ -1,0 +1,16 @@
+[Unit]
+Description=firewalld - dynamic firewall daemon
+Documentation=man:firewalld(1)
+After=dbus.service
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=dbus
+BusName=org.fedoraproject.FirewallD1
+EnvironmentFile=-/etc/sysconfig/firewalld
+ExecStart=/usr/sbin/firewalld --nofork --nopid $FIREWALLD_ARGS
+ExecReload=/usr/bin/firewall-cmd --reload
+
+[Install]
+WantedBy=multi-user.target

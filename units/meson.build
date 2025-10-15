@@ -1,16 +1,5 @@
-# Default installation: minimal set for testing
-unit_files = files(
-  'default.target',
-  'multi-user.target',
-  'basic.target',
-  'sysinit.target',
-  '../tests/units/test.service',
-)
-
-install_data(
-  unit_files,
-  install_dir: get_option('libdir') / 'initd' / 'system',
-)
+# Default installation: completely minimal - no targets, no services
+# All targets and services are installed via install-reference or optional install targets
 
 # Reference installation: LFS-derived complete system
 # This is a custom target, not installed by default
@@ -22,6 +11,19 @@ reference_targets = files(
   'multi-user.target',
   'basic.target',
   'sysinit.target',
+  'graphical.target',
+  'local-fs.target',
+  'network.target',
+  'network-online.target',
+  'network-pre.target',
+  'nfs-server.target',
+  'nss-lookup.target',
+  'remote-fs.target',
+  'rpcbind.target',
+  'shutdown.target',
+  'sockets.target',
+  'time-sync.target',
+  'umount.target',
 )
 
 # Service files for reference installation
@@ -38,6 +40,7 @@ reference_services = files(
   'reference/mountvirtfs.service',
   'reference/netfs.service',
   'reference/network@.service',
+  'reference/network-wait-online.service',
   'reference/remount-root.service',
   'reference/swap.service',
   'reference/sysctl.service',
@@ -57,24 +60,8 @@ reference_configs = files(
   '../sysconfig/reference/udev_retry.conf',
 )
 
-# Install reference targets and services
-install_data(
-  reference_targets,
-  install_dir: get_option('libdir') / 'initd' / 'system',
-  install_tag: 'reference',
-)
-
-install_data(
-  reference_services,
-  install_dir: get_option('libdir') / 'initd' / 'system',
-  install_tag: 'reference',
-)
-
-install_data(
-  reference_configs,
-  install_dir: get_option('sysconfdir') / 'sysconfig',
-  install_tag: 'reference',
-)
+# Reference installation is done via run_target below, not install_data
+# This ensures reference files are ONLY installed when explicitly requested
 
 # Enable reference services (create symlinks)
 # All services enabled except network@.service
@@ -153,6 +140,19 @@ install -D -m 644 "$SRCDIR/default.target" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/multi-user.target" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/basic.target" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/sysinit.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/graphical.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/local-fs.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/network.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/network-online.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/network-pre.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/nfs-server.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/nss-lookup.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/remote-fs.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/rpcbind.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/shutdown.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/sockets.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/time-sync.target" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/umount.target" -t "$LIBDIR/initd/system"
 
 # Install services
 install -D -m 644 "$SRCDIR/reference/checkfs.service" -t "$LIBDIR/initd/system"
@@ -166,6 +166,7 @@ install -D -m 644 "$SRCDIR/reference/mountfs.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/mountvirtfs.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/netfs.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/network@.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/network-wait-online.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/remount-root.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/swap.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/sysctl.service" -t "$LIBDIR/initd/system"

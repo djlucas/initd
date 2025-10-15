@@ -1,0 +1,16 @@
+[Unit]
+Description=Wait for Network to be Configured
+Documentation=man:initd(8)
+DefaultDependencies=no
+After=$network
+Before=network-online.target
+Provides=network-online
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/lib/initd/service-scripts/network-wait-online
+TimeoutStartSec=30
+
+[Install]
+WantedBy=network-online.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Resets System Activity Data Collector
+Documentation=man:sa1(8) man:sadc(8)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/sa/sadc -F -L -
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

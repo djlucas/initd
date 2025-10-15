@@ -1,0 +1,16 @@
+[Unit]
+Description=X Display Manager
+Documentation=man:xdm(1)
+After=graphical.target
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sysconfig/xdm
+ExecStart=${DISPLAY_MANAGER} ${DM_OPTIONS}
+Restart=always
+
+[Install]
+Alias=display-manager.service
+WantedBy=graphical.target

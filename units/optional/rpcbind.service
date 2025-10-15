@@ -1,0 +1,14 @@
+[Unit]
+Description=RPC bind portmap service
+Documentation=man:rpcbind(8)
+After=network.target
+Wants=rpcbind.socket
+Provides=rpcbind $portmap
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/rpcbind
+
+[Install]
+WantedBy=multi-user.target
+Also=rpcbind.socket

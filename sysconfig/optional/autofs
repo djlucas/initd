@@ -1,0 +1,13 @@
+#!/bin/bash
+#
+# Autofs configuration file
+#
+# Filename: /etc/sysconfig/autofs
+
+automount=/usr/sbin/automount
+localoptions=''
+daemonoptions='--timeout 60'
+piddir=/run
+pidroot=autofs
+
+# END

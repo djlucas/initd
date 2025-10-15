@@ -3,9 +3,21 @@
 
 # Define all optional units
 optional_units = {
+  'accounts-daemon': ['accounts-daemon.service'],
   'acpid': ['acpid.service', 'acpid.socket'],
+  'alsa': ['alsa.service'],
+  'atd': ['atd.service'],
+  'autofs': ['autofs.service'],
+  'avahi-daemon': ['avahi-daemon.service'],
+  'avahi-dnsconfd': ['avahi-dnsconfd.service'],
+  'bluetooth': ['bluetooth.service'],
+  'cups': ['cups.service'],
+  'dbus': ['dbus.service', 'dbus.socket'],
   'dhcpcd-at': ['dhcpcdat.service'],
+  'dovecot': ['dovecot.service'],
   'exim': ['exim.service'],
+  'fcron': ['fcron.service'],
+  'firewalld': ['firewalld.service'],
   'git-daemon': ['git-daemon.service'],
   'gpm': ['gpm.service'],
   'haveged': ['haveged.service'],
@@ -21,6 +33,7 @@ optional_units = {
   'lightdm': ['lightdm.service'],
   'mariadb': ['mariadb.service'],
   'named': ['named.service'],
+  'networkmanager': ['networkmanager.service'],
   'nfs-client': ['nfs-client.service'],
   'nfs-server': ['nfs-server.service'],
   'nfsd': ['nfsd.service'],
@@ -30,12 +43,14 @@ optional_units = {
   'php-fpm': ['php-fpm.service'],
   'postfix': ['postfix.service'],
   'postgresql': ['postgresql.service'],
+  'power-profiles-daemon': ['power-profiles-daemon.service'],
   'proftpd': ['proftpd.service'],
   'random-seed': ['random-seed.service'],
   'rpc-idmapd': ['rpc-idmapd.service'],
   'rpc-mountd': ['rpc-mountd.service'],
   'rpc-statd-notify': ['rpc-statd-notify.service'],
   'rpc-statd': ['rpc-statd.service'],
+  'rpcbind': ['rpcbind.service', 'rpcbind.socket'],
   'rsyncd': ['rsyncd.service', 'rsyncd.socket'],
   'rsync-at': ['rsyncdat.service'],
   'rsyslog': ['rsyslog.service'],
@@ -43,17 +58,21 @@ optional_units = {
   'saslauthd': ['saslauthd.service'],
   'sendmail': ['sendmail.service'],
   'slapd': ['slapd.service'],
+  'smartd': ['smartd.service'],
   'sm-client': ['sm-client.service'],
   'smbd': ['smbd.service', 'smbd.socket'],
   'smbd-at': ['smbdat.service'],
   'sshd': ['sshd.service', 'sshd.socket'],
   'ssh-at': ['sshdat.service'],
+  'stunnel': ['stunnel.service'],
   'svnserve': ['svnserve.service'],
   'syslog-ng': ['syslog-ng.service'],
   'sysmond': ['sysmond.service'],
+  'sysstat': ['sysstat.service'],
   'unbound': ['unbound.service'],
   'vsftpd': ['vsftpd.service'],
   'winbindd': ['winbindd.service'],
+  'xdm': ['xdm.service'],
 }
 
 # Create ninja install targets for each optional service
@@ -62,6 +81,9 @@ bash = find_program('bash')
 
 # Sysconfig file mapping (from sysconfig/meson.build)
 sysconfig_map = {
+  'autofs': 'autofs',
+  'bluetooth': 'bluetooth',
+  'firewalld': 'firewalld',
   'git-daemon': 'git-daemon',
   'nfs-server': 'nfs-utils',
   'nfsd': 'nfs-utils',
@@ -76,9 +98,11 @@ sysconfig_map = {
   'winbindd': 'samba',
   'saslauthd': 'saslauthd',
   'sendmail': 'sendmail',
+  'smartd': 'smartmontools',
   'sm-client': 'sendmail',
   'slapd': 'slapd',
   'svnserve': 'svnserve',
+  'xdm': 'xdm',
 }
 
 foreach service_name, unit_files : optional_units

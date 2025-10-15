@@ -1,0 +1,13 @@
+[Unit]
+Description=Accounts Service
+Documentation=man:accounts-daemon(8)
+Requires=dbus.service
+After=dbus.service
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.Accounts
+ExecStart=/usr/libexec/accounts-daemon
+
+[Install]
+WantedBy=multi-user.target

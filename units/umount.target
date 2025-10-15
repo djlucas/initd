@@ -1,0 +1,4 @@
+[Unit]
+Description=Unmount All Filesystems
+Documentation=man:systemd.special(7)
+RefuseManualStart=yes

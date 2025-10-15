@@ -1,0 +1,5 @@
+[Unit]
+Description=Network
+Documentation=man:systemd.special(7)
+After=network-pre.target
+Wants=network-pre.target
