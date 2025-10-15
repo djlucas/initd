@@ -131,6 +131,74 @@ static void reap_zombies(void) {
     }
 }
 
+/* Kill all remaining processes (safety net for orphaned services)
+ *
+ * SECURITY: This function handles the case where supervisor-master is SIGKILL'd
+ * during shutdown, potentially leaving orphaned service processes running.
+ *
+ * Current approach (Phase 2 - portable):
+ * 1. Reap reparented children (services that became our children)
+ * 2. Send SIGTERM to all processes (kill(-1, SIGTERM))
+ * 3. Wait 2 seconds for graceful exit
+ * 4. Send SIGKILL to survivors (kill(-1, SIGKILL))
+ * 5. Reap all killed processes
+ *
+ * This works on all Unix-like systems but is somewhat crude.
+ *
+ * Future enhancement (Phase 4 - Linux-specific):
+ * - Put each service in its own cgroup at fork time
+ * - On shutdown, destroy cgroups (kills all processes in them)
+ * - Prevents orphaning even if supervisor dies unexpectedly
+ * - More precise than kill(-1) which affects all processes
+ * - See: cgroup v2 with cgroup.kill interface
+ *
+ * Note: Services already use process groups (setsid), but we can't track
+ * their PGIDs after supervisor-master dies. Cgroups solve this via filesystem
+ * persistence of the cgroup hierarchy.
+ */
+static void kill_remaining_processes(void) {
+    pid_t pid;
+    int status;
+    int killed = 0;
+
+    fprintf(stderr, "init: cleaning up any orphaned processes\n");
+
+    /* First pass: reap any children that got reparented to us */
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        fprintf(stderr, "init: reaped orphaned process %d\n", pid);
+        killed++;
+    }
+
+    /* Second pass: send SIGTERM to all processes except ourselves
+     * Note: kill(-1, sig) sends signal to all processes we can signal */
+    fprintf(stderr, "init: sending SIGTERM to all remaining processes\n");
+    kill(-1, SIGTERM);
+
+    /* Give processes time to exit gracefully */
+    sleep(2);
+
+    /* Third pass: reap any that exited */
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        fprintf(stderr, "init: reaped process %d after SIGTERM\n", pid);
+        killed++;
+    }
+
+    /* Final pass: SIGKILL anything still alive */
+    fprintf(stderr, "init: sending SIGKILL to all remaining processes\n");
+    kill(-1, SIGKILL);
+
+    /* Reap the killed processes */
+    sleep(1);
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        fprintf(stderr, "init: reaped process %d after SIGKILL\n", pid);
+        killed++;
+    }
+
+    if (killed > 0) {
+        fprintf(stderr, "init: cleaned up %d orphaned processes\n", killed);
+    }
+}
+
 /* Perform system shutdown */
 static void do_shutdown(void) {
     fprintf(stderr, "init: shutdown requested (type %d)\n", shutdown_type);
@@ -153,6 +221,11 @@ static void do_shutdown(void) {
             fprintf(stderr, "init: supervisor timeout, sending SIGKILL\n");
             kill(supervisor_pid, SIGKILL);
             waitpid(supervisor_pid, NULL, 0);
+            supervisor_pid = 0;
+
+            /* SAFETY: If we had to SIGKILL the supervisor, it may have left
+             * orphaned service processes. Clean them up before shutdown. */
+            kill_remaining_processes();
         }
     }
 
