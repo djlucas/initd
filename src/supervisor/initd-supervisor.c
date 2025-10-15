@@ -27,6 +27,7 @@
 #include "../common/ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
+#include "service-registry.h"
 
 #ifndef WORKER_PATH
 #define WORKER_PATH "/usr/libexecdir/initd/initd-supervisor-worker"
@@ -324,6 +325,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         }
 
         /* Start service with validated credentials */
+        int kill_mode = unit.config.service.kill_mode;
         pid_t pid = start_service_process(req, validated_uid, validated_gid);
         free_unit_file(&unit);
 
@@ -332,19 +334,44 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             resp->error_code = errno;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to fork service");
         } else {
-            resp->type = RESP_SERVICE_STARTED;
-            resp->service_pid = pid;
-            fprintf(stderr, "supervisor-master: started %s (pid %d)\n", req->unit_name, pid);
+            /* Register service in the registry to prevent arbitrary kill() attacks */
+            if (register_service(pid, req->unit_name, kill_mode) < 0) {
+                /* Registry full - kill the service we just started */
+                kill(pid, SIGKILL);
+                waitpid(pid, NULL, 0);
+                resp->type = RESP_ERROR;
+                resp->error_code = ENOMEM;
+                snprintf(resp->error_msg, sizeof(resp->error_msg), "Service registry full");
+            } else {
+                resp->type = RESP_SERVICE_STARTED;
+                resp->service_pid = pid;
+                fprintf(stderr, "supervisor-master: started %s (pid %d)\n", req->unit_name, pid);
+            }
         }
         break;
     }
 
-    case REQ_STOP_SERVICE:
-        fprintf(stderr, "supervisor-master: stop service request: pid %d (kill_mode=%d)\n",
-                req->service_pid, req->kill_mode);
+    case REQ_STOP_SERVICE: {
+        fprintf(stderr, "supervisor-master: stop service request: pid %d\n", req->service_pid);
 
-        /* Handle different kill modes */
-        switch (req->kill_mode) {
+        /* SECURITY: Validate that this PID belongs to a managed service.
+         * Prevents compromised worker from killing arbitrary processes. */
+        struct service_record *svc = lookup_service(req->service_pid);
+        if (!svc) {
+            fprintf(stderr, "supervisor-master: SECURITY: attempt to stop unmanaged PID %d\n",
+                    req->service_pid);
+            resp->type = RESP_ERROR;
+            resp->error_code = ESRCH;
+            snprintf(resp->error_msg, sizeof(resp->error_msg),
+                     "PID %d is not a managed service", req->service_pid);
+            break;
+        }
+
+        fprintf(stderr, "supervisor-master: stopping service %s (pid=%d, kill_mode=%d)\n",
+                svc->unit_name, svc->pid, svc->kill_mode);
+
+        /* Use VALIDATED kill_mode from registry (from unit file), not from worker request */
+        switch (svc->kill_mode) {
         case KILL_NONE:
             /* Don't kill anything */
             fprintf(stderr, "supervisor-master: KillMode=none, not sending signal\n");
@@ -353,7 +380,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
         case KILL_PROCESS:
             /* Kill only the main process (default) */
-            if (kill(req->service_pid, SIGTERM) < 0) {
+            if (kill(svc->pid, SIGTERM) < 0) {
                 resp->type = RESP_ERROR;
                 resp->error_code = errno;
                 snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
@@ -363,10 +390,10 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             break;
 
         case KILL_CONTROL_GROUP:
-            /* Kill entire process group */
-            if (killpg(req->service_pid, SIGTERM) < 0) {
+            /* Kill entire process group using VALIDATED pgid from registry */
+            if (killpg(svc->pgid, SIGTERM) < 0) {
                 /* If killpg fails (not a process group leader), fallback to kill */
-                if (kill(req->service_pid, SIGTERM) < 0) {
+                if (kill(svc->pid, SIGTERM) < 0) {
                     resp->type = RESP_ERROR;
                     resp->error_code = errno;
                     snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service group");
@@ -380,17 +407,17 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
         case KILL_MIXED:
             /* SIGTERM to main process, SIGKILL to rest of group */
-            kill(req->service_pid, SIGTERM);
+            kill(svc->pid, SIGTERM);
             /* Sleep briefly to let main process exit gracefully */
             usleep(100000); /* 100ms */
             /* Kill remaining processes in group */
-            killpg(req->service_pid, SIGKILL);
+            killpg(svc->pgid, SIGKILL);
             resp->type = RESP_SERVICE_STOPPED;
             break;
 
         default:
             /* Fallback to process mode */
-            if (kill(req->service_pid, SIGTERM) < 0) {
+            if (kill(svc->pid, SIGTERM) < 0) {
                 resp->type = RESP_ERROR;
                 resp->error_code = errno;
                 snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
@@ -400,6 +427,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             break;
         }
         break;
+    }
 
     case REQ_ENABLE_UNIT: {
         fprintf(stderr, "supervisor-master: enable unit request: %s\n", req->unit_path);
@@ -492,10 +520,13 @@ static void reap_zombies(void) {
                     WIFEXITED(status) ? WEXITSTATUS(status) : -1);
             slave_pid = 0;
         } else {
-            /* Service process exited - notify slave */
+            /* Service process exited - unregister and notify slave */
             int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
             fprintf(stderr, "supervisor-master: service pid %d exited (status %d)\n",
                     pid, exit_status);
+
+            /* Remove from service registry */
+            unregister_service(pid);
 
             /* Send notification to slave */
             struct priv_response notif = {0};
@@ -566,6 +597,9 @@ int main(int argc, char *argv[]) {
     (void)argv;
 
     fprintf(stderr, "supervisor-master: starting\n");
+
+    /* Initialize service registry */
+    service_registry_init();
 
     /* Setup signals */
     if (setup_signals() < 0) {

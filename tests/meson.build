@@ -60,7 +60,7 @@ test_integration = executable(
 
 test_privileged_ops = executable(
   'test-privileged-ops',
-  'test-privileged-ops.c',
+  ['test-privileged-ops.c', '../src/supervisor/service-registry.c'],
   dependencies: [common_dep, privileged_ops_dep]
 )
 
@@ -82,6 +82,12 @@ test_service_features = executable(
   dependencies: common_dep
 )
 
+test_service_registry = executable(
+  'test-service-registry',
+  ['test-service-registry.c', '../src/supervisor/service-registry.c'],
+  dependencies: common_dep
+)
+
 test('calendar parser', test_calendar)
 test('unit file parser', test_parser)
 test('control protocol', test_control)
@@ -95,6 +101,7 @@ test('integration', test_integration)
 test('timer IPC protocol', test_timer_ipc)
 test('socket IPC protocol', test_socket_ipc)
 test('service features', test_service_features)
+test('service registry', test_service_registry)
 
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')

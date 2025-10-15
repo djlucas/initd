@@ -1,4 +1,4 @@
-supervisor_sources = files('initd-supervisor.c')
+supervisor_sources = files('initd-supervisor.c', 'service-registry.c')
 supervisor_worker_sources = files('initd-supervisor-worker.c')
 
 supervisor_c_args = [

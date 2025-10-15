@@ -16,6 +16,7 @@
 #include "../src/common/privileged-ops.h"
 #include "../src/common/parser.h"
 #include "../src/common/log.h"
+#include "../src/supervisor/service-registry.h"
 
 #define TEST(name) \
     printf("Testing: %s ... ", name); \
@@ -296,6 +297,41 @@ void test_enable_unit_no_install(void) {
     PASS();
 }
 
+void test_service_registry_prevents_arbitrary_kill(void) {
+    TEST("service registry prevents arbitrary kill");
+
+    /* Initialize the service registry */
+    service_registry_init();
+
+    /* Register a test service with a known PID */
+    pid_t test_pid = 12345;
+    assert(register_service(test_pid, "test.service", KILL_PROCESS) == 0);
+
+    /* Verify we can lookup the registered service */
+    struct service_record *svc = lookup_service(test_pid);
+    assert(svc != NULL);
+    assert(svc->pid == test_pid);
+    assert(strcmp(svc->unit_name, "test.service") == 0);
+
+    /* SECURITY TEST: Verify we CANNOT lookup arbitrary system PIDs */
+    /* PID 1 is always init/systemd - should not be in our registry */
+    struct service_record *init_svc = lookup_service(1);
+    assert(init_svc == NULL);
+
+    /* Try other critical system PIDs that should NOT be in registry */
+    assert(lookup_service(getpid()) == NULL);  /* Our own test process */
+    assert(lookup_service(getppid()) == NULL); /* Our parent process */
+
+    /* Verify unregistered PID lookup fails */
+    assert(lookup_service(99999) == NULL);
+
+    /* This test demonstrates that the supervisor's REQ_STOP_SERVICE handler
+     * will reject attempts to kill arbitrary PIDs, preventing a compromised
+     * worker from killing critical system processes. */
+
+    printf("PASS (verified registry rejects PID 1 and other unmanaged PIDs)\n");
+}
+
 int main(void) {
     printf("=== Privileged Operations Tests ===\n\n");
 
@@ -317,6 +353,7 @@ int main(void) {
     test_disable_unit();
     test_is_unit_enabled();
     test_enable_unit_no_install();
+    test_service_registry_prevents_arbitrary_kill();
 
     log_close();
 
