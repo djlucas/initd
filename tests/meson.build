@@ -101,7 +101,7 @@ test('integration', test_integration)
 test('timer IPC protocol', test_timer_ipc)
 test('socket IPC protocol', test_socket_ipc)
 test('service features', test_service_features)
-test('service registry', test_service_registry)
+test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
 
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')

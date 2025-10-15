@@ -4,6 +4,11 @@
  * arbitrary kill() attacks from compromised workers. Only services in
  * the registry can be stopped.
  *
+ * Also provides resource exhaustion protection via:
+ * - Max concurrent service limit (MAX_SERVICES)
+ * - Per-service restart rate limiting
+ * - Restart failure window tracking
+ *
  * Copyright (c) 2025 DJ Lucas
  * SPDX-License-Identifier: MIT
  */
@@ -12,8 +17,20 @@
 #define SERVICE_REGISTRY_H
 
 #include <sys/types.h>
+#include <time.h>
 
-#define MAX_SERVICES 256
+/* Resource limits for DoS prevention */
+#define MAX_SERVICES 256            /* Maximum concurrent services */
+#define MAX_RESTARTS_PER_WINDOW 5   /* Max restarts allowed in time window */
+#define RESTART_WINDOW_SEC 60       /* Time window for restart tracking (60s) */
+#define MIN_RESTART_INTERVAL_SEC 1  /* Minimum time between restart attempts */
+
+/* Restart attempt tracking */
+struct restart_tracker {
+    time_t attempts[MAX_RESTARTS_PER_WINDOW];  /* Timestamps of recent restart attempts */
+    int attempt_count;                         /* Number of attempts in current window */
+    time_t last_attempt;                       /* Timestamp of last restart attempt */
+};
 
 struct service_record {
     pid_t pid;          /* Service PID */
@@ -21,6 +38,7 @@ struct service_record {
     char unit_name[256];
     int kill_mode;      /* KillMode from unit file */
     int in_use;         /* 1 if slot is active */
+    struct restart_tracker restart_info;  /* DoS prevention: restart rate limiting */
 #ifdef __linux__
     char cgroup_path[256];  /* Linux-only: cgroup v2 path (future use) */
 #endif
@@ -29,16 +47,38 @@ struct service_record {
 /* Initialize the service registry */
 void service_registry_init(void);
 
-/* Add a service to the registry */
+/* Add a service to the registry
+ * Returns 0 on success, -1 if registry is full (DoS prevention) */
 int register_service(pid_t pid, const char *unit_name, int kill_mode);
 
 /* Lookup a service in the registry */
 struct service_record *lookup_service(pid_t pid);
+
+/* Lookup a service by unit name (for restart tracking) */
+struct service_record *lookup_service_by_name(const char *unit_name);
 
 /* Remove a service from the registry */
 void unregister_service(pid_t pid);
 
 /* Get the number of registered services (for testing) */
 int service_registry_count(void);
+
+/* DoS Prevention: Check if a service restart should be allowed
+ * Returns 1 if restart is allowed, 0 if rate limited
+ * Implements:
+ * - Minimum restart interval (anti-spam)
+ * - Maximum restarts per time window (anti-fork-bomb)
+ */
+int can_restart_service(const char *unit_name);
+
+/* DoS Prevention: Record a restart attempt for rate limiting
+ * Called before starting/restarting a service
+ */
+void record_restart_attempt(const char *unit_name);
+
+/* DoS Prevention: Check if registry has capacity for new service
+ * Returns 1 if space available, 0 if at MAX_SERVICES limit
+ */
+int has_registry_capacity(void);
 
 #endif /* SERVICE_REGISTRY_H */

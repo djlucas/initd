@@ -293,6 +293,31 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             break;
         }
 
+        /* DoS PREVENTION: Check if registry has capacity before starting service */
+        if (!has_registry_capacity()) {
+            fprintf(stderr, "supervisor-master: [DoS Prevention] service registry full, cannot start %s\n",
+                    req->unit_name);
+            resp->type = RESP_ERROR;
+            resp->error_code = ENOMEM;
+            snprintf(resp->error_msg, sizeof(resp->error_msg),
+                     "Service registry full (max %d services)", MAX_SERVICES);
+            break;
+        }
+
+        /* DoS PREVENTION: Check restart rate limiting */
+        if (!can_restart_service(req->unit_name)) {
+            fprintf(stderr, "supervisor-master: [DoS Prevention] %s rate limited\n", req->unit_name);
+            resp->type = RESP_ERROR;
+            resp->error_code = EAGAIN;
+            snprintf(resp->error_msg, sizeof(resp->error_msg),
+                     "Service restart rate limited (max %d/%dsec)",
+                     MAX_RESTARTS_PER_WINDOW, RESTART_WINDOW_SEC);
+            break;
+        }
+
+        /* DoS PREVENTION: Record restart attempt for tracking */
+        record_restart_attempt(req->unit_name);
+
         /* SECURITY: Master must parse unit file to get authoritative User/Group values.
          * Never trust worker-supplied run_uid/run_gid as compromised worker could
          * request uid=0 to escalate privileges. */
