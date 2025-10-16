@@ -42,6 +42,80 @@ static volatile sig_atomic_t shutdown_requested = 0;
 static pid_t slave_pid = 0;
 static int ipc_socket = -1;
 
+static int build_exec_argv(const char *command, char ***argv_out) {
+    if (!command || command[0] == '\0' || !argv_out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    char *copy = strdup(command);
+    if (!copy) {
+        return -1;
+    }
+
+    size_t capacity = 8;
+    size_t argc = 0;
+    char **argv = calloc(capacity, sizeof(char *));
+    if (!argv) {
+        free(copy);
+        return -1;
+    }
+
+    char *saveptr = NULL;
+    char *token = strtok_r(copy, " \t", &saveptr);
+    while (token) {
+        if (argc + 1 >= capacity) {
+            size_t new_capacity = capacity * 2;
+            char **tmp = realloc(argv, new_capacity * sizeof(char *));
+            if (!tmp) {
+                goto error;
+            }
+            argv = tmp;
+            capacity = new_capacity;
+        }
+
+        argv[argc] = strdup(token);
+        if (!argv[argc]) {
+            goto error;
+        }
+        argc++;
+
+        token = strtok_r(NULL, " \t", &saveptr);
+    }
+
+    free(copy);
+
+    if (argc == 0) {
+        free(argv);
+        errno = EINVAL;
+        return -1;
+    }
+
+    argv[argc] = NULL;
+    *argv_out = argv;
+    return 0;
+
+error:
+    if (argv) {
+        for (size_t i = 0; i < argc; i++) {
+            free(argv[i]);
+        }
+        free(argv);
+    }
+    free(copy);
+    return -1;
+}
+
+static void free_exec_argv(char **argv) {
+    if (!argv) {
+        return;
+    }
+    for (size_t i = 0; argv[i] != NULL; i++) {
+        free(argv[i]);
+    }
+    free(argv);
+}
+
 static int fallback_to_nobody_allowed(void) {
     const char *env = getenv("INITD_ALLOW_USER_FALLBACK");
     if (!env) {
@@ -206,7 +280,16 @@ static pid_t start_slave(int slave_fd) {
 }
 
 /* Start a service process with privilege dropping */
-static pid_t start_service_process(struct priv_request *req, uid_t validated_uid, gid_t validated_gid) {
+static pid_t start_service_process(const struct service_section *service,
+                                   const char *exec_path,
+                                   char *const argv[],
+                                   uid_t validated_uid,
+                                   gid_t validated_gid) {
+    if (!service || !exec_path || !argv || !argv[0]) {
+        errno = EINVAL;
+        return -1;
+    }
+
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -223,26 +306,20 @@ static pid_t start_service_process(struct priv_request *req, uid_t validated_uid
         }
 
         /* Setup service environment (PrivateTmp, LimitNOFILE) BEFORE dropping privileges */
-        struct service_section svc_config = {
-            .private_tmp = req->private_tmp,
-            .limit_nofile = req->limit_nofile,
-            .kill_mode = req->kill_mode
-        };
-
-        if (setup_service_environment(&svc_config) < 0) {
+        if (setup_service_environment(service) < 0) {
             fprintf(stderr, "supervisor-master: failed to setup service environment\n");
             _exit(1);
         }
 
         /* Validate exec_path is absolute (prevent relative path attacks) */
-        if (req->exec_path[0] != '/') {
-            fprintf(stderr, "supervisor-master: exec_path must be absolute: %s\n", req->exec_path);
+        if (exec_path[0] != '/') {
+            fprintf(stderr, "supervisor-master: exec_path must be absolute: %s\n", exec_path);
             _exit(1);
         }
 
         /* Check for directory traversal attempts */
-        if (strstr(req->exec_path, "..") != NULL) {
-            fprintf(stderr, "supervisor-master: exec_path contains '..': %s\n", req->exec_path);
+        if (strstr(exec_path, "..") != NULL) {
+            fprintf(stderr, "supervisor-master: exec_path contains '..': %s\n", exec_path);
             _exit(1);
         }
 
@@ -276,13 +353,7 @@ static pid_t start_service_process(struct priv_request *req, uid_t validated_uid
         }
 
         /* Exec service using argv (NO SHELL - prevents injection) */
-        if (req->exec_args != NULL && req->exec_args[0] != NULL) {
-            execv(req->exec_path, req->exec_args);
-        } else {
-            /* Fallback: no args provided, exec with single arg */
-            char *argv[] = {req->exec_path, NULL};
-            execv(req->exec_path, argv);
-        }
+        execv(exec_path, argv);
 
         perror("supervisor-master: execv");
         _exit(1);
@@ -349,12 +420,43 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
          * Never trust worker-supplied run_uid/run_gid as compromised worker could
          * request uid=0 to escalate privileges. */
         struct unit_file unit = {0};
+        char **exec_argv = NULL;
+        const char *exec_path = NULL;
 
         if (parse_unit_file(req->unit_path, &unit) < 0) {
             resp->type = RESP_ERROR;
             resp->error_code = errno;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse unit file");
-            break;
+            goto start_cleanup;
+        }
+
+        if (!unit.config.service.exec_start || unit.config.service.exec_start[0] == '\0') {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit has no ExecStart");
+            goto start_cleanup;
+        }
+
+        if (build_exec_argv(unit.config.service.exec_start, &exec_argv) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse ExecStart command");
+            goto start_cleanup;
+        }
+
+        exec_path = exec_argv[0];
+        if (!exec_path || exec_path[0] != '/') {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart must use absolute path");
+            goto start_cleanup;
+        }
+
+        if (strstr(exec_path, "..") != NULL) {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart path contains '..'");
+            goto start_cleanup;
         }
 
         /* Extract and validate User/Group from parsed unit file */
@@ -368,8 +470,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
                 resp->type = RESP_ERROR;
                 resp->error_code = EINVAL;
                 snprintf(resp->error_msg, sizeof(resp->error_msg), "User '%s' not found", unit.config.service.user);
-                free_unit_file(&unit);
-                break;
+                goto start_cleanup;
             }
             validated_uid = pw->pw_uid;
             fprintf(stderr, "supervisor-master: service will run as user %s (uid=%d)\n",
@@ -383,8 +484,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
                 resp->type = RESP_ERROR;
                 resp->error_code = EINVAL;
                 snprintf(resp->error_msg, sizeof(resp->error_msg), "Group '%s' not found", unit.config.service.group);
-                free_unit_file(&unit);
-                break;
+                goto start_cleanup;
             }
             validated_gid = gr->gr_gid;
             fprintf(stderr, "supervisor-master: service will run as group %s (gid=%d)\n",
@@ -399,27 +499,40 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
         /* Start service with validated credentials */
         int kill_mode = unit.config.service.kill_mode;
-        pid_t pid = start_service_process(req, validated_uid, validated_gid);
-        free_unit_file(&unit);
+        pid_t pid = start_service_process(&unit.config.service, exec_path, exec_argv,
+                                          validated_uid, validated_gid);
+        int saved_errno = errno;
+
+        if (exec_argv) {
+            free_exec_argv(exec_argv);
+            exec_argv = NULL;
+        }
 
         if (pid < 0) {
             resp->type = RESP_ERROR;
-            resp->error_code = errno;
-            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to fork service");
-        } else {
-            /* Register service in the registry to prevent arbitrary kill() attacks */
-            if (register_service(pid, req->unit_name, kill_mode) < 0) {
-                /* Registry full - kill the service we just started */
-                kill(pid, SIGKILL);
-                waitpid(pid, NULL, 0);
-                resp->type = RESP_ERROR;
-                resp->error_code = ENOMEM;
-                snprintf(resp->error_msg, sizeof(resp->error_msg), "Service registry full");
-            } else {
-                resp->type = RESP_SERVICE_STARTED;
-                resp->service_pid = pid;
-                fprintf(stderr, "supervisor-master: started %s (pid %d)\n", req->unit_name, pid);
-            }
+            resp->error_code = saved_errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to start service");
+            goto start_cleanup;
+        }
+
+        /* Register service in the registry to prevent arbitrary kill() attacks */
+        if (register_service(pid, req->unit_name, kill_mode) < 0) {
+            /* Registry full - kill the service we just started */
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            resp->type = RESP_ERROR;
+            resp->error_code = ENOMEM;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Service registry full");
+            goto start_cleanup;
+        }
+
+        resp->type = RESP_SERVICE_STARTED;
+        resp->service_pid = pid;
+        fprintf(stderr, "supervisor-master: started %s (pid %d)\n", req->unit_name, pid);
+start_cleanup:
+        free_unit_file(&unit);
+        if (exec_argv) {
+            free_exec_argv(exec_argv);
         }
         break;
     }

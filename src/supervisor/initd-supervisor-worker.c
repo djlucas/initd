@@ -299,6 +299,7 @@ static pid_t start_service(struct unit_file *unit) {
 
     req.type = REQ_START_SERVICE;
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
+    strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
     if (unit->type == UNIT_SERVICE) {
         strncpy(req.exec_path, unit->config.service.exec_start, sizeof(req.exec_path) - 1);
