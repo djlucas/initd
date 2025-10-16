@@ -115,8 +115,24 @@ int send_request(int fd, const struct priv_request *req) {
     if (req->exec_args) {
         /* Count args and calculate total length */
         for (int i = 0; req->exec_args[i] != NULL; i++) {
+            if (wire.arg_count >= 1024) {
+                errno = EINVAL;
+                return -1;
+            }
+
+            size_t len = strlen(req->exec_args[i]) + 1; /* include NUL */
+            if (len > 1024 * 1024) {
+                errno = EINVAL;
+                return -1;
+            }
+
+            if (wire.args_total_len > UINT32_MAX - len) {
+                errno = EOVERFLOW;
+                return -1;
+            }
+
             wire.arg_count++;
-            wire.args_total_len += strlen(req->exec_args[i]) + 1; /* +1 for NUL */
+            wire.args_total_len += (uint32_t)len;
         }
     }
 
@@ -127,6 +143,11 @@ int send_request(int fd, const struct priv_request *req) {
 
     /* Send packed args if any */
     if (wire.args_total_len > 0) {
+        if (wire.args_total_len > 1024 * 1024) {
+            errno = EINVAL;
+            return -1;
+        }
+
         char *args_buf = malloc(wire.args_total_len);
         if (!args_buf) {
             return -1;
@@ -135,6 +156,11 @@ int send_request(int fd, const struct priv_request *req) {
         char *p = args_buf;
         for (uint32_t i = 0; i < wire.arg_count; i++) {
             size_t len = strlen(req->exec_args[i]) + 1;
+            if (len > wire.args_total_len - (size_t)(p - args_buf)) {
+                free(args_buf);
+                errno = EINVAL;
+                return -1;
+            }
             memcpy(p, req->exec_args[i], len);
             p += len;
         }
