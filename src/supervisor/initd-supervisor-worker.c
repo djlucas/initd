@@ -57,6 +57,7 @@ static struct unit_file **units = NULL;
 static int unit_count = 0;
 static unsigned int start_traversal_generation = 0;
 static unsigned int stop_traversal_generation = 0;
+static unsigned int isolate_generation = 0;
 
 /* Forward declarations */
 static bool unit_provides(struct unit_file *unit, const char *service_name);
@@ -64,6 +65,7 @@ static int stop_unit_recursive(struct unit_file *unit);
 static int start_unit_recursive(struct unit_file *unit);
 static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
 static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
+static void mark_isolate_closure(struct unit_file *unit, unsigned int generation);
 
 /* Maximum recursion depth for dependency resolution */
 #define MAX_RECURSION_DEPTH 100
@@ -100,6 +102,23 @@ static unsigned int next_stop_generation(void) {
         stop_traversal_generation++;
     }
     return stop_traversal_generation;
+}
+
+static void reset_isolate_marks(void) {
+    for (int i = 0; i < unit_count; i++) {
+        units[i]->isolate_mark_generation = 0;
+        units[i]->isolate_needed = false;
+    }
+}
+
+static unsigned int next_isolate_generation(void) {
+    if (isolate_generation == UINT_MAX) {
+        isolate_generation = 1;
+        reset_isolate_marks();
+    } else {
+        isolate_generation++;
+    }
+    return isolate_generation;
 }
 
 static bool is_control_client_authorized(int client_fd) {
@@ -458,6 +477,21 @@ static struct unit_file *find_unit(const char *name) {
     return NULL;
 }
 
+static struct unit_file *resolve_unit(const char *name) {
+    struct unit_file *unit = find_unit(name);
+    if (unit) {
+        return unit;
+    }
+
+    for (int i = 0; i < unit_count; i++) {
+        if (unit_provides(units[i], name)) {
+            return units[i];
+        }
+    }
+
+    return NULL;
+}
+
 /* Find unit by PID */
 static struct unit_file *find_unit_by_pid(pid_t pid) {
     for (int i = 0; i < unit_count; i++) {
@@ -772,12 +806,108 @@ static void handle_control_command(int client_fd) {
     }
 
     case CMD_RESTART:
+        if (!unit) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Unit %s not found", req.unit_name);
+        } else {
+            if (stop_unit_recursive(unit) < 0) {
+                resp.code = RESP_FAILURE;
+                snprintf(resp.message, sizeof(resp.message), "Failed to stop %s", req.unit_name);
+            } else if (start_unit_recursive(unit) < 0) {
+                resp.code = RESP_FAILURE;
+                snprintf(resp.message, sizeof(resp.message), "Failed to restart %s", req.unit_name);
+            } else {
+                resp.code = RESP_SUCCESS;
+                snprintf(resp.message, sizeof(resp.message), "Restarted %s", req.unit_name);
+            }
+        }
+        break;
+
     case CMD_LIST_TIMERS:
-    case CMD_DAEMON_RELOAD:
+        resp.code = RESP_FAILURE;
+        snprintf(resp.message, sizeof(resp.message),
+                 "Supervisor does not manage timers; use timer daemon list-timers");
+        break;
+
+    case CMD_DAEMON_RELOAD: {
+        struct unit_file **old_units = units;
+        int old_count = unit_count;
+        struct unit_file **new_units = NULL;
+        int new_count = 0;
+
+        if (scan_unit_directories(&new_units, &new_count) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to reload unit files");
+            break;
+        }
+
+        for (int i = 0; i < new_count; i++) {
+            struct unit_file *new_unit = new_units[i];
+            for (int j = 0; j < old_count; j++) {
+                struct unit_file *old_unit = old_units[j];
+                if (strcmp(new_unit->name, old_unit->name) == 0) {
+                    new_unit->state = old_unit->state;
+                    new_unit->pid = old_unit->pid;
+                    new_unit->restart_count = old_unit->restart_count;
+                    new_unit->last_start = old_unit->last_start;
+                    new_unit->start_traversal_id = old_unit->start_traversal_id;
+                    new_unit->stop_traversal_id = old_unit->stop_traversal_id;
+                    new_unit->start_visit_state = old_unit->start_visit_state;
+                    new_unit->stop_visit_state = old_unit->stop_visit_state;
+                    break;
+                }
+            }
+        }
+
+        units = new_units;
+        unit_count = new_count;
+        start_traversal_generation = 0;
+        stop_traversal_generation = 0;
+        isolate_generation = 0;
+        if (old_units) {
+            free_units(old_units, old_count);
+        }
+
+        resp.code = RESP_SUCCESS;
+        snprintf(resp.message, sizeof(resp.message), "Supervisor configuration reloaded (%d units)", unit_count);
+        break;
+    }
+
     case CMD_ISOLATE:
-        resp.code = RESP_INVALID_COMMAND;
-        snprintf(resp.message, sizeof(resp.message), "Command %s not yet implemented",
-                 command_to_string(req.header.command));
+        if (!unit) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Unit %s not found", req.unit_name);
+        } else if (unit->type != UNIT_TARGET) {
+            resp.code = RESP_INVALID_COMMAND;
+            snprintf(resp.message, sizeof(resp.message), "%s is not a target", req.unit_name);
+        } else {
+            unsigned int generation = next_isolate_generation();
+            mark_isolate_closure(unit, generation);
+
+            bool stop_failed = false;
+            for (int i = 0; i < unit_count; i++) {
+                struct unit_file *other = units[i];
+                if (other->isolate_mark_generation == generation) {
+                    continue;
+                }
+                if (other->state == STATE_ACTIVE || other->state == STATE_ACTIVATING) {
+                    if (stop_unit_recursive(other) < 0) {
+                        stop_failed = true;
+                    }
+                }
+            }
+
+            if (stop_failed) {
+                resp.code = RESP_FAILURE;
+                snprintf(resp.message, sizeof(resp.message), "Failed to stop non-target units");
+            } else if (start_unit_recursive(unit) < 0) {
+                resp.code = RESP_FAILURE;
+                snprintf(resp.message, sizeof(resp.message), "Failed to activate %s", req.unit_name);
+            } else {
+                resp.code = RESP_SUCCESS;
+                snprintf(resp.message, sizeof(resp.message), "Isolated %s", req.unit_name);
+            }
+        }
         break;
 
     default:
@@ -870,6 +1000,34 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
 static int stop_unit_recursive(struct unit_file *unit) {
     unsigned int generation = next_stop_generation();
     return stop_unit_recursive_depth(unit, 0, generation);
+}
+
+static void mark_isolate_closure(struct unit_file *unit, unsigned int generation) {
+    if (!unit) {
+        return;
+    }
+
+    if (unit->isolate_mark_generation == generation) {
+        return;
+    }
+
+    unit->isolate_mark_generation = generation;
+    unit->isolate_needed = true;
+
+    for (int i = 0; i < unit->unit.requires_count; i++) {
+        struct unit_file *dep = resolve_unit(unit->unit.requires[i]);
+        mark_isolate_closure(dep, generation);
+    }
+
+    for (int i = 0; i < unit->unit.wants_count; i++) {
+        struct unit_file *dep = resolve_unit(unit->unit.wants[i]);
+        mark_isolate_closure(dep, generation);
+    }
+
+    for (int i = 0; i < unit->unit.after_count; i++) {
+        struct unit_file *dep = resolve_unit(unit->unit.after[i]);
+        mark_isolate_closure(dep, generation);
+    }
 }
 
 /* Start a unit and its dependencies (recursive with depth limit) */

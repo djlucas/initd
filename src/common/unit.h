@@ -155,6 +155,10 @@ struct unit_file {
     enum dependency_visit_state start_visit_state;
     enum dependency_visit_state stop_visit_state;
 
+    /* Isolation traversal bookkeeping */
+    unsigned int isolate_mark_generation;
+    bool isolate_needed;
+
     /* Linked list for dependency graph */
     struct unit_file *next;
 };
