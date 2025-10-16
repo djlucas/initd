@@ -201,7 +201,7 @@ static void kill_remaining_processes(void) {
 
 /* Perform system shutdown */
 static void do_shutdown(void) {
-    fprintf(stderr, "init: shutdown requested (type %d)\n", shutdown_type);
+    fprintf(stderr, "INIT: shutdown requested (type %d)\n", shutdown_type);
 
     /* RACE PREVENTION: Block SIGCHLD during critical section to prevent
      * concurrent reap_zombies() from modifying supervisor_pid while we're
@@ -217,7 +217,7 @@ static void do_shutdown(void) {
     pid_t supervisor_to_shutdown = supervisor_pid;
 
     if (supervisor_to_shutdown > 0) {
-        fprintf(stderr, "init: signaling supervisor to shutdown (pid %d)\n", supervisor_to_shutdown);
+        fprintf(stderr, "INIT: signaling supervisor to shutdown (pid %d)\n", supervisor_to_shutdown);
         kill(supervisor_to_shutdown, SIGTERM);
 
         /* Wait for supervisor to exit (with timeout) */
@@ -229,7 +229,7 @@ static void do_shutdown(void) {
             int status;
             pid_t pid = waitpid(supervisor_to_shutdown, &status, WNOHANG);
             if (pid == supervisor_to_shutdown) {
-                fprintf(stderr, "init: supervisor-master exited gracefully (status %d)\n",
+                fprintf(stderr, "INIT: supervisor-master exited gracefully (status %d)\n",
                         WIFEXITED(status) ? WEXITSTATUS(status) : -1);
                 supervisor_pid = 0;
                 break;
@@ -244,7 +244,7 @@ static void do_shutdown(void) {
 
         /* Force kill if still running after timeout */
         if (timeout == 0 && kill(supervisor_to_shutdown, 0) == 0) {
-            fprintf(stderr, "init: supervisor timeout, sending SIGKILL\n");
+            fprintf(stderr, "INIT: supervisor timeout, sending SIGKILL\n");
             kill(supervisor_to_shutdown, SIGKILL);
             waitpid(supervisor_to_shutdown, NULL, 0);
             supervisor_pid = 0;
@@ -263,7 +263,7 @@ static void do_shutdown(void) {
     sync();
 
     /* Perform shutdown action */
-    fprintf(stderr, "init: performing final shutdown\n");
+    fprintf(stderr, "INIT: performing final shutdown\n");
 
     switch (shutdown_type) {
     case 0: /* poweroff */
@@ -278,7 +278,7 @@ static void do_shutdown(void) {
     }
 
     /* Should not reach here */
-    fprintf(stderr, "init: reboot() failed: %s\n", strerror(errno));
+    fprintf(stderr, "INIT: initd shutdown failed: %s\n", strerror(errno));
     while (1) pause();
 }
 
@@ -332,7 +332,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    fprintf(stderr, "init: initd version 0.1.0 starting\n");
+    fprintf(stderr, "INIT: initd version %s booting\n", INITD_VERSION);
 
     /* Parse command line arguments */
     parse_args(argc, argv);
