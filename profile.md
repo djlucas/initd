@@ -77,8 +77,8 @@ Each component is a **separate, independent daemon** that can be installed and r
 #### 2. Supervisor Master (root)
 
 **Responsibilities:**
-- Fork supervisor-slave
-- Handle privileged requests from slave
+- Fork supervisor-worker
+- Handle privileged requests from worker
 - Set up cgroups (Linux only)
 - Set up namespaces
 - Drop privileges before exec
@@ -90,9 +90,9 @@ Each component is a **separate, independent daemon** that can be installed and r
 - `unshare()` for namespaces
 - `setuid()`/`setgid()`
 
-**IPC with slave:**
-- Pipe/socket for requests
-- Binary protocol for efficiency
+**IPC with worker:**
+- Socketpair for requests/responses
+- Binary protocol with proper serialization (no raw pointers)
 
 **Request types:**
 ```c
@@ -103,18 +103,24 @@ enum priv_request_type {
 };
 ```
 
-#### 3. Supervisor Slave (unprivileged)
+#### 3. Supervisor Worker (unprivileged)
 
 **Responsibilities:**
-- Parse unit files
-- Build dependency graph
-- Manage service state
-- Monitor service PIDs
+- Parse unit files with path security validation
+- Build dependency graph with cycle detection
+- Manage service state with DoS prevention
+- Monitor service PIDs via service registry
 - Handle timer scheduling
 - Accept systemctl connections
-- Log to syslog
+- Log to syslog with early boot buffering
 
 **Runs as:** Dedicated unprivileged user (`initd-supervisor`)
+
+**Security Features:**
+- Service registry prevents arbitrary kill() attacks (256-service limit)
+- DoS prevention via restart rate limiting (5/60s window, 1s min interval)
+- Path security with TOCTOU and symlink protection
+- Secure IPC with malformed input validation
 
 **Main loop:**
 - Poll control socket for systemctl requests
@@ -943,13 +949,17 @@ WantedBy=multi-user.target
 
 **Supervisor Master (root):**
 - Small, auditable privileged operations
+- Validates User/Group from unit files (privilege escalation prevention)
 - Drops capabilities where possible
 - Short-lived worker processes
 
-**Supervisor Slave (unprivileged):**
+**Supervisor Worker (unprivileged):**
 - Bulk of code runs here
 - No root privileges
 - Limited system access
+- Path security validation (TOCTOU prevention)
+- Service registry with DoS prevention
+- Secure IPC with malformed input validation
 
 **Services:**
 - Run as specified User/Group
@@ -961,10 +971,12 @@ WantedBy=multi-user.target
 ```
 init (root, PID 1)
   └─> supervisor-master (root)
-      ├─> supervisor-slave (unprivileged)
-      └─> privileged worker (root)
-          └─> service (drops to user)
-              dies → worker dies → master tracks
+      ├─> supervisor-worker (unprivileged)
+      │   └─> manages service registry
+      │       └─> enforces DoS prevention
+      └─> service processes (root → drops to user)
+          └─> tracked in service registry by PID
+              dies → master notifies worker → registry updated
 ```
 
 ## Dependencies
@@ -986,32 +998,46 @@ init (root, PID 1)
 
 ## Development Roadmap
 
-### Phase 1: Minimal Boot
-1. Init binary (PID 1, reaping)
-2. Supervisor master/slave split
-3. Basic unit file parser
-4. Start simple services
-5. Shutdown handling
+### Phase 1: Minimal Boot ✅ COMPLETE
+1. ✅ Init binary (PID 1, reaping)
+2. ✅ Supervisor master/worker split with privilege separation
+3. ✅ Basic unit file parser
+4. ✅ Start simple services
+5. ✅ Shutdown handling
+6. ✅ Process groups (setsid, killpg) - POSIX portable
 
-### Phase 2: Core Features & Independent Daemons
-1. Dependency resolution
-2. Target support
-3. Service restart/recovery
-4. systemctl basic commands
-5. Logging integration
-6. Timer daemon (independent, cron replacement)
-7. Socket activator daemon (independent, with idle timeout)
-8. Daemon independence (separate control sockets, optional communication)
-9. Full systemctl compatibility (command routing to daemons)
-10. journalctl wrapper
+### Phase 2: Core Features & Security ✅ COMPLETE
+1. ✅ Dependency resolution with cycle detection and recursion depth limits
+2. ✅ Target support
+3. ✅ Service restart/recovery (Restart= policies)
+4. ✅ systemctl basic commands (initctl)
+5. ✅ Logging integration (syslog with early boot buffering)
+6. ✅ **Service registry** - prevents arbitrary kill() attacks with 256-service limit
+7. ✅ **DoS prevention** - restart rate limiting (5 restarts/60s window, 1s min interval)
+8. ✅ **IPC security** - proper serialization, no raw pointers, malformed input validation
+9. ✅ **Privilege escalation prevention** - master validates User/Group from unit files
+10. ✅ **TOCTOU and path traversal prevention** - realpath(), O_NOFOLLOW, symlink protection
+11. ✅ **File descriptor leak prevention** - SOCK_CLOEXEC on all sockets
+12. ✅ **Signal race hardening** - sigprocmask() during critical operations
+13. ✅ **Orphaned process cleanup** - kill_remaining_processes() during shutdown
+14. ✅ **KillMode support** - using process groups (control-group, process, mixed, none)
 
-### Phase 3: Platform Support & Polishing
-1. Cgroup integration (Linux)
-2. Platform abstraction layer
-3. Standalone supervisor mode (run without replacing init)
-4. Multi-platform testing
+### Phase 3: Independent Daemons (IN PROGRESS)
+1. ⚠️ Timer daemon (independent, cron replacement)
+2. ⚠️ Socket activator daemon (independent, with idle timeout)
+3. ⚠️ Daemon independence (separate control sockets, optional communication)
+4. ⚠️ Full systemctl compatibility (command routing to daemons)
+5. ⚠️ journalctl wrapper
 
-### Phase 4: Portability & Multi-Mode Support
+### Phase 4: Linux-Specific Enhancements (FUTURE)
+1. ⬜ Cgroup v2 integration (Linux-only, parallel to process groups)
+   - Process tracking (replaces kill(pid, 0) checks)
+   - Memory/CPU limits
+   - OOM handling
+2. ⬜ Linux namespaces (already have PrivateTmp mount namespace)
+3. ⬜ Seccomp filters (optional security hardening)
+
+### Phase 5: Multi-Platform & Standalone Mode (FUTURE)
 
 #### Platform Abstraction
 1. Abstract process tracking (cgroups vs process groups)
@@ -1145,13 +1171,13 @@ These changes should be made during Phase 2-3 to avoid refactoring later.
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**14 test suites with 95 individual tests - all passing**
+**15 test suites with 102 individual tests - all passing**
 
 1. **calendar parser** (7 tests) - Calendar expression parsing
 2. **unit file parser** (7 tests) - Unit file parsing & validation
 3. **control protocol** (9 tests) - IPC protocol serialization
 4. **socket activator** (10 tests) - Socket creation & activation
-5. **IPC protocol** (6 tests) - Master/slave IPC communication
+5. **IPC protocol** (15 tests) - Master/worker IPC communication with malformed input validation
 6. **unit scanner** (10 tests) - Directory scanning & priority
 7. **dependency resolution** (10 tests) - Unit dependency handling
 8. **state machine** (11 tests) - Unit state transitions
@@ -1160,32 +1186,37 @@ These changes should be made during Phase 2-3 to avoid refactoring later.
 11. **timer IPC protocol** (5 tests) - Timer daemon IPC communication
 12. **socket IPC protocol** (5 tests) - Socket daemon IPC communication
 13. **service features** (4 tests) - PrivateTmp, LimitNOFILE, KillMode parsing
-14. **privileged operations** (6 tests) - Root-only operations (requires sudo)
+14. **service registry** (5 tests) - DoS prevention and rate limiting (includes 62s timing test)
+15. **privileged operations** (6 tests) - Root-only operations (requires sudo)
 
 **Coverage:**
 - ✅ Unit file parsing (all types)
 - ✅ Dependency resolution (After, Before, Requires, Wants, Conflicts)
 - ✅ State machine (all states and transitions)
 - ✅ IPC protocol (supervisor master/worker, timer, socket daemons)
+  - ✅ Malformed input validation (invalid types, oversized fields, many/large args)
 - ✅ Control protocol (commands and serialization)
 - ✅ Directory scanner (priority, filtering)
 - ✅ Logging system (buffering, syslog)
 - ✅ Socket activation
 - ✅ Calendar expressions
 - ✅ Service directives (PrivateTmp, LimitNOFILE, KillMode parsing)
+- ✅ Service registry (DoS prevention, rate limiting with real timing validation)
 - ✅ Integration workflows
 - ✅ Privileged operations (enable, disable, convert systemd units)
 
 **Build and run tests:**
 ```bash
-# Run all non-privileged tests (13 tests)
-meson compile -C build
-meson test -C build --no-suite privileged
+# Build all tests
+ninja -C build
 
-# Run privileged tests (requires root - 1 test with 6 sub-tests)
-sudo meson test -C build --suite privileged
+# Run all non-privileged tests (14 test suites)
+ninja -C build test
 
-# Run all tests with verbose output
+# Run privileged tests (requires root - 1 test suite with 6 sub-tests)
+sudo ninja -C build test-privileged
+
+# Run all tests with verbose output (using meson for individual control)
 meson test -C build -v
 ```
 
@@ -1220,28 +1251,28 @@ The project includes comprehensive static and dynamic analysis integrated into t
 
 **Run all analysis tools**:
 ```bash
-meson compile -C build analyze-all
+ninja -C build analyze-all
 ```
 
 **Individual analysis tools**:
 ```bash
 # Static code analysis
-meson compile -C build analyze-cppcheck
+ninja -C build analyze-cppcheck
 
 # Security-focused static analysis
-meson compile -C build analyze-flawfinder
+ninja -C build analyze-flawfinder
 
 # Clang static analyzer
-meson compile -C build analyze-scan
+ninja -C build analyze-scan
 
 # Runtime memory error detection
-meson compile -C build analyze-sanitizers
+ninja -C build analyze-sanitizers
 
 # Memory leak detection
-meson compile -C build analyze-valgrind
+ninja -C build analyze-valgrind
 
 # Shell script static analysis
-meson compile -C build analyze-shellcheck
+ninja -C build analyze-shellcheck
 ```
 
 **Analysis results** are saved to `analysis-output/` with individual log files:

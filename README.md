@@ -44,10 +44,16 @@ systemd files or code are reused here.
   - Socket activation with idle timeout
 
 - **Security First**
-  - Privilege-separated architecture (master/slave supervisor)
+  - Privilege-separated architecture (master/worker supervisor)
   - Minimal code running as root
-  - Optional cgroup isolation (Linux only - not implemetned yet)
+  - Service registry prevents arbitrary kill() attacks
+  - DoS prevention via restart rate limiting
+  - Path security with TOCTOU and symlink attack prevention
+  - Secure IPC with proper serialization (no raw pointers)
+  - File descriptor leak prevention (SOCK_CLOEXEC)
+  - Signal race condition hardening
   - Service sandboxing via User/Group directives
+  - Optional cgroup isolation (Linux only - not implemented yet)
 
 - **Platform Support**
   - Linux: Full feature set with cgroups v2
@@ -310,80 +316,107 @@ systemctl status nginx
 
 ## Development Status
 
-**Current Phase:** Phase 2 Complete - Ready for Phase 3
+**Current Phase:** Phase 2 Complete - Starting Phase 3
 
-**Overall Progress:** ~50% complete
+**Overall Progress:** ~60% complete
 
-Core init system functionality is implemented with comprehensive test coverage.
+Core init system functionality is implemented with comprehensive test coverage and security hardening.
 
 ### Implementation Phases
 
 #### ✅ Phase 1: Minimal Boot - **COMPLETE (100%)**
 - [x] Init binary (PID 1, zombie reaping)
-- [x] Supervisor master/slave split with privilege separation
+- [x] Supervisor master/worker split with privilege separation
 - [x] Basic unit file parser (systemd-compatible format)
 - [x] Start/stop simple services
 - [x] Shutdown handling with proper service ordering
 - [x] Service PID monitoring and restart policies
+- [x] **Process groups** (setsid, killpg) - POSIX portable foundation
 
-#### ✅ Phase 2: Core Features & Independent Daemons - **COMPLETE (100%)**
+#### ✅ Phase 2: Core Features & Security - **COMPLETE (100%)**
 - [x] Dependency resolution (Requires, Wants, After, Before)
+- [x] **Circular dependency detection** with STATE_ACTIVATING/DEACTIVATING guards
+- [x] **Recursion depth limits** to prevent stack overflow
 - [x] Target support
 - [x] Service restart/recovery (RESTART_ALWAYS, RESTART_ON_FAILURE)
-- [x] Basic systemctl commands (start, stop, status, is-active)
-- [x] Syslog integration for logging
-- [x] Enable/disable commands
+- [x] Basic systemctl commands (start, stop, status, is-active, enable, disable)
+- [x] Syslog integration with early boot buffering
 - [x] List-units command (with --all flag for systemd directories)
-- [x] Timer daemon (independent, cron replacement)
-- [x] Socket activator daemon (independent, with idle timeout)
-- [x] Daemon independence (separate control sockets, optional communication)
-- [x] Full systemctl compatibility (command routing to daemons)
 - [x] list-timers command
 - [x] journalctl wrapper (complete)
+- [x] **Service registry** - prevents arbitrary kill() attacks with 256-service limit
+- [x] **DoS prevention** - restart rate limiting (5 restarts/60s window, 1s min interval)
+- [x] **IPC security** - proper serialization, no raw struct pointers, malformed input validation
+- [x] **Privilege escalation prevention** - master validates User/Group from unit files
+- [x] **TOCTOU and path traversal prevention** - realpath(), O_NOFOLLOW, symlink protection
+- [x] **File descriptor leak prevention** - SOCK_CLOEXEC on all sockets
+- [x] **Signal race hardening** - sigprocmask() during critical operations
+- [x] **Orphaned process cleanup** - kill_remaining_processes() during shutdown
+- [x] **KillMode support** using process groups (control-group, process, mixed, none)
 
-#### ⏳ Phase 3: Platform Support & Polishing - **PLANNED (0%)**
-- [ ] Cgroup integration (Linux)
+#### ⏳ Phase 3: Independent Daemons - **IN PROGRESS (30%)**
+- [x] Timer daemon architecture (master/worker split)
+- [x] Socket activator architecture (master/worker split)
+- [x] Daemon independence concept (separate control sockets)
+- [ ] Timer daemon implementation (cron replacement)
+- [ ] Socket activator implementation (with idle timeout)
+- [ ] Full systemctl routing to independent daemons
+- [ ] Integration testing with all daemons
 
-#### ⏳ Phase 4: Multi-Platform Support - **PLANNED (0%)**
-- [ ] Platform abstraction layer
+#### ⏳ Phase 4: Linux-Specific Enhancements - **FUTURE (0%)**
+- [ ] **Cgroup v2 integration** (Linux-only, parallel to process groups)
+  - Process tracking (replaces kill(pid, 0) checks)
+  - Memory/CPU limits
+  - OOM handling
+- [ ] Additional Linux namespaces beyond PrivateTmp
+- [ ] Seccomp filters (optional security hardening)
+
+#### ⏳ Phase 5: Multi-Platform & Standalone Mode - **FUTURE (0%)**
+- [ ] Platform detection and feature flags
 - [ ] Standalone supervisor mode (run without replacing init)
-- [ ] Multi-platform support beyond Linux
-- [ ] Testing on multiple platforms
-- [ ] Portable process supervision
+- [ ] Multi-platform testing (BSD, Hurd)
+- [ ] Platform-specific optimizations
 
-#### ⏳ Phase 5: Production Hardening - **PLANNED (0%)**
+#### ⏳ Phase 6: Production Hardening - **FUTURE (0%)**
 - [ ] Service script testing
 - [ ] Comprehensive documentation
 - [ ] Performance optimization
-- [ ] Security audit
+- [ ] External security audit
 
 ### What Works Now
-- PID 1 init with signal handling
-- Privilege-separated supervisor architecture
-- Unit file parsing and dependency resolution
-- Starting and stopping services
-- Automatic service restart on failure
-- Control interface (`initctl`/`systemctl` commands)
-- Proper system shutdown
-- Independent timer daemon with cron replacement
-- Socket activator with idle timeout
-- Comprehensive test suite (10 suites, 83 tests)
+- **PID 1 init** with signal handling and zombie reaping
+- **Privilege-separated supervisor** (master/worker architecture)
+- **Unit file parsing** with systemd compatibility
+- **Dependency resolution** with circular dependency detection and recursion limits
+- **Service lifecycle** - start, stop, restart with proper state transitions
+- **Service registry** - prevents arbitrary process termination attacks
+- **Secure IPC** - no raw pointers, proper serialization
+- **Path security** - TOCTOU prevention, symlink attack protection
+- **Process groups** - POSIX-portable service isolation (setsid, killpg)
+- **KillMode support** - control-group, process, mixed, none
+- **Control interface** (`initctl`/`systemctl` commands)
+- **System shutdown** with reverse dependency ordering and orphaned process cleanup
+- **DoS prevention** - restart rate limiting with sliding time windows
+- **Comprehensive test suite** (15 suites, 102 tests + privileged tests)
+- **Security hardening** - SOCK_CLOEXEC, signal race fixes, path security
 
 ### Test Coverage & Analysis
 The project includes extensive automated testing and static/dynamic analysis:
 
 **Test Suites:**
-- **14 test suites** with **95 individual tests** (100% passing)
+- **15 test suites** with **102 individual tests** (100% passing)
 - Calendar expression parser tests
 - Unit file parser and validation tests
 - Control protocol serialization tests
 - Socket activation tests
 - IPC communication tests (supervisor, timer, socket daemons)
+  - Includes malformed input tests (invalid types, oversized fields, many/large args)
 - Unit scanner tests
 - Dependency resolution tests
 - State machine tests
 - Logging system tests
 - Service features tests (PrivateTmp, LimitNOFILE, KillMode)
+- Service registry tests (DoS prevention, rate limiting - includes 62-second timing test)
 - Integration tests
 - **Privileged operations tests** (requires root)
 
@@ -392,7 +425,7 @@ The project includes extensive automated testing and static/dynamic analysis:
 # Build all tests
 ninja -C build
 
-# Run all tests (14 tests total - includes non-privileged tests)
+# Run all tests (15 test suites total - includes non-privileged tests)
 ninja -C build test
 
 # Run privileged tests (requires root - 1 test with 6 sub-tests)
@@ -444,11 +477,16 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 - All format truncation warnings resolved
 - Comprehensive test coverage for privilege-separated architecture
 
-### What's Next
-- Cgroup integration (Linux)
-- Platform abstraction layer
-- Multi-platform testing
-- Production hardening
+### What's Next (Phase 3)
+- Complete timer daemon implementation
+- Complete socket activator implementation
+- Full daemon integration and testing
+- Enhanced systemctl command routing
+
+### Future Work
+- **Phase 4:** Linux-specific cgroup v2 integration (parallel to existing process groups)
+- **Phase 5:** Multi-platform support (BSD, Hurd) and standalone mode
+- **Phase 6:** Production hardening and external security audit
 
 ## Requirements
 

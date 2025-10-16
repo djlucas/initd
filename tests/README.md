@@ -7,17 +7,17 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (14 tests, 1 will be skipped without root)
-meson compile -C build
-meson test -C build
+# Build and run all tests (15 test suites, 1 will be skipped without root)
+ninja -C build
+ninja -C build test
 
-# Run only non-privileged tests (13 tests)
-meson test -C build --no-suite privileged
+# Run only non-privileged tests (14 test suites)
+ninja -C build test --suite initd
 
 # Run privileged tests (requires root)
-sudo meson test -C build --suite privileged
+sudo ninja -C build test-privileged
 
-# Run specific test
+# Run specific test (using meson for individual tests)
 meson test -C build "calendar parser"
 meson test -C build "unit file parser"
 meson test -C build "control protocol"
@@ -31,6 +31,7 @@ meson test -C build "integration"
 meson test -C build "timer IPC protocol"
 meson test -C build "socket IPC protocol"
 meson test -C build "service features"
+meson test -C build "service registry"
 meson test -C build "privileged operations"  # Requires root
 
 # Verbose output
@@ -97,14 +98,33 @@ TEST("test description");
 PASS();
 ```
 
-### test-ipc (6 tests)
-Tests master/slave IPC communication:
+### test-ipc (15 tests)
+Tests master/worker IPC communication with comprehensive edge case coverage:
+
+**Normal operations (8 tests):**
 - Request serialization
 - Response serialization
 - Stop service requests
 - Error responses
 - Service exited notifications
 - Shutdown complete requests
+- Exec args serialization
+- Empty exec args handling
+
+**Malformed input validation (7 tests):**
+- Invalid request type validation (rejects out-of-range types)
+- Invalid response type validation (rejects out-of-range types)
+- Oversized unit_name handling (256+ chars)
+- Oversized paths handling (unit_path, exec_path 1024+ chars)
+- Oversized error_msg handling (256+ chars)
+- Many exec_args (100 arguments)
+- Oversized individual exec_arg (4999 chars)
+
+These tests verify the IPC protocol correctly:
+- Validates enum types on receive (DoS prevention)
+- Truncates oversized fields safely with null termination
+- Handles extreme but valid inputs without corruption
+- Prevents buffer overflows with defensive bounds checking
 
 ### test-scanner (10 tests)
 Tests unit directory scanning:
@@ -206,11 +226,29 @@ Tests service directive parsing:
 - LimitNOFILE=N|infinity (default: -1 = not set)
 - KillMode=process|control-group|mixed|none (default: process)
 
+### test-service-registry (5 tests)
+Tests service registry and DoS prevention mechanisms:
+- **Lookup by name** - Tests service registration and name-based lookup
+- **Registry capacity** - Tests MAX_SERVICES limit (256 services)
+- **Restart rate limiting** - Tests minimum restart interval (1 second)
+- **Restart window limit** - Tests sliding window rate limiting (5 restarts per 60 seconds)
+- **Different services restart tracking** - Tests independent rate limiting per service
+
+**DoS Prevention Features:**
+- Service registry with 256-service hard limit
+- Minimum 1-second interval between restart attempts
+- Sliding 60-second window limiting restarts to 5 per service
+- Independent tracking for each service
+
+**Note:** The restart window test includes a 62-second sleep to validate
+the sliding time window. The test displays a user-friendly notice during
+this delay. Test timeout is set to 90 seconds.
+
 ## Test Statistics
 
-**Total: 14 test suites, 95 individual tests - all passing ✅**
+**Total: 15 test suites, 102 individual tests - all passing ✅**
 
-**Regular tests:** 13 suites, 89 tests (no root required)
+**Regular tests:** 14 suites, 96 tests (no root required)
 **Privileged tests:** 1 suite, 6 tests (requires root)
 
 ## CI Integration
@@ -219,15 +257,18 @@ Tests are designed to run in CI environments:
 - Most tests require no root privileges
 - Privileged tests properly skip when not root (exit code 77)
 - No permanent system modification
-- Fast execution (< 1 second per test)
+- Fast execution (< 1 second per test, except service-registry with 62s timing test)
 - Clear pass/fail output
 
 **Recommended CI workflow:**
 ```yaml
+- name: Build project
+  run: ninja -C build
+
 - name: Run regular tests
-  run: meson test -C build --no-suite privileged
+  run: ninja -C build test
 
 - name: Run privileged tests
-  run: sudo meson test -C build --suite privileged
+  run: sudo ninja -C build test-privileged
   # or: allow skip if running in unprivileged container
 ```
