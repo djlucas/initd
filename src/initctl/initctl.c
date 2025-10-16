@@ -14,12 +14,38 @@
 #include "../common/control.h"
 
 /* Print usage */
+static void format_time_iso(time_t ts, char *buf, size_t len) {
+    if (ts <= 0) {
+        snprintf(buf, len, "n/a");
+        return;
+    }
+
+    struct tm tm_buf;
+#if defined(_POSIX_THREAD_SAFE_FUNCTIONS)
+    if (localtime_r(&ts, &tm_buf) == NULL) {
+        snprintf(buf, len, "n/a");
+        return;
+    }
+#else
+    struct tm *tmp = localtime(&ts);
+    if (!tmp) {
+        snprintf(buf, len, "n/a");
+        return;
+    }
+    tm_buf = *tmp;
+#endif
+
+    if (strftime(buf, len, "%Y-%m-%d %H:%M:%S", &tm_buf) == 0) {
+        snprintf(buf, len, "n/a");
+    }
+}
+
 static void print_usage(const char *progname) {
     fprintf(stderr, "Usage: %s [COMMAND] [UNIT]\n\n", progname);
     fprintf(stderr, "Commands:\n");
     fprintf(stderr, "  start UNIT          Start a service\n");
     fprintf(stderr, "  stop UNIT           Stop a service\n");
-    fprintf(stderr, "  restart UNIT        Restart a service (not yet implemented)\n");
+    fprintf(stderr, "  restart UNIT        Restart a service\n");
     fprintf(stderr, "  status UNIT         Show unit status\n");
     fprintf(stderr, "  is-active UNIT      Check if unit is active\n");
     fprintf(stderr, "  is-enabled UNIT     Check if unit is enabled\n");
@@ -28,7 +54,7 @@ static void print_usage(const char *progname) {
     fprintf(stderr, "  list-units [--all]  List all units\n");
     fprintf(stderr, "  list-timers         List all timers\n");
     fprintf(stderr, "  list-sockets        List all sockets\n");
-    fprintf(stderr, "  daemon-reload       Reload unit files (not yet implemented)\n");
+    fprintf(stderr, "  daemon-reload       Reload unit files\n");
 }
 
 /* Parse command string to enum */
@@ -191,26 +217,106 @@ int main(int argc, char *argv[]) {
 
         close(fd);
 
-        /* Display list in systemd-style table */
-        if (count == 0) {
+        /* Optionally pull timer units */
+        struct timer_list_entry *timer_entries = NULL;
+        size_t timer_count = 0;
+        int timer_fd = connect_to_timer_daemon();
+        if (timer_fd >= 0) {
+            struct control_request timer_req = {0};
+            struct control_response timer_resp = {0};
+
+            timer_req.header.length = sizeof(timer_req);
+            timer_req.header.command = CMD_LIST_TIMERS;
+            timer_req.header.flags = flags;
+
+            if (send_control_request(timer_fd, &timer_req) == 0 &&
+                recv_control_response(timer_fd, &timer_resp) == 0 &&
+                timer_resp.code == RESP_SUCCESS &&
+                recv_timer_list(timer_fd, &timer_entries, &timer_count) == 0) {
+                /* success */
+            } else {
+                fprintf(stderr, "Warning: Timer daemon did not return timer list.\n");
+                if (timer_entries) {
+                    free(timer_entries);
+                    timer_entries = NULL;
+                    timer_count = 0;
+                }
+            }
+            close(timer_fd);
+        } else {
+            fprintf(stderr, "Warning: Timer daemon unavailable; timer units will be omitted.\n");
+        }
+
+        size_t total = count + timer_count;
+        if (timer_count > 0) {
+            struct unit_list_entry *tmp = realloc(entries, total * sizeof(*entries));
+            if (!tmp) {
+                fprintf(stderr, "Error: Out of memory expanding unit list\n");
+                free(entries);
+                if (timer_entries) free(timer_entries);
+                return 1;
+            }
+            entries = tmp;
+
+            for (size_t i = 0; i < timer_count; i++) {
+                struct unit_list_entry *slot = &entries[count + i];
+                memset(slot, 0, sizeof(*slot));
+                strncpy(slot->name, timer_entries[i].name, sizeof(slot->name) - 1);
+                slot->state = timer_entries[i].state;
+                slot->pid = (pid_t)-1; /* sentinel for timer */
+
+                char next_buf[64];
+                char last_buf[64];
+                format_time_iso(timer_entries[i].next_run, next_buf, sizeof(next_buf));
+                format_time_iso(timer_entries[i].last_run, last_buf, sizeof(last_buf));
+
+                if (timer_entries[i].description[0] != '\0') {
+                    snprintf(slot->description, sizeof(slot->description),
+                             "%s (timer for %s; next %s; last %s)",
+                             timer_entries[i].description,
+                             timer_entries[i].unit,
+                             next_buf,
+                             last_buf);
+                } else {
+                    snprintf(slot->description, sizeof(slot->description),
+                             "Timer for %s (next %s; last %s)",
+                             timer_entries[i].unit,
+                             next_buf,
+                             last_buf);
+                }
+            }
+        } else {
+            total = count;
+        }
+
+        if (timer_entries) {
+            free(timer_entries);
+        }
+
+        if (total == 0) {
             printf("No units found.\n");
+            free(entries);
             return 0;
         }
 
-        /* Print header */
         printf("%-40s %-12s %-8s %s\n", "UNIT", "LOAD", "ACTIVE", "SUB");
+        for (size_t i = 0; i < total; i++) {
+            const char *sub = "";
+            if (entries[i].pid > 0) {
+                sub = "running";
+            } else if (entries[i].pid == (pid_t)-1) {
+                sub = "timer";
+            }
 
-        /* Print entries */
-        for (size_t i = 0; i < count; i++) {
             printf("%-40s %-12s %-8s %-8s %s\n",
                    entries[i].name,
                    "loaded",
                    state_to_string(entries[i].state),
-                   entries[i].pid > 0 ? "running" : "",
+                   sub,
                    entries[i].description);
         }
 
-        printf("\n%zu units listed.\n", count);
+        printf("\n%zu units listed.\n", total);
 
         free(entries);
         return 0;
@@ -396,7 +502,52 @@ int main(int argc, char *argv[]) {
 
     /* Commands that don't require a unit name */
     if (cmd == CMD_DAEMON_RELOAD) {
-        fprintf(stderr, "Error: Command '%s' not yet implemented\n", cmd_str);
+        int failures = 0;
+
+        /* Reload supervisor */
+        int sup_fd = connect_to_supervisor();
+        if (sup_fd >= 0) {
+            struct control_request req = {0};
+            struct control_response resp = {0};
+            req.header.length = sizeof(req);
+            req.header.command = CMD_DAEMON_RELOAD;
+            if (send_control_request(sup_fd, &req) == 0 &&
+                recv_control_response(sup_fd, &resp) == 0 &&
+                resp.code == RESP_SUCCESS) {
+                printf("Supervisor: %s\n", resp.message[0] ? resp.message : "reload complete");
+            } else {
+                fprintf(stderr, "Warning: supervisor daemon-reload failed.\n");
+                failures++;
+            }
+            close(sup_fd);
+        } else {
+            fprintf(stderr, "Warning: supervisor unavailable; skipping reload.\n");
+            failures++;
+        }
+
+        /* Reload timer daemon (best-effort) */
+        int timer_fd = connect_to_timer_daemon();
+        if (timer_fd >= 0) {
+            struct control_request req = {0};
+            struct control_response resp = {0};
+            req.header.length = sizeof(req);
+            req.header.command = CMD_DAEMON_RELOAD;
+            if (send_control_request(timer_fd, &req) == 0 &&
+                recv_control_response(timer_fd, &resp) == 0 &&
+                resp.code == RESP_SUCCESS) {
+                printf("Timer daemon: %s\n", resp.message[0] ? resp.message : "reload complete");
+            } else {
+                fprintf(stderr, "Warning: timer daemon reload failed.\n");
+                failures++;
+            }
+            close(timer_fd);
+        } else {
+            fprintf(stderr, "Warning: timer daemon unavailable; skipping reload.\n");
+        }
+
+        if (failures == 0) {
+            return 0;
+        }
         return 1;
     }
 

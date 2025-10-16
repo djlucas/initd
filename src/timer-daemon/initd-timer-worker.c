@@ -30,6 +30,7 @@
 #include "../common/scanner.h"
 #include "../common/parser.h"
 #include "../common/timer-ipc.h"
+#include "../common/path-security.h"
 #include "calendar.h"
 
 #define TIMER_SOCKET_PATH "/run/initd/timer.sock"
@@ -49,6 +50,81 @@ struct timer_instance {
 static volatile sig_atomic_t shutdown_requested = 0;
 static int control_socket = -1;
 static struct timer_instance *timers = NULL;
+
+static void format_time_iso(time_t ts, char *buf, size_t len) {
+    if (ts <= 0) {
+        snprintf(buf, len, "n/a");
+        return;
+    }
+
+    struct tm tm_buf;
+#if defined(_POSIX_THREAD_SAFE_FUNCTIONS)
+    if (localtime_r(&ts, &tm_buf) == NULL) {
+        snprintf(buf, len, "n/a");
+        return;
+    }
+#else
+    struct tm *tmp = localtime(&ts);
+    if (!tmp) {
+        snprintf(buf, len, "n/a");
+        return;
+    }
+    tm_buf = *tmp;
+#endif
+
+    if (strftime(buf, len, "%Y-%m-%d %H:%M:%S", &tm_buf) == 0) {
+        snprintf(buf, len, "n/a");
+    }
+}
+
+static bool timer_unit_is_enabled(struct unit_file *unit) {
+    char link_path[1024];
+    struct stat st;
+
+    if (!validate_unit_name(unit->name)) {
+        return false;
+    }
+
+    for (int i = 0; i < unit->install.wanted_by_count; i++) {
+        const char *target = unit->install.wanted_by[i];
+        if (!validate_target_name(target)) {
+            continue;
+        }
+        snprintf(link_path, sizeof(link_path),
+                 "/etc/initd/system/%s.wants/%s", target, unit->name);
+        if (lstat(link_path, &st) == 0) {
+            return true;
+        }
+    }
+
+    for (int i = 0; i < unit->install.required_by_count; i++) {
+        const char *target = unit->install.required_by[i];
+        if (!validate_target_name(target)) {
+            continue;
+        }
+        snprintf(link_path, sizeof(link_path),
+                 "/etc/initd/system/%s.requires/%s", target, unit->name);
+        if (lstat(link_path, &st) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void free_timer_instances(void) {
+    struct timer_instance *t = timers;
+    while (t) {
+        struct timer_instance *next = t->next;
+        if (t->unit) {
+            free_unit_file(t->unit);
+            free(t->unit);
+        }
+        free(t);
+        t = next;
+    }
+    timers = NULL;
+}
 
 /* Signal handlers */
 static void sigterm_handler(int sig) {
@@ -374,7 +450,11 @@ static int activate_service(const char *service_name) {
 }
 
 /* Handle timer firing */
-static void fire_timer(struct timer_instance *timer) {
+static int fire_timer(struct timer_instance *timer) {
+    if (!timer->enabled) {
+        return -1;
+    }
+
     /* Determine service to activate */
     /* Timer name: backup.timer -> activate backup.service */
     char service_name[MAX_UNIT_NAME + 16];
@@ -390,7 +470,8 @@ static void fire_timer(struct timer_instance *timer) {
 
     fprintf(stderr, "timer-daemon: timer %s fired\n", timer->unit->name);
 
-    if (activate_service(service_name) == 0) {
+    int result = activate_service(service_name);
+    if (result == 0) {
         timer->last_run = time(NULL);
         save_timer_state(timer);
     }
@@ -399,6 +480,7 @@ static void fire_timer(struct timer_instance *timer) {
     timer->next_run = calculate_next_run(timer);
     fprintf(stderr, "timer-daemon: next run for %s at %ld\n",
             timer->unit->name, timer->next_run);
+    return result;
 }
 
 /* Check for timers that need to fire */
@@ -406,10 +488,12 @@ static void check_timers(void) {
     time_t now = time(NULL);
 
     for (struct timer_instance *t = timers; t; t = t->next) {
-        if (!t->enabled) continue;
+        if (!t->enabled || t->next_run == 0) {
+            continue;
+        }
 
         if (now >= t->next_run) {
-            fire_timer(t);
+            (void)fire_timer(t);
         }
     }
 }
@@ -417,6 +501,10 @@ static void check_timers(void) {
 /* Check if timer should run on startup (persistent + missed) */
 static bool should_run_on_startup(struct timer_instance *timer) {
     struct timer_section *t = &timer->unit->config.timer;
+
+    if (!timer->enabled) {
+        return false;
+    }
 
     if (!t->persistent || timer->last_run == 0) {
         return false;
@@ -443,6 +531,8 @@ static int load_timers(void) {
     /* Filter for timer units only */
     for (int i = 0; i < count; i++) {
         if (units[i]->type != UNIT_TIMER) {
+            free_unit_file(units[i]);
+            free(units[i]);
             continue;
         }
 
@@ -452,14 +542,17 @@ static int load_timers(void) {
         }
 
         instance->unit = units[i];
-        instance->enabled = units[i]->enabled;
+        instance->enabled = timer_unit_is_enabled(units[i]);
+        units[i]->enabled = instance->enabled;
         instance->last_run = 0;
 
         /* Load saved state */
         load_timer_state(instance);
 
         /* Check for missed persistent timers */
-        if (should_run_on_startup(instance)) {
+        if (!instance->enabled) {
+            instance->next_run = 0;
+        } else if (should_run_on_startup(instance)) {
             fprintf(stderr, "timer-daemon: %s has persistent missed run, scheduling immediate activation\n",
                     units[i]->name);
             instance->next_run = time(NULL) + 5;  /* Run in 5 seconds */
@@ -476,7 +569,13 @@ static int load_timers(void) {
                 units[i]->name, instance->next_run);
     }
 
+    free(units);
     return 0;
+}
+
+static int reload_timers(void) {
+    free_timer_instances();
+    return load_timers();
 }
 
 /* Handle control command */
@@ -510,6 +609,37 @@ static void handle_control_command(int client_fd) {
     struct timer_instance *timer = find_timer(req.unit_name);
 
     switch (req.header.command) {
+    case CMD_START:
+        if (!timer) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
+        } else {
+            timer->enabled = true;
+            timer->next_run = time(NULL);
+            if (fire_timer(timer) == 0) {
+                resp.pid = -1;
+                resp.state = UNIT_STATE_ACTIVE;
+                snprintf(resp.message, sizeof(resp.message), "Triggered %s", req.unit_name);
+            } else {
+                resp.code = RESP_FAILURE;
+                snprintf(resp.message, sizeof(resp.message), "Failed to trigger %s", req.unit_name);
+            }
+        }
+        break;
+
+    case CMD_STOP:
+        if (!timer) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
+        } else {
+            timer->enabled = false;
+            timer->next_run = 0;
+            resp.pid = -1;
+            resp.state = UNIT_STATE_INACTIVE;
+            snprintf(resp.message, sizeof(resp.message), "Stopped %s", req.unit_name);
+        }
+        break;
+
     case CMD_ENABLE:
         if (!timer) {
             resp.code = RESP_UNIT_NOT_FOUND;
@@ -540,6 +670,14 @@ static void handle_control_command(int client_fd) {
                         short_name, short_msg);
             } else {
                 timer->enabled = true;
+                timer->unit->enabled = true;
+                if (timer->unit->config.timer.persistent && should_run_on_startup(timer)) {
+                    timer->next_run = time(NULL) + 5;
+                } else {
+                    timer->next_run = calculate_next_run(timer);
+                }
+                resp.pid = -1;
+                resp.state = UNIT_STATE_ACTIVE;
                 snprintf(resp.message, sizeof(resp.message), "Enabled %s", req.unit_name);
             }
         }
@@ -575,6 +713,10 @@ static void handle_control_command(int client_fd) {
                         short_name, short_msg);
             } else {
                 timer->enabled = false;
+                timer->unit->enabled = false;
+                timer->next_run = 0;
+                resp.pid = -1;
+                resp.state = UNIT_STATE_INACTIVE;
                 snprintf(resp.message, sizeof(resp.message), "Disabled %s", req.unit_name);
             }
         }
@@ -585,10 +727,53 @@ static void handle_control_command(int client_fd) {
             resp.code = RESP_UNIT_NOT_FOUND;
             snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
         } else {
-            /* Check enabled status locally - no priv operation needed */
-            timer->enabled = timer->unit->enabled;
+            bool enabled = timer_unit_is_enabled(timer->unit);
+            timer->unit->enabled = enabled;
+            resp.state = enabled ? UNIT_STATE_ACTIVE : UNIT_STATE_INACTIVE;
+            resp.code = enabled ? RESP_SUCCESS : RESP_UNIT_INACTIVE;
+            snprintf(resp.message, sizeof(resp.message), "%s", enabled ? "enabled" : "disabled");
+        }
+        break;
+
+    case CMD_STATUS:
+        if (!timer) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
+        } else {
+            char next_buf[64];
+            char last_buf[64];
+            format_time_iso(timer->next_run, next_buf, sizeof(next_buf));
+            format_time_iso(timer->last_run, last_buf, sizeof(last_buf));
+            resp.state = timer->enabled ? UNIT_STATE_ACTIVE : UNIT_STATE_INACTIVE;
+            resp.pid = -1;
+            snprintf(resp.message, sizeof(resp.message),
+                     "%s: %s (next %s, last %s)",
+                     timer->unit->name,
+                     timer->enabled ? "active" : "inactive",
+                     next_buf,
+                     last_buf);
+        }
+        break;
+
+    case CMD_IS_ACTIVE:
+        if (!timer) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Timer %s not found", req.unit_name);
+        } else {
+            resp.state = timer->enabled ? UNIT_STATE_ACTIVE : UNIT_STATE_INACTIVE;
+            resp.pid = -1;
             resp.code = timer->enabled ? RESP_SUCCESS : RESP_UNIT_INACTIVE;
-            snprintf(resp.message, sizeof(resp.message), "%s", timer->enabled ? "enabled" : "disabled");
+            snprintf(resp.message, sizeof(resp.message), "%s", timer->enabled ? "active" : "inactive");
+        }
+        break;
+
+    case CMD_DAEMON_RELOAD:
+        if (reload_timers() < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to reload timers");
+        } else {
+            resp.pid = -1;
+            snprintf(resp.message, sizeof(resp.message), "Reloaded timers");
         }
         break;
 
@@ -749,6 +934,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "timer-daemon: shutting down\n");
     close(control_socket);
     unlink(TIMER_SOCKET_PATH);
+    free_timer_instances();
 
     return 0;
 }
