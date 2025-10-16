@@ -320,7 +320,7 @@ int recv_response(int fd, struct priv_response *resp) {
     }
 
     /* Validate */
-    if (wire.type > RESP_UNIT_CONVERTED) {
+    if (wire.type > RESP_SERVICE_RELOADED) {
         return -1;  /* Invalid response type */
     }
 

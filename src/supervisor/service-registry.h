@@ -38,6 +38,7 @@ struct service_record {
     pid_t pid;          /* Service PID */
     pid_t pgid;         /* Process group ID - POSIX portable */
     char unit_name[256];
+    char unit_path[1024];
     int kill_mode;      /* KillMode from unit file */
     int in_use;         /* 1 if slot is active */
     struct restart_tracker restart_info;  /* DoS prevention: restart rate limiting */
@@ -51,7 +52,7 @@ void service_registry_init(void);
 
 /* Add a service to the registry
  * Returns 0 on success, -1 if registry is full (DoS prevention) */
-int register_service(pid_t pid, const char *unit_name, int kill_mode);
+int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode);
 
 /* Lookup a service in the registry */
 struct service_record *lookup_service(pid_t pid);

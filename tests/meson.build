@@ -88,6 +88,17 @@ test_service_registry = executable(
   dependencies: common_dep
 )
 
+test_exec_lifecycle = executable(
+  'test-exec-lifecycle',
+  [
+    'test-exec-lifecycle.c',
+    '../src/supervisor/initd-supervisor.c',
+    '../src/supervisor/service-registry.c',
+  ],
+  dependencies: [common_dep, privileged_ops_dep],
+  c_args: ['-DUNIT_TEST']
+)
+
 test('calendar parser', test_calendar)
 test('unit file parser', test_parser)
 test('control protocol', test_control)
@@ -102,6 +113,7 @@ test('timer IPC protocol', test_timer_ipc)
 test('socket IPC protocol', test_socket_ipc)
 test('service features', test_service_features)
 test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
+test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged')
 
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')

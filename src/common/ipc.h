@@ -17,6 +17,7 @@ enum priv_request_type {
     REQ_ENABLE_UNIT,        /* Enable a unit */
     REQ_DISABLE_UNIT,       /* Disable a unit */
     REQ_CONVERT_UNIT,       /* Convert systemd unit to initd */
+    REQ_RELOAD_SERVICE,     /* Execute ExecReload for a running service */
     REQ_SHUTDOWN_COMPLETE   /* Worker finished shutdown */
 };
 
@@ -45,7 +46,8 @@ enum priv_response_type {
     RESP_SERVICE_EXITED,    /* Notification: service exited */
     RESP_UNIT_ENABLED,      /* Unit enabled successfully */
     RESP_UNIT_DISABLED,     /* Unit disabled successfully */
-    RESP_UNIT_CONVERTED     /* Unit converted successfully */
+    RESP_UNIT_CONVERTED,    /* Unit converted successfully */
+    RESP_SERVICE_RELOADED   /* ExecReload completed */
 };
 
 /* Response structure */

@@ -22,6 +22,9 @@
  * SPDX-License-Identifier: MIT
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
@@ -258,6 +261,7 @@ static int stop_service(struct unit_file *unit) {
     req.service_pid = unit->pid;
     req.kill_mode = unit->config.service.kill_mode;
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
+    strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
     fprintf(stderr, "slave: stopping %s (pid %d)\n", unit->name, unit->pid);
 
@@ -296,6 +300,47 @@ static int stop_service(struct unit_file *unit) {
         sleep(1); /* Give it a moment */
         unit->pid = 0;
         return 0;
+    }
+
+    return -1;
+}
+
+/* Request master to reload a service */
+static int reload_service(struct unit_file *unit) {
+    if (unit->state != STATE_ACTIVE || unit->pid <= 0) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    if (!unit->config.service.exec_reload || unit->config.service.exec_reload[0] == '\0') {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    struct priv_request req = {0};
+    struct priv_response resp = {0};
+
+    req.type = REQ_RELOAD_SERVICE;
+    req.service_pid = unit->pid;
+    strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
+    strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
+
+    if (send_request(master_socket, &req) < 0) {
+        return -1;
+    }
+
+    if (recv_response(master_socket, &resp) < 0) {
+        return -1;
+    }
+
+    if (resp.type == RESP_SERVICE_RELOADED || resp.type == RESP_OK) {
+        return 0;
+    }
+
+    if (resp.type == RESP_ERROR) {
+        errno = resp.error_code;
+    } else {
+        errno = EPROTO;
     }
 
     return -1;
@@ -616,6 +661,30 @@ static void handle_control_command(int client_fd) {
         }
         break;
 
+    case CMD_RELOAD:
+        if (!unit) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Unit %s not found", req.unit_name);
+        } else if (unit->type != UNIT_SERVICE) {
+            resp.code = RESP_INVALID_COMMAND;
+            snprintf(resp.message, sizeof(resp.message), "Unit %s is not a service", req.unit_name);
+        } else if (!unit->config.service.exec_reload ||
+                   unit->config.service.exec_reload[0] == '\0') {
+            resp.code = RESP_INVALID_COMMAND;
+            snprintf(resp.message, sizeof(resp.message),
+                     "Unit %s does not support reload", req.unit_name);
+        } else if (unit->state != STATE_ACTIVE || unit->pid <= 0) {
+            resp.code = RESP_UNIT_INACTIVE;
+            snprintf(resp.message, sizeof(resp.message), "Unit %s is not active", req.unit_name);
+        } else if (reload_service(unit) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to reload %s: %s",
+                     req.unit_name, strerror(errno));
+        } else {
+            snprintf(resp.message, sizeof(resp.message), "Reloaded %s", req.unit_name);
+        }
+        break;
+
     case CMD_LIST_UNITS: {
         /* Scan units based on --all flag */
         int include_systemd = (req.header.flags & REQ_FLAG_ALL) ? 1 : 0;
@@ -664,7 +733,6 @@ static void handle_control_command(int client_fd) {
     }
 
     case CMD_RESTART:
-    case CMD_RELOAD:
     case CMD_LIST_TIMERS:
     case CMD_DAEMON_RELOAD:
     case CMD_ISOLATE:

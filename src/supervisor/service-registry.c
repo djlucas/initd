@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "service-registry.h"
 
 static struct service_record service_registry[MAX_SERVICES];
@@ -14,6 +15,7 @@ static struct service_record service_registry[MAX_SERVICES];
 /* Restart tracking per unit (indexed by unit name hash, simple approach) */
 static struct restart_tracker restart_trackers[MAX_SERVICES];
 
+static void release_restart_tracker(const char *unit_name);
 /* Initialize the service registry */
 void service_registry_init(void) {
     memset(service_registry, 0, sizeof(service_registry));
@@ -21,17 +23,24 @@ void service_registry_init(void) {
 }
 
 /* Add a service to the registry */
-int register_service(pid_t pid, const char *unit_name, int kill_mode) {
+int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode) {
     for (int i = 0; i < MAX_SERVICES; i++) {
         if (!service_registry[i].in_use) {
             service_registry[i].pid = pid;
-            service_registry[i].pgid = pid;  /* After setsid(), PID == PGID */
+            service_registry[i].pgid = pid;  /* Child calls setsid(), so pgid == pid */
             service_registry[i].kill_mode = kill_mode;
             service_registry[i].in_use = 1;
             strncpy(service_registry[i].unit_name, unit_name, sizeof(service_registry[i].unit_name) - 1);
             service_registry[i].unit_name[sizeof(service_registry[i].unit_name) - 1] = '\0';
+            if (unit_path) {
+                strncpy(service_registry[i].unit_path, unit_path,
+                        sizeof(service_registry[i].unit_path) - 1);
+                service_registry[i].unit_path[sizeof(service_registry[i].unit_path) - 1] = '\0';
+            } else {
+                service_registry[i].unit_path[0] = '\0';
+            }
             fprintf(stderr, "supervisor-master: registered service %s (pid=%d, pgid=%d)\n",
-                    unit_name, pid, pid);
+                    unit_name, pid, service_registry[i].pgid);
             return 0;
         }
     }
@@ -58,6 +67,7 @@ void unregister_service(pid_t pid) {
             char unit_name_copy[sizeof(service_registry[i].unit_name)];
             strncpy(unit_name_copy, service_registry[i].unit_name, sizeof(unit_name_copy));
             unit_name_copy[sizeof(unit_name_copy) - 1] = '\0';
+            service_registry[i].unit_path[0] = '\0';
             service_registry[i].in_use = 0;
             release_restart_tracker(unit_name_copy);
             return;

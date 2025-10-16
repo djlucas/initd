@@ -116,6 +116,115 @@ static void free_exec_argv(char **argv) {
     free(argv);
 }
 
+static int run_lifecycle_command(const struct service_section *service,
+                                 const char *command,
+                                 uid_t validated_uid,
+                                 gid_t validated_gid,
+                                 const char *unit_name,
+                                 const char *stage,
+                                 bool prepare_environment) {
+    if (!command || command[0] == '\0') {
+        return 0;
+    }
+
+    char **argv = NULL;
+    if (build_exec_argv(command, &argv) < 0) {
+        fprintf(stderr, "supervisor-master: %s for %s failed to parse command\n", stage, unit_name);
+        return -1;
+    }
+
+    const char *exec_path = argv[0];
+    if (!exec_path || exec_path[0] != '/') {
+        fprintf(stderr, "supervisor-master: %s for %s must use absolute path\n", stage, unit_name);
+        free_exec_argv(argv);
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (strstr(exec_path, "..") != NULL) {
+        fprintf(stderr, "supervisor-master: %s for %s path contains '..'\n", stage, unit_name);
+        free_exec_argv(argv);
+        errno = EINVAL;
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        int saved_errno = errno;
+        perror("supervisor-master: fork lifecycle command");
+        free_exec_argv(argv);
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (pid == 0) {
+        if (setsid() < 0) {
+            perror("supervisor-master: setsid (lifecycle)");
+        }
+
+        if (prepare_environment) {
+            if (setup_service_environment(service) < 0) {
+                fprintf(stderr, "supervisor-master: %s failed to setup environment for %s\n",
+                        stage, unit_name);
+                _exit(1);
+            }
+        }
+
+        if (validated_gid != 0) {
+            if (setgroups(1, &validated_gid) < 0) {
+                perror("supervisor-master: setgroups (lifecycle)");
+                _exit(1);
+            }
+            if (setgid(validated_gid) < 0) {
+                perror("supervisor-master: setgid (lifecycle)");
+                _exit(1);
+            }
+        }
+
+        if (validated_uid != 0) {
+            if (setuid(validated_uid) < 0) {
+                perror("supervisor-master: setuid (lifecycle)");
+                _exit(1);
+            }
+        }
+
+        if (validated_uid != 0) {
+            if (setuid(0) == 0 || seteuid(0) == 0) {
+                fprintf(stderr, "supervisor-master: SECURITY: %s for %s can regain root!\n",
+                        stage, unit_name);
+                _exit(1);
+            }
+        }
+
+        execv(exec_path, argv);
+        perror("supervisor-master: execv lifecycle");
+        _exit(1);
+    }
+
+    free_exec_argv(argv);
+
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        int saved_errno = errno;
+        perror("supervisor-master: waitpid lifecycle");
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fprintf(stderr, "supervisor-master: %s for %s failed (status=%d)\n",
+                stage, unit_name,
+                WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        errno = ECANCELED;
+        return -1;
+    }
+
+    return 0;
+}
+
 static int fallback_to_nobody_allowed(void) {
     const char *env = getenv("INITD_ALLOW_USER_FALLBACK");
     if (!env) {
@@ -371,7 +480,11 @@ static bool validate_unit_path_from_worker(const char *path) {
            validate_path_in_directory(path, "/usr/lib/initd/system") ||
            validate_path_in_directory(path, "/lib/systemd/system") ||
            validate_path_in_directory(path, "/usr/lib/systemd/system") ||
-           validate_path_in_directory(path, "/etc/systemd/system");
+           validate_path_in_directory(path, "/etc/systemd/system")
+#ifdef UNIT_TEST
+           || validate_path_in_directory(path, "/tmp")
+#endif
+           ;
 }
 
 /* Handle privileged request from slave */
@@ -497,6 +610,19 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             }
         }
 
+        if (run_lifecycle_command(&unit.config.service,
+                                   unit.config.service.exec_start_pre,
+                                   validated_uid,
+                                   validated_gid,
+                                   unit.name,
+                                   "ExecStartPre",
+                                   true) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStartPre failed");
+            goto start_cleanup;
+        }
+
         /* Start service with validated credentials */
         int kill_mode = unit.config.service.kill_mode;
         pid_t pid = start_service_process(&unit.config.service, exec_path, exec_argv,
@@ -516,13 +642,32 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         }
 
         /* Register service in the registry to prevent arbitrary kill() attacks */
-        if (register_service(pid, req->unit_name, kill_mode) < 0) {
+        if (register_service(pid, req->unit_name, unit.path, kill_mode) < 0) {
             /* Registry full - kill the service we just started */
             kill(pid, SIGKILL);
             waitpid(pid, NULL, 0);
             resp->type = RESP_ERROR;
             resp->error_code = ENOMEM;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Service registry full");
+            goto start_cleanup;
+        }
+
+        if (run_lifecycle_command(&unit.config.service,
+                                   unit.config.service.exec_start_post,
+                                   validated_uid,
+                                   validated_gid,
+                                   unit.name,
+                                   "ExecStartPost",
+                                   true) < 0) {
+            fprintf(stderr, "supervisor-master: ExecStartPost failed for %s, terminating service\n",
+                    unit.name);
+            unregister_service(pid);
+            killpg(pid, SIGKILL);
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStartPost failed");
             goto start_cleanup;
         }
 
@@ -556,61 +701,127 @@ start_cleanup:
         fprintf(stderr, "supervisor-master: stopping service %s (pid=%d, kill_mode=%d)\n",
                 svc->unit_name, svc->pid, svc->kill_mode);
 
+        int kill_mode = svc->kill_mode;
+        struct unit_file stop_unit = {0};
+        bool unit_parsed = false;
+        uid_t validated_uid = 0;
+        gid_t validated_gid = 0;
+
+        if (svc->unit_path[0] != '\0') {
+            if (!validate_unit_path_from_worker(svc->unit_path)) {
+                fprintf(stderr, "supervisor-master: SECURITY: stored unit path invalid: %s\n",
+                        svc->unit_path);
+            } else if (parse_unit_file(svc->unit_path, &stop_unit) < 0) {
+                fprintf(stderr, "supervisor-master: failed to parse unit file for %s\n",
+                        svc->unit_name);
+            } else {
+                unit_parsed = true;
+                kill_mode = stop_unit.config.service.kill_mode;
+
+                if (stop_unit.config.service.user[0] != '\0') {
+                    struct passwd *pw = getpwnam(stop_unit.config.service.user);
+                    if (!pw) {
+                        fprintf(stderr, "supervisor-master: stop: user '%s' not found\n",
+                                stop_unit.config.service.user);
+                    } else {
+                        validated_uid = pw->pw_uid;
+                    }
+                }
+
+                if (stop_unit.config.service.group[0] != '\0') {
+                    struct group *gr = getgrnam(stop_unit.config.service.group);
+                    if (!gr) {
+                        fprintf(stderr, "supervisor-master: stop: group '%s' not found\n",
+                                stop_unit.config.service.group);
+                    } else {
+                        validated_gid = gr->gr_gid;
+                    }
+                } else if (validated_uid != 0) {
+                    struct passwd *pw = getpwuid(validated_uid);
+                    if (pw) {
+                        validated_gid = pw->pw_gid;
+                    }
+                }
+
+                if (stop_unit.config.service.exec_stop &&
+                    stop_unit.config.service.exec_stop[0] != '\0') {
+                    if (run_lifecycle_command(&stop_unit.config.service,
+                                               stop_unit.config.service.exec_stop,
+                                               validated_uid,
+                                               validated_gid,
+                                               stop_unit.name,
+                                               "ExecStop",
+                                               false) < 0) {
+                        fprintf(stderr, "supervisor-master: ExecStop failed for %s\n",
+                                stop_unit.name);
+                    }
+                }
+            }
+        }
+
+        bool kill_failed = false;
+        int kill_errno = 0;
+
         /* Use VALIDATED kill_mode from registry (from unit file), not from worker request */
-        switch (svc->kill_mode) {
+        switch (kill_mode) {
         case KILL_NONE:
             /* Don't kill anything */
             fprintf(stderr, "supervisor-master: KillMode=none, not sending signal\n");
-            resp->type = RESP_SERVICE_STOPPED;
             break;
 
         case KILL_PROCESS:
             /* Kill only the main process (default) */
-            if (kill(svc->pid, SIGTERM) < 0) {
-                resp->type = RESP_ERROR;
-                resp->error_code = errno;
-                snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
-            } else {
-                resp->type = RESP_SERVICE_STOPPED;
+            if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+                kill_failed = true;
+                kill_errno = errno;
             }
             break;
 
         case KILL_CONTROL_GROUP:
             /* Kill entire process group using VALIDATED pgid from registry */
-            if (killpg(svc->pgid, SIGTERM) < 0) {
+            if (killpg(svc->pgid, SIGTERM) < 0 && errno != ESRCH) {
                 /* If killpg fails (not a process group leader), fallback to kill */
-                if (kill(svc->pid, SIGTERM) < 0) {
-                    resp->type = RESP_ERROR;
-                    resp->error_code = errno;
-                    snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service group");
-                } else {
-                    resp->type = RESP_SERVICE_STOPPED;
+                if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+                    kill_failed = true;
+                    kill_errno = errno;
                 }
-            } else {
-                resp->type = RESP_SERVICE_STOPPED;
             }
             break;
 
         case KILL_MIXED:
             /* SIGTERM to main process, SIGKILL to rest of group */
-            kill(svc->pid, SIGTERM);
+            if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+                kill_failed = true;
+                kill_errno = errno;
+            }
             /* Sleep briefly to let main process exit gracefully */
             usleep(100000); /* 100ms */
             /* Kill remaining processes in group */
-            killpg(svc->pgid, SIGKILL);
-            resp->type = RESP_SERVICE_STOPPED;
+            if (!kill_failed && killpg(svc->pgid, SIGKILL) < 0 && errno != ESRCH) {
+                kill_failed = true;
+                kill_errno = errno;
+            }
             break;
 
         default:
             /* Fallback to process mode */
-            if (kill(svc->pid, SIGTERM) < 0) {
-                resp->type = RESP_ERROR;
-                resp->error_code = errno;
-                snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
-            } else {
-                resp->type = RESP_SERVICE_STOPPED;
+            if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+                kill_failed = true;
+                kill_errno = errno;
             }
             break;
+        }
+
+        if (unit_parsed) {
+            free_unit_file(&stop_unit);
+        }
+
+        if (kill_failed) {
+            resp->type = RESP_ERROR;
+            resp->error_code = kill_errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to kill service");
+        } else {
+            resp->type = RESP_SERVICE_STOPPED;
         }
         break;
     }
@@ -677,6 +888,112 @@ start_cleanup:
         break;
     }
 
+    case REQ_RELOAD_SERVICE: {
+        fprintf(stderr, "supervisor-master: reload service request: %s (pid=%d)\n",
+                req->unit_name, req->service_pid);
+
+        struct service_record *svc = NULL;
+        if (req->service_pid > 0) {
+            svc = lookup_service(req->service_pid);
+        }
+        if (!svc) {
+            svc = lookup_service_by_name(req->unit_name);
+        }
+        if (!svc) {
+            resp->type = RESP_ERROR;
+            resp->error_code = ESRCH;
+            snprintf(resp->error_msg, sizeof(resp->error_msg),
+                     "Service %.200s is not running", req->unit_name);
+            break;
+        }
+
+        const char *unit_path = svc->unit_path[0] != '\0' ? svc->unit_path : req->unit_path;
+        if (!unit_path || unit_path[0] == '\0') {
+            resp->type = RESP_ERROR;
+            resp->error_code = ENOENT;
+            snprintf(resp->error_msg, sizeof(resp->error_msg),
+                     "Unit path unknown for %.200s", req->unit_name);
+            break;
+        }
+
+        if (!validate_unit_path_from_worker(unit_path)) {
+            resp->type = RESP_ERROR;
+            resp->error_code = EACCES;
+            snprintf(resp->error_msg, sizeof(resp->error_msg),
+                     "Unit path not in allowed directory");
+            break;
+        }
+
+        struct unit_file unit = {0};
+
+        if (parse_unit_file(unit_path, &unit) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse unit file");
+            break;
+        }
+
+        if (!unit.config.service.exec_reload || unit.config.service.exec_reload[0] == '\0') {
+            resp->type = RESP_ERROR;
+            resp->error_code = ENOTSUP;
+            snprintf(resp->error_msg, sizeof(resp->error_msg),
+                     "Unit %.200s has no ExecReload", unit.name[0] ? unit.name : req->unit_name);
+            free_unit_file(&unit);
+            break;
+        }
+
+        uid_t validated_uid = 0;
+        gid_t validated_gid = 0;
+
+        if (unit.config.service.user[0] != '\0') {
+            struct passwd *pw = getpwnam(unit.config.service.user);
+            if (!pw) {
+                resp->type = RESP_ERROR;
+                resp->error_code = EINVAL;
+                snprintf(resp->error_msg, sizeof(resp->error_msg),
+                         "User '%s' not found", unit.config.service.user);
+                free_unit_file(&unit);
+                break;
+            }
+            validated_uid = pw->pw_uid;
+        }
+
+        if (unit.config.service.group[0] != '\0') {
+            struct group *gr = getgrnam(unit.config.service.group);
+            if (!gr) {
+                resp->type = RESP_ERROR;
+                resp->error_code = EINVAL;
+                snprintf(resp->error_msg, sizeof(resp->error_msg),
+                         "Group '%s' not found", unit.config.service.group);
+                free_unit_file(&unit);
+                break;
+            }
+            validated_gid = gr->gr_gid;
+        } else if (validated_uid != 0) {
+            struct passwd *pw = getpwuid(validated_uid);
+            if (pw) {
+                validated_gid = pw->pw_gid;
+            }
+        }
+
+        if (run_lifecycle_command(&unit.config.service,
+                                   unit.config.service.exec_reload,
+                                   validated_uid,
+                                   validated_gid,
+                                   unit.name,
+                                   "ExecReload",
+                                   false) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecReload failed");
+        } else {
+            resp->type = RESP_SERVICE_RELOADED;
+        }
+
+        free_unit_file(&unit);
+        break;
+    }
+
     case REQ_CONVERT_UNIT: {
         fprintf(stderr, "supervisor-master: convert unit request: %s\n", req->unit_path);
 
@@ -724,6 +1041,12 @@ start_cleanup:
 
     return 0;
 }
+
+#ifdef UNIT_TEST
+int supervisor_handle_request_for_test(struct priv_request *req, struct priv_response *resp) {
+    return handle_request(req, resp);
+}
+#endif
 
 /* Reap zombie processes and notify slave */
 static void reap_zombies(void) {
