@@ -23,6 +23,13 @@ maintaining a clean, auditable codebase and true portability. Note: this is not
 an "e" package extracted from systemd, but a completely separate codebase. No
 systemd files or code are reused here.
 
+## Current Status
+- ExecStart launch path hardened: supervisor master re-parses unit files, rebuilds argv, and drops privileges before exec.
+- Control sockets restricted to `0600` and enforce peer credential checks (root or supervisor UID only).
+- Restart limiter stores per-unit history to prevent hash-collision DoS.
+- Sender-side IPC bounds now match receiver limits (guards against overflow/oversized payloads).
+- ExecStop/ExecReload/ExecStartPre/ExecStartPost remain planned; TODO tracked in `TODO-next-session.md`.
+
 ### Design Philosophy
 
 - **Minimal and Auditable** - Small, readable C23 codebase
@@ -48,8 +55,11 @@ systemd files or code are reused here.
   - Minimal code running as root
   - Service registry prevents arbitrary kill() attacks
   - DoS prevention via restart rate limiting
+  - Restart limiter keyed per-unit to prevent hash-collision abuse
   - Path security with TOCTOU and symlink attack prevention
   - Secure IPC with proper serialization (no raw pointers)
+  - Supervisor control socket locked down (0600 perms + peer credential checks)
+  - Master re-parses unit files and rebuilds ExecStart argv before exec (no trust in worker input)
   - File descriptor leak prevention (SOCK_CLOEXEC)
   - Signal race condition hardening
   - Service sandboxing via User/Group directives
@@ -183,10 +193,10 @@ Unit types **not supported** (use traditional alternatives):
 
 ### Supported Service Directives
 
-**[Service] Section:**
 - `Type=` - simple, forking, oneshot
-- `ExecStart=`, `ExecStop=`, `ExecReload=` - Service commands
-- `ExecStartPre=`, `ExecStartPost=` - Pre/post start commands
+- `ExecStart=` - service start (master-validated, privilege-separated launch)
+- `ExecStop=`, `ExecReload=` - service commands *(planned; initial implementation pending)*
+- `ExecStartPre=`, `ExecStartPost=` - pre/post start commands *(planned)*
 - `User=`, `Group=` - Run as specific user/group
 - `WorkingDirectory=` - Set working directory
 - `Environment=` - Set environment variables

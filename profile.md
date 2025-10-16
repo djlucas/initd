@@ -366,8 +366,9 @@ Standard systemd INI format
 
 **[Service]:**
 - Type (simple, forking, oneshot)
-- ExecStart, ExecStop, ExecReload
-- ExecStartPre, ExecStartPost
+- ExecStart *(implemented – master revalidates command and argv)*
+- ExecStop, ExecReload *(planned – privilege handling pending)*
+- ExecStartPre, ExecStartPost *(planned)*
 - User, Group
 - WorkingDirectory
 - Environment, EnvironmentFile
@@ -950,6 +951,7 @@ WantedBy=multi-user.target
 **Supervisor Master (root):**
 - Small, auditable privileged operations
 - Validates User/Group from unit files (privilege escalation prevention)
+- Re-parses unit files and rebuilds ExecStart argv internally (ignores worker-supplied command data)
 - Drops capabilities where possible
 - Short-lived worker processes
 
@@ -958,7 +960,7 @@ WantedBy=multi-user.target
 - No root privileges
 - Limited system access
 - Path security validation (TOCTOU prevention)
-- Service registry with DoS prevention
+- Service registry with per-unit DoS prevention (collision-resistant restart tracker)
 - Secure IPC with malformed input validation
 
 **Services:**
@@ -1078,6 +1080,13 @@ To avoid writing ourselves into a corner, the following must be considered durin
 **Unit File Parser**
 - ✅ Already platform-agnostic
 - No changes needed
+
+### Pending Work / Known Gaps
+- Implement privileged ExecStartPre/ExecStartPost/ExecStop/ExecReload handling mirroring the ExecStart safeguards.
+- Harden calendar parser (`strtol` with overflow checks) and expand fuzz/edge-case tests.
+- Optimise dependency resolver to avoid redundant traversals (explicit DONE markers, clearer visited semantics).
+- Audit remaining file handling for `FD_CLOEXEC`, TOCTOU-safe temp files, and consistent privilege drops.
+- Optional: introduce versioned/authenticated IPC for future protocol evolution.
 
 **Key Abstraction Points:**
 1. **Process Tracking** - Wrap cgroup operations for BSD/Hurd
@@ -1679,4 +1688,3 @@ fi
 ```
 
 **Note:** Replace `CHANGEME` with actual project name during build/install.
-
