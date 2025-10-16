@@ -55,7 +55,11 @@ void unregister_service(pid_t pid) {
         if (service_registry[i].in_use && service_registry[i].pid == pid) {
             fprintf(stderr, "supervisor-master: unregistered service %s (pid=%d)\n",
                     service_registry[i].unit_name, pid);
+            char unit_name_copy[sizeof(service_registry[i].unit_name)];
+            strncpy(unit_name_copy, service_registry[i].unit_name, sizeof(unit_name_copy));
+            unit_name_copy[sizeof(unit_name_copy) - 1] = '\0';
             service_registry[i].in_use = 0;
+            release_restart_tracker(unit_name_copy);
             return;
         }
     }
@@ -95,8 +99,57 @@ static int hash_unit_name(const char *unit_name) {
 
 /* Get restart tracker for a unit (creates if doesn't exist) */
 static struct restart_tracker *get_restart_tracker(const char *unit_name) {
+    if (!unit_name || unit_name[0] == '\0') {
+        return NULL;
+    }
+
     int idx = hash_unit_name(unit_name);
-    return &restart_trackers[idx];
+
+    for (int i = 0; i < MAX_SERVICES; i++) {
+        int slot = (idx + i) % MAX_SERVICES;
+        struct restart_tracker *tracker = &restart_trackers[slot];
+
+        if (tracker->in_use) {
+            if (strncmp(tracker->unit_name, unit_name, sizeof(tracker->unit_name)) == 0) {
+                return tracker;
+            }
+            continue;
+        }
+
+        /* Claim unused slot */
+        tracker->in_use = 1;
+        tracker->attempt_count = 0;
+        tracker->last_attempt = 0;
+        memset(tracker->attempts, 0, sizeof(tracker->attempts));
+        strncpy(tracker->unit_name, unit_name, sizeof(tracker->unit_name) - 1);
+        tracker->unit_name[sizeof(tracker->unit_name) - 1] = '\0';
+        return tracker;
+    }
+
+    return NULL;
+}
+
+static void release_restart_tracker(const char *unit_name) {
+    if (!unit_name || unit_name[0] == '\0') {
+        return;
+    }
+
+    int idx = hash_unit_name(unit_name);
+
+    for (int i = 0; i < MAX_SERVICES; i++) {
+        int slot = (idx + i) % MAX_SERVICES;
+        struct restart_tracker *tracker = &restart_trackers[slot];
+
+        if (tracker->in_use &&
+            strncmp(tracker->unit_name, unit_name, sizeof(tracker->unit_name)) == 0) {
+            memset(tracker, 0, sizeof(*tracker));
+            return;
+        }
+
+        if (!tracker->in_use) {
+            return;
+        }
+    }
 }
 
 /* DoS Prevention: Check if registry has capacity for new service */
@@ -108,6 +161,11 @@ int has_registry_capacity(void) {
  * Returns 1 if restart is allowed, 0 if rate limited */
 int can_restart_service(const char *unit_name) {
     struct restart_tracker *tracker = get_restart_tracker(unit_name);
+    if (!tracker) {
+        fprintf(stderr, "supervisor-master: [DoS Prevention] restart tracker table full, treating %s as denied\n",
+                unit_name ? unit_name : "<null>");
+        return 0;
+    }
     time_t now = time(NULL);
 
     /* Check minimum interval since last attempt */
@@ -150,6 +208,11 @@ int can_restart_service(const char *unit_name) {
 /* DoS Prevention: Record a restart attempt for rate limiting */
 void record_restart_attempt(const char *unit_name) {
     struct restart_tracker *tracker = get_restart_tracker(unit_name);
+    if (!tracker) {
+        fprintf(stderr, "supervisor-master: [DoS Prevention] restart tracker table full, tracking disabled for %s\n",
+                unit_name ? unit_name : "<null>");
+        return;
+    }
     time_t now = time(NULL);
 
     /* Record this attempt */

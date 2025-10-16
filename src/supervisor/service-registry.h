@@ -30,6 +30,8 @@ struct restart_tracker {
     time_t attempts[MAX_RESTARTS_PER_WINDOW];  /* Timestamps of recent restart attempts */
     int attempt_count;                         /* Number of attempts in current window */
     time_t last_attempt;                       /* Timestamp of last restart attempt */
+    char unit_name[256];
+    int in_use;
 };
 
 struct service_record {
