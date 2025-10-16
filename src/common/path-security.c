@@ -153,7 +153,7 @@ bool validate_path_in_directory(const char *path, const char *allowed_dir) {
     return true;
 }
 
-/* Securely copy a file using fd operations (O_NOFOLLOW, mkstemp, rename) */
+/* Securely copy a file using fd operations (O_NOFOLLOW, mkostemp, rename) */
 int secure_copy_file(const char *src_path, const char *dst_path, mode_t mode) {
     int src_fd = -1;
     int dst_fd = -1;
@@ -182,7 +182,7 @@ int secure_copy_file(const char *src_path, const char *dst_path, mode_t mode) {
     /* Create temporary file in the same directory as destination */
     snprintf(temp_path, sizeof(temp_path), "%s.XXXXXX", dst_path);
 
-    dst_fd = mkstemp(temp_path);
+    dst_fd = mkostemp(temp_path, O_CLOEXEC);
     if (dst_fd < 0) {
         goto cleanup;
     }

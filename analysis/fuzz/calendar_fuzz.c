@@ -5,7 +5,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "../../src/timer-daemon/calendar.h"
+#include "timer-daemon/calendar.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (!data || size == 0 || size > 4096) {

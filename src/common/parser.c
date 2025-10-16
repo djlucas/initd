@@ -12,6 +12,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include "unit.h"
 
 #define MAX_LINE 1024
@@ -210,6 +212,11 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     f = fopen(path, "r");
     if (!f) {
         return -1;
+    }
+
+    int fd = fileno(f);
+    if (fd >= 0) {
+        (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
     }
 
     /* Initialize unit */

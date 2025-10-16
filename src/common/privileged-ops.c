@@ -74,7 +74,7 @@ int convert_systemd_unit(struct unit_file *unit) {
         return 0;
     }
 
-    /* SECURITY: Use secure_copy_file which uses O_NOFOLLOW and mkstemp */
+    /* SECURITY: Use secure_copy_file which uses O_NOFOLLOW and mkostemp */
     if (secure_copy_file(systemd_path, initd_path, 0644) < 0) {
         log_msg(LOG_ERR, unit->name, "failed to copy %s to %s: %s",
                 systemd_path, initd_path, strerror(errno));

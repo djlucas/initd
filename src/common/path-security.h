@@ -21,7 +21,7 @@ bool validate_unit_name(const char *name);
 /* Validate that a target name is safe (for WantedBy, RequiredBy) */
 bool validate_target_name(const char *target);
 
-/* Securely copy a file using fd operations (O_NOFOLLOW, mkstemp, rename) */
+/* Securely copy a file using fd operations (O_NOFOLLOW, mkostemp, rename) */
 int secure_copy_file(const char *src_path, const char *dst_path, mode_t mode);
 
 /* Securely create a symlink after validating all components */

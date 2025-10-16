@@ -20,6 +20,7 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -126,6 +127,10 @@ static void load_timer_state(struct timer_instance *timer) {
     if (!f) {
         return; /* No saved state */
     }
+    int fd = fileno(f);
+    if (fd >= 0) {
+        (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+    }
 
     if (fscanf(f, "%ld", &timer->last_run) != 1) {
         timer->last_run = 0;
@@ -149,6 +154,10 @@ static void save_timer_state(struct timer_instance *timer) {
         fprintf(stderr, "timer-daemon: failed to save state for %s: %s\n",
                 timer->unit->name, strerror(errno));
         return;
+    }
+    int fd = fileno(f);
+    if (fd >= 0) {
+        (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
     }
 
     fprintf(f, "%ld\n", timer->last_run);
@@ -680,6 +689,10 @@ static int event_loop(void) {
 static time_t get_boot_time(void) {
     FILE *f = fopen("/proc/uptime", "r");
     if (f) {
+        int fd = fileno(f);
+        if (fd >= 0) {
+            (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+        }
         double uptime;
         if (fscanf(f, "%lf", &uptime) == 1) {
             fclose(f);
