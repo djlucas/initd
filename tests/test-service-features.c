@@ -4,43 +4,67 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <sys/resource.h>
+#include <unistd.h>
 #include "../src/common/unit.h"
 #include "../src/common/parser.h"
+
+/* Helper to create unique temp files */
+static char *create_temp_unit_file(const char *content) {
+    static char template[] = "/tmp/test-service-XXXXXX.service";
+    char *path = strdup(template);
+
+    /* Create unique file */
+    int fd = mkstemps(path, 8); /* 8 = strlen(".service") */
+    assert(fd >= 0);
+
+    /* Write content */
+    write(fd, content, strlen(content));
+    close(fd);
+
+    return path;
+}
+
+/* Cleanup temp file */
+static void cleanup_temp_file(char *path) {
+    if (path) {
+        unlink(path);
+        free(path);
+    }
+}
 
 /* Test parsing PrivateTmp */
 static void test_parse_private_tmp(void) {
     struct unit_file unit = {0};
 
-    /* Create temp file with PrivateTmp=true */
-    FILE *f = fopen("/tmp/test-privatetmp.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Unit]\n");
-    fprintf(f, "Description=Test PrivateTmp\n");
-    fprintf(f, "[Service]\n");
-    fprintf(f, "Type=simple\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "PrivateTmp=true\n");
-    fclose(f);
-
-    assert(parse_unit_file("/tmp/test-privatetmp.service", &unit) == 0);
+    /* Test PrivateTmp=true */
+    char *path1 = create_temp_unit_file(
+        "[Unit]\n"
+        "Description=Test PrivateTmp\n"
+        "[Service]\n"
+        "Type=simple\n"
+        "ExecStart=/bin/true\n"
+        "PrivateTmp=true\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
     assert(unit.config.service.private_tmp == true);
+    cleanup_temp_file(path1);
 
-    /* Test false */
-    f = fopen("/tmp/test-privatetmp2.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "PrivateTmp=false\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fclose(f);
-
+    /* Test PrivateTmp=false */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "PrivateTmp=false\n"
+        "ExecStart=/bin/true\n"
+    );
     memset(&unit, 0, sizeof(unit));
-    assert(parse_unit_file("/tmp/test-privatetmp2.service", &unit) == 0);
+    assert(parse_unit_file(path2, &unit) == 0);
     assert(unit.config.service.private_tmp == false);
+    cleanup_temp_file(path2);
 
     printf("✓ PrivateTmp parsing works\n");
 }
@@ -50,38 +74,35 @@ static void test_parse_limit_nofile(void) {
     struct unit_file unit = {0};
 
     /* Test numeric value */
-    FILE *f = fopen("/tmp/test-limitnofile.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "LimitNOFILE=65536\n");
-    fclose(f);
-
-    assert(parse_unit_file("/tmp/test-limitnofile.service", &unit) == 0);
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "LimitNOFILE=65536\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
     assert(unit.config.service.limit_nofile == 65536);
+    cleanup_temp_file(path1);
 
     /* Test infinity */
-    f = fopen("/tmp/test-limitnofile2.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "LimitNOFILE=infinity\n");
-    fclose(f);
-
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "LimitNOFILE=infinity\n"
+    );
     memset(&unit, 0, sizeof(unit));
-    assert(parse_unit_file("/tmp/test-limitnofile2.service", &unit) == 0);
+    assert(parse_unit_file(path2, &unit) == 0);
     assert(unit.config.service.limit_nofile == 0); /* 0 = infinity */
+    cleanup_temp_file(path2);
 
     /* Test default (not set) */
-    f = fopen("/tmp/test-limitnofile3.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fclose(f);
-
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
     memset(&unit, 0, sizeof(unit));
-    assert(parse_unit_file("/tmp/test-limitnofile3.service", &unit) == 0);
+    assert(parse_unit_file(path3, &unit) == 0);
     assert(unit.config.service.limit_nofile == -1); /* -1 = not set */
+    cleanup_temp_file(path3);
 
     printf("✓ LimitNOFILE parsing works\n");
 }
@@ -91,62 +112,57 @@ static void test_parse_kill_mode(void) {
     struct unit_file unit = {0};
 
     /* Test process mode */
-    FILE *f = fopen("/tmp/test-killmode.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "KillMode=process\n");
-    fclose(f);
-
-    assert(parse_unit_file("/tmp/test-killmode.service", &unit) == 0);
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "KillMode=process\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_PROCESS);
+    cleanup_temp_file(path1);
 
     /* Test control-group mode */
-    f = fopen("/tmp/test-killmode2.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "KillMode=control-group\n");
-    fclose(f);
-
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "KillMode=control-group\n"
+    );
     memset(&unit, 0, sizeof(unit));
-    assert(parse_unit_file("/tmp/test-killmode2.service", &unit) == 0);
+    assert(parse_unit_file(path2, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_CONTROL_GROUP);
+    cleanup_temp_file(path2);
 
     /* Test mixed mode */
-    f = fopen("/tmp/test-killmode3.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "KillMode=mixed\n");
-    fclose(f);
-
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "KillMode=mixed\n"
+    );
     memset(&unit, 0, sizeof(unit));
-    assert(parse_unit_file("/tmp/test-killmode3.service", &unit) == 0);
+    assert(parse_unit_file(path3, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_MIXED);
+    cleanup_temp_file(path3);
 
     /* Test none mode */
-    f = fopen("/tmp/test-killmode4.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "KillMode=none\n");
-    fclose(f);
-
+    char *path4 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "KillMode=none\n"
+    );
     memset(&unit, 0, sizeof(unit));
-    assert(parse_unit_file("/tmp/test-killmode4.service", &unit) == 0);
+    assert(parse_unit_file(path4, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_NONE);
+    cleanup_temp_file(path4);
 
     /* Test default (should be process) */
-    f = fopen("/tmp/test-killmode5.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fclose(f);
-
+    char *path5 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
     memset(&unit, 0, sizeof(unit));
-    assert(parse_unit_file("/tmp/test-killmode5.service", &unit) == 0);
+    assert(parse_unit_file(path5, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_PROCESS); /* Default */
+    cleanup_temp_file(path5);
 
     printf("✓ KillMode parsing works\n");
 }
@@ -155,19 +171,18 @@ static void test_parse_kill_mode(void) {
 static void test_combined_features(void) {
     struct unit_file unit = {0};
 
-    FILE *f = fopen("/tmp/test-combined.service", "w");
-    assert(f != NULL);
-    fprintf(f, "[Service]\n");
-    fprintf(f, "ExecStart=/bin/true\n");
-    fprintf(f, "PrivateTmp=true\n");
-    fprintf(f, "LimitNOFILE=infinity\n");
-    fprintf(f, "KillMode=control-group\n");
-    fclose(f);
-
-    assert(parse_unit_file("/tmp/test-combined.service", &unit) == 0);
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "PrivateTmp=true\n"
+        "LimitNOFILE=infinity\n"
+        "KillMode=control-group\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
     assert(unit.config.service.private_tmp == true);
     assert(unit.config.service.limit_nofile == 0); /* infinity */
     assert(unit.config.service.kill_mode == KILL_CONTROL_GROUP);
+    cleanup_temp_file(path);
 
     printf("✓ Combined features parsing works\n");
 }
