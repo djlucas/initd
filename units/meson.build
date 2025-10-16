@@ -33,6 +33,8 @@ reference_services = files(
   'reference/console.service',
   'reference/createfiles.service',
   'reference/getty@.service',
+  'reference/initd-socket.service',
+  'reference/initd-timer.service',
   'reference/klogd.service',
   'reference/localnet.service',
   'reference/modules-load.service',
@@ -96,6 +98,12 @@ sysinit_wants = [
   'udevd.service',
 ]
 
+# Services to enable in basic.target.wants
+basic_wants = [
+  'initd-socket.service',
+  'initd-timer.service',
+]
+
 # Create symlinks for enabled services
 meson.add_install_script('sh', '-c', '''
   SYSCONFDIR="$DESTDIR@0@"
@@ -104,6 +112,7 @@ meson.add_install_script('sh', '-c', '''
   # Create wants directories
   mkdir -p "$SYSCONFDIR/initd/system/multi-user.target.wants"
   mkdir -p "$SYSCONFDIR/initd/system/sysinit.target.wants"
+  mkdir -p "$SYSCONFDIR/initd/system/basic.target.wants"
 
   # Enable multi-user.target services
   for service in @2@; do
@@ -116,11 +125,18 @@ meson.add_install_script('sh', '-c', '''
     ln -sf "$LIBDIR/initd/system/$service" \
            "$SYSCONFDIR/initd/system/sysinit.target.wants/$service"
   done
+
+  # Enable basic.target services
+  for service in @4@; do
+    ln -sf "$LIBDIR/initd/system/$service" \
+           "$SYSCONFDIR/initd/system/basic.target.wants/$service"
+  done
 '''.format(
   get_option('sysconfdir'),
   '/' + get_option('prefix') / get_option('libdir'),
   ' '.join(multi_user_wants),
-  ' '.join(sysinit_wants)
+  ' '.join(sysinit_wants),
+  ' '.join(basic_wants)
 ), install_tag: 'reference')
 
 # Create ninja target for reference installation
@@ -159,6 +175,8 @@ install -D -m 644 "$SRCDIR/reference/checkfs.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/console.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/createfiles.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/getty@.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/initd-socket.service" -t "$LIBDIR/initd/system"
+install -D -m 644 "$SRCDIR/reference/initd-timer.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/klogd.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/localnet.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/modules-load.service" -t "$LIBDIR/initd/system"
@@ -187,6 +205,7 @@ install -D -m 644 "$SYSCONFIGSRCDIR/reference/udev_retry.conf" -t "$SYSCONFDIR/s
 # Create wants directories
 mkdir -p "$SYSCONFDIR/initd/system/multi-user.target.wants"
 mkdir -p "$SYSCONFDIR/initd/system/sysinit.target.wants"
+mkdir -p "$SYSCONFDIR/initd/system/basic.target.wants"
 
 # Enable multi-user.target services
 for service in getty@tty1.service getty@tty2.service getty@tty3.service getty@tty4.service getty@tty5.service getty@tty6.service klogd.service syslogd.service; do
@@ -196,6 +215,11 @@ done
 # Enable sysinit.target services
 for service in checkfs.service console.service createfiles.service localnet.service modules-load.service mountfs.service mountvirtfs.service random-seed.service remount-root.service swap.service sysctl.service udev-retry.service udev-settle.service udev-trigger.service udevd.service; do
   ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/sysinit.target.wants/$service"
+done
+
+# Enable basic.target services
+for service in initd-socket.service initd-timer.service; do
+  ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/basic.target.wants/$service"
 done
 '''.format(meson.current_source_dir(), '/' + get_option('prefix') / get_option('libdir'), get_option('sysconfdir'), meson.project_source_root() / 'sysconfig')]
 )

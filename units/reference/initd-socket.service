@@ -1,0 +1,16 @@
+[Unit]
+Description=Socket Activation Daemon
+Documentation=man:initd-socket(8)
+DefaultDependencies=no
+After=mountvirtfs.service
+Before=basic.target
+Conflicts=shutdown.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/initd/initd-socket
+Restart=on-failure
+StandardOutput=null
+
+[Install]
+WantedBy=basic.target

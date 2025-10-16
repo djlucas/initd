@@ -1,0 +1,16 @@
+[Unit]
+Description=Timer Daemon (Cron Replacement)
+Documentation=man:initd-timer(8)
+DefaultDependencies=no
+After=mountvirtfs.service
+Before=basic.target
+Conflicts=shutdown.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/initd/initd-timer
+Restart=on-failure
+StandardOutput=null
+
+[Install]
+WantedBy=basic.target
