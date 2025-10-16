@@ -85,6 +85,9 @@ struct priv_response_wire {
 int send_request(int fd, const struct priv_request *req) {
     struct priv_request_wire wire;
 
+    /* Zero-initialize to avoid sending uninitialized padding bytes */
+    memset(&wire, 0, sizeof(wire));
+
     /* Pack fixed fields */
     wire.type = req->type;
     wire.service_pid = req->service_pid;
@@ -252,6 +255,9 @@ int recv_request(int fd, struct priv_request *req) {
 /* Send a response over socket */
 int send_response(int fd, const struct priv_response *resp) {
     struct priv_response_wire wire;
+
+    /* Zero-initialize to avoid sending uninitialized padding bytes */
+    memset(&wire, 0, sizeof(wire));
 
     /* Pack fields */
     wire.type = resp->type;
