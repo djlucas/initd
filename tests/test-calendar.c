@@ -53,6 +53,14 @@ void test_validate_invalid(void) {
     PASS();
 }
 
+void test_validate_overflow(void) {
+    TEST("overflow and invalid ranges");
+    assert(calendar_validate("* *-*-9223372036854775808 00:00:00") == false);
+    assert(calendar_validate("* *-*-1..9223372036854775807 00:00:00") == false);
+    assert(calendar_validate("* *-*-7..3 00:00:00") == false);
+    PASS();
+}
+
 void test_next_run_daily(void) {
     TEST("next run for daily");
 
@@ -131,6 +139,7 @@ int main(void) {
     test_validate_full_format();
     test_validate_date_time();
     test_validate_invalid();
+    test_validate_overflow();
     test_next_run_daily();
     test_next_run_hourly();
     test_next_run_specific_time();

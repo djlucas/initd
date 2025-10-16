@@ -19,6 +19,8 @@
 #include <ctype.h>
 #include <time.h>
 #include <stdbool.h>
+#include <errno.h>
+#include <limits.h>
 #include "calendar.h"
 
 /* Calendar component - represents a parsed field */
@@ -100,27 +102,90 @@ static int add_value(struct calendar_component *comp, int value) {
     return 0;
 }
 
+/* Parse integer with bounds checking */
+static bool parse_bounded_int(const char *str, int min, int max, char **endptr_out, int *value_out) {
+    if (!str || !value_out) {
+        return false;
+    }
+
+    errno = 0;
+    char *endptr = NULL;
+    long value = strtol(str, &endptr, 10);
+
+    if (endptr == str) {
+        return false;  /* No digits consumed */
+    }
+    if (errno == ERANGE || value < min || value > max) {
+        return false;
+    }
+
+    if (endptr_out) {
+        *endptr_out = endptr;
+    }
+    *value_out = (int)value;
+    return true;
+}
+
 /* Parse range (e.g., "1..7", "10-15") */
 static int parse_range(struct calendar_component *comp, const char *str, int min, int max) {
-    char *endptr;
-    long start = strtol(str, &endptr, 10);
+    if (!str || !comp) {
+        return -1;
+    }
 
-    if (*endptr != '.' && *endptr != '-') {
-        /* Single value */
-        if (start < min || start > max) return -1;
+    char *cursor = NULL;
+    int start = 0;
+
+    if (!parse_bounded_int(str, min, max, &cursor, &start)) {
+        return -1;
+    }
+
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+
+    if (*cursor == '\0') {
         return add_value(comp, start);
     }
 
-    /* Skip '..' or '-' */
-    if (*endptr == '.') endptr += 2;
-    else endptr++;
+    char delimiter = *cursor;
+    if (delimiter != '.' && delimiter != '-') {
+        return -1;
+    }
 
-    long end = strtol(endptr, NULL, 10);
-    if (end < min || end > max || start > end) return -1;
+    if (delimiter == '.') {
+        if (cursor[1] != '.') {
+            return -1;
+        }
+        cursor += 2;
+    } else {
+        cursor++;
+    }
 
-    /* Add all values in range */
-    for (long i = start; i <= end; i++) {
-        if (add_value(comp, i) < 0) return -1;
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+
+    int end = 0;
+    if (!parse_bounded_int(cursor, min, max, &cursor, &end)) {
+        return -1;
+    }
+
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+
+    if (*cursor != '\0') {
+        return -1;  /* Trailing garbage */
+    }
+
+    if (end < start) {
+        return -1;
+    }
+
+    for (int value = start; value <= end; value++) {
+        if (add_value(comp, value) < 0) {
+            return -1;
+        }
     }
 
     return 0;
