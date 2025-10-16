@@ -1113,7 +1113,26 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
 
     unit->start_visit_state = DEP_VISIT_DONE;
     return 0;
+#ifdef UNIT_TEST
+void supervisor_test_set_unit_context(struct unit_file **list, int count) {
+    units = list;
+    unit_count = count;
 }
+
+void supervisor_test_reset_generations(void) {
+    start_traversal_generation = 0;
+    stop_traversal_generation = 0;
+    isolate_generation = 0;
+    reset_start_traversal_marks();
+    reset_stop_traversal_marks();
+    reset_isolate_marks();
+}
+
+void supervisor_test_mark_isolate(struct unit_file *target) {
+    unsigned int generation = next_isolate_generation();
+    mark_isolate_closure(target, generation);
+}
+#endif
 
 /* Public wrapper without depth parameter */
 static int start_unit_recursive(struct unit_file *unit) {
@@ -1197,6 +1216,7 @@ static int main_loop(void) {
     return 0;
 }
 
+#ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "supervisor-slave: usage: %s <ipc_fd>\n", argv[0]);
@@ -1263,3 +1283,4 @@ int main(int argc, char *argv[]) {
     log_close();
     return 0;
 }
+#endif

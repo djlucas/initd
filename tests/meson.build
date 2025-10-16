@@ -99,6 +99,16 @@ test_exec_lifecycle = executable(
   c_args: ['-DUNIT_TEST']
 )
 
+test_isolate = executable(
+  'test-isolate',
+  [
+    'test-isolate.c',
+    '../src/supervisor/initd-supervisor-worker.c',
+  ],
+  dependencies: common_dep,
+  c_args: ['-DUNIT_TEST']
+)
+
 test('calendar parser', test_calendar)
 test('unit file parser', test_parser)
 test('control protocol', test_control)
@@ -114,6 +124,7 @@ test('socket IPC protocol', test_socket_ipc)
 test('service features', test_service_features)
 test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
 test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged')
+test('isolate closure', test_isolate)
 
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')
