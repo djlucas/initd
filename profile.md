@@ -366,9 +366,8 @@ Standard systemd INI format
 
 **[Service]:**
 - Type (simple, forking, oneshot)
-- ExecStart *(implemented – master revalidates command and argv)*
-- ExecStop, ExecReload *(planned – privilege handling pending)*
-- ExecStartPre, ExecStartPost *(planned)*
+- ExecStart, ExecStartPre, ExecStartPost *(implemented – privileged master revalidates command, argv, and environment setup)*
+- ExecStop, ExecReload *(implemented – privileged master execution with worker mediation)*
 - User, Group
 - WorkingDirectory
 - Environment, EnvironmentFile
@@ -680,12 +679,13 @@ timestamp hostname supervisor[pid]: [unit.service] message
 ### Platform-Specific Features
 
 **Linux**
-- **Cgroups v2** for process tracking
+- **Process groups** as the baseline supervision mechanism (shared with non-Linux platforms)
+- **Cgroups v2** planned as an optional enhancement once process-group parity is complete
 - **Namespaces** for isolation (optional)
 - Full feature set in both modes
 
 **BSD and Other Unix-like Systems**
-- **Process groups** instead of cgroups
+- **Process groups** supervision (first-class path; ensures parity with Linux baseline)
 - No namespaces
 - Core functionality works
 - Can run as PID 1 or standalone supervisor
@@ -884,6 +884,7 @@ project/
 │   ├── test-state.c
 │   ├── test-log.c
 │   ├── test-integration.c
+│   ├── test-exec-lifecycle.c
 │   ├── test-socket-ipc.c
 │   ├── test-timer-ipc.c
 │   ├── test-privileged-ops.c
@@ -1024,12 +1025,14 @@ init (root, PID 1)
 13. ✅ **Orphaned process cleanup** - kill_remaining_processes() during shutdown
 14. ✅ **KillMode support** - using process groups (control-group, process, mixed, none)
 
-### Phase 3: Independent Daemons (IN PROGRESS)
+### Phase 3: Independent Daemons + Portable Supervision (IN PROGRESS)
 1. ⚠️ Timer daemon (independent, cron replacement)
 2. ⚠️ Socket activator daemon (independent, with idle timeout)
 3. ⚠️ Daemon independence (separate control sockets, optional communication)
 4. ⚠️ Full systemctl compatibility (command routing to daemons)
 5. ⚠️ journalctl wrapper
+6. ⚠️ Cross-platform process-group supervision parity (Linux/BSD/Hurd) with shared abstraction layer
+7. ⚠️ Platform detection/build plumbing for shared code paths (headers, feature flags, CI coverage)
 
 ### Phase 4: Linux-Specific Enhancements (FUTURE)
 1. ⬜ Cgroup v2 integration (Linux-only, parallel to process groups)
@@ -1039,19 +1042,12 @@ init (root, PID 1)
 2. ⬜ Linux namespaces (already have PrivateTmp mount namespace)
 3. ⬜ Seccomp filters (optional security hardening)
 
-### Phase 5: Multi-Platform & Standalone Mode (FUTURE)
+### Phase 5: Standalone & Packaging Polish (FUTURE)
 
-#### Platform Abstraction
-1. Abstract process tracking (cgroups vs process groups)
-2. Platform-specific headers and feature detection
-3. Conditional compilation for platform features
-4. Testing on BSD and Hurd
-
-#### Standalone Supervisor Mode
-1. Mode detection (PID == 1 vs regular process)
-2. Conditional shutdown behavior (reboot() vs exit)
-3. Startup script/unit for running under existing init
-4. Documentation for both deployment modes
+- Documented standalone supervisor workflows (non-PID1)
+- PID detection / graceful reboot-handling refinements
+- Packaging, installers, and cross-distro guidance
+- Final cross-platform documentation once process-group parity (Phase 3) is complete
 
 #### Design Constraints for Phases 1-3
 To avoid writing ourselves into a corner, the following must be considered during early phases:
@@ -1064,11 +1060,11 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - ✅ Already mode-agnostic (doesn't check PID)
 - ⚠️ TODO: Detect if running as descendant of PID 1 vs direct child
 - ⚠️ TODO: Conditional reboot() - only if we ARE the init
-- ⚠️ TODO: Platform abstraction for process tracking
+- ⚠️ TODO: Finalize shared process-group abstraction (Phase 3 deliverable) before adding optional cgroup enhancements
 
 **Supervisor Slave**
 - ✅ Already unprivileged and mode-agnostic
-- ⚠️ TODO: Abstract process supervision (cgroups vs process groups)
+- ⚠️ TODO: Abstract process supervision (process groups first, cgroups optional)
 - ⚠️ TODO: Platform-specific includes
 
 **Control Protocol**
@@ -1082,7 +1078,6 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - No changes needed
 
 ### Pending Work / Known Gaps
-- Implement privileged ExecStartPre/ExecStartPost/ExecStop/ExecReload handling mirroring the ExecStart safeguards.
 - Harden calendar parser (`strtol` with overflow checks) and expand fuzz/edge-case tests.
 - Optimise dependency resolver to avoid redundant traversals (explicit DONE markers, clearer visited semantics).
 - Audit remaining file handling for `FD_CLOEXEC`, TOCTOU-safe temp files, and consistent privilege drops.

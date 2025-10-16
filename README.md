@@ -24,11 +24,12 @@ an "e" package extracted from systemd, but a completely separate codebase. No
 systemd files or code are reused here.
 
 ## Current Status
-- ExecStart launch path hardened: supervisor master re-parses unit files, rebuilds argv, and drops privileges before exec.
+- ExecStart/ExecStartPre/ExecStartPost/ExecStop/ExecReload now execute exclusively through the privileged master with shared validation, environment setup, and UID/GID drops.
+- Cross-platform process-group supervision is under active development to guarantee a solid portable baseline before optional Linux cgroup support lands.
 - Control sockets restricted to `0600` and enforce peer credential checks (root or supervisor UID only).
 - Restart limiter stores per-unit history to prevent hash-collision DoS.
 - Sender-side IPC bounds now match receiver limits (guards against overflow/oversized payloads).
-- ExecStop/ExecReload/ExecStartPre/ExecStartPost remain planned; TODO tracked in `TODO-next-session.md`.
+- Bounded libFuzzer harness exercises the calendar parser (5k runs) as part of the analysis suite when clang support is available.
 
 ### Design Philosophy
 
@@ -54,20 +55,20 @@ systemd files or code are reused here.
   - Privilege-separated architecture (master/worker supervisor)
   - Minimal code running as root
   - Service registry prevents arbitrary kill() attacks
-  - DoS prevention via restart rate limiting
-  - Restart limiter keyed per-unit to prevent hash-collision abuse
-  - Path security with TOCTOU and symlink attack prevention
-  - Secure IPC with proper serialization (no raw pointers)
-  - Supervisor control socket locked down (0600 perms + peer credential checks)
-  - Master re-parses unit files and rebuilds ExecStart argv before exec (no trust in worker input)
-  - File descriptor leak prevention (SOCK_CLOEXEC)
-  - Signal race condition hardening
-  - Service sandboxing via User/Group directives
-  - Optional cgroup isolation (Linux only - not implemented yet)
+- DoS prevention via restart rate limiting
+- Restart limiter keyed per-unit to prevent hash-collision abuse
+- Path security with TOCTOU and symlink attack prevention
+- Secure IPC with proper serialization (no raw pointers)
+- Supervisor control socket locked down (0600 perms + peer credential checks)
+- Master re-parses unit files and rebuilds Exec* argv before exec (never trusts worker input)
+- File descriptor leak prevention (SOCK_CLOEXEC)
+- Signal race condition hardening
+- Service sandboxing via User/Group directives
+- Optional cgroup isolation (Linux only - not implemented yet)
 
 - **Platform Support**
   - Linux: Full feature set with cgroups v2
-  - Other Unix-like systems: Process group-based supervision
+  - Other Unix-like systems: Process group-based supervision (active work to ensure parity before layering cgroup-specific features)
   - Two deployment modes:
     - **PID 1 mode**: Full init replacement (primary use case)
     - **Standalone mode**: Run under existing init (testing, containers, BSD rc, sysvinit)
@@ -195,8 +196,8 @@ Unit types **not supported** (use traditional alternatives):
 
 - `Type=` - simple, forking, oneshot
 - `ExecStart=` - service start (master-validated, privilege-separated launch)
-- `ExecStop=`, `ExecReload=` - service commands *(planned; initial implementation pending)*
-- `ExecStartPre=`, `ExecStartPost=` - pre/post start commands *(planned)*
+- `ExecStartPre=`, `ExecStartPost=` - pre/post start commands (privileged master with shared validation)
+- `ExecStop=`, `ExecReload=` - service lifecycle commands (privileged master execution with worker mediation)
 - `User=`, `Group=` - Run as specific user/group
 - `WorkingDirectory=` - Set working directory
 - `Environment=` - Set environment variables

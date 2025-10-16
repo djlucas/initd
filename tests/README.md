@@ -7,14 +7,14 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (15 test suites, 1 will be skipped without root)
+# Build and run all tests (16 test suites; 2 marked privileged)
 ninja -C build
 ninja -C build test
 
 # Run only non-privileged tests (14 test suites)
 ninja -C build test --suite initd
 
-# Run privileged tests (requires root)
+# Run privileged tests (covers Exec* lifecycle and privileged ops)
 sudo ninja -C build test-privileged
 
 # Run specific test (using meson for individual tests)
@@ -32,6 +32,7 @@ meson test -C build "timer IPC protocol"
 meson test -C build "socket IPC protocol"
 meson test -C build "service features"
 meson test -C build "service registry"
+meson test -C build "Exec lifecycle"          # Privileged suite
 meson test -C build "privileged operations"  # Requires root
 
 # Verbose output
@@ -180,6 +181,13 @@ Tests end-to-end workflows:
 - Service types and restart policies
 - Timer unit integration
 
+### test-exec-lifecycle (2 tests)
+Exercises the privileged supervisor request handler directly:
+- Validates ExecStartPre/Post/Stop/Reload execution via the master with shared path checks, environment setup, and UID/GID handling
+- Verifies reload requests fail with `ENOTSUP` when `ExecReload=` is absent
+
+**Note:** Lives in the privileged suite to cover master-only code paths, but does not require root; it uses `/tmp` fixtures and standard user binaries (`sleep`, `touch`).
+
 ### test-privileged-ops (6 tests)
 Tests privileged operations that require root:
 - Converting systemd unit files to initd format
@@ -246,10 +254,10 @@ this delay. Test timeout is set to 90 seconds.
 
 ## Test Statistics
 
-**Total: 15 test suites, 102 individual tests - all passing ✅**
+**Total: 16 test suites, 104 individual tests - all passing ✅**
 
 **Regular tests:** 14 suites, 96 tests (no root required)
-**Privileged tests:** 1 suite, 6 tests (requires root)
+**Privileged tests:** 2 suites, 8 tests (Exec lifecycle runs unprivileged, privileged ops requires root)
 
 ## CI Integration
 
