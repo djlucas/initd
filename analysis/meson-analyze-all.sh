@@ -19,10 +19,11 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # Track failures
 FAILED_TESTS=()
+SKIPPED_TESTS=()
 
 # 1. cppcheck
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "1/6 Running cppcheck..." | tee -a "$SUMMARY_FILE"
+echo "1/7 Running cppcheck..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 # Run cppcheck but don't fail on style warnings - they're documented in the log
 meson compile -C build analyze-cppcheck 2>&1 | tee "$OUTPUT_DIR/cppcheck.log" || true
@@ -37,7 +38,7 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 2. flawfinder
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "2/6 Running flawfinder..." | tee -a "$SUMMARY_FILE"
+echo "2/7 Running flawfinder..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-flawfinder 2>&1 | tee "$OUTPUT_DIR/flawfinder.log"; then
     echo "✓ flawfinder passed" | tee -a "$SUMMARY_FILE"
@@ -49,7 +50,7 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 3. scan-build
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "3/6 Running scan-build..." | tee -a "$SUMMARY_FILE"
+echo "3/7 Running scan-build..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-scan 2>&1; then
     echo "✓ scan-build passed" | tee -a "$SUMMARY_FILE"
@@ -61,7 +62,7 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 4. sanitizers
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "4/6 Running sanitizers..." | tee -a "$SUMMARY_FILE"
+echo "4/7 Running sanitizers..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-sanitizers 2>&1; then
     echo "✓ sanitizers passed" | tee -a "$SUMMARY_FILE"
@@ -73,7 +74,25 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 5. valgrind
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "5/6 Running valgrind..." | tee -a "$SUMMARY_FILE"
+echo "5/7 Running calendar fuzz harness..." | tee -a "$SUMMARY_FILE"
+echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
+set +e
+meson compile -C build analyze-fuzz-calendar 2>&1 | tee "$OUTPUT_DIR/fuzz-calendar.log"
+FUZZ_STATUS=${PIPESTATUS[0]}
+set -e
+if [ "$FUZZ_STATUS" -eq 0 ]; then
+    echo "✓ calendar fuzz completed (5,000 runs)" | tee -a "$SUMMARY_FILE"
+elif grep -qi "unknown target" "$OUTPUT_DIR/fuzz-calendar.log" || grep -qi "Unknown target" "$OUTPUT_DIR/fuzz-calendar.log"; then
+    echo "∙ calendar fuzz skipped (clang/libFuzzer unavailable)" | tee -a "$SUMMARY_FILE"
+    SKIPPED_TESTS+=("fuzz-calendar")
+else
+    echo "✗ calendar fuzz failed" | tee -a "$SUMMARY_FILE"
+    FAILED_TESTS+=("fuzz-calendar")
+fi
+echo "" | tee -a "$SUMMARY_FILE"
+
+echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
+echo "6/7 Running valgrind..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-valgrind 2>&1; then
     echo "✓ valgrind passed" | tee -a "$SUMMARY_FILE"
@@ -85,7 +104,7 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 6. shellcheck
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "6/6 Running shellcheck..." | tee -a "$SUMMARY_FILE"
+echo "7/7 Running shellcheck..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 if meson compile -C build analyze-shellcheck 2>&1; then
     echo "✓ shellcheck passed" | tee -a "$SUMMARY_FILE"
@@ -107,8 +126,13 @@ if [ ${#FAILED_TESTS[@]} -eq 0 ]; then
     echo "  - flawfinder:  $OUTPUT_DIR/flawfinder.log" | tee -a "$SUMMARY_FILE"
     echo "  - scan-build:  $OUTPUT_DIR/scan-build.log" | tee -a "$SUMMARY_FILE"
     echo "  - sanitizers:  $OUTPUT_DIR/sanitizers.log" | tee -a "$SUMMARY_FILE"
+    echo "  - fuzz:        $OUTPUT_DIR/fuzz-calendar.log" | tee -a "$SUMMARY_FILE"
     echo "  - valgrind:    $OUTPUT_DIR/valgrind.log" | tee -a "$SUMMARY_FILE"
     echo "  - shellcheck:  $OUTPUT_DIR/shellcheck.log" | tee -a "$SUMMARY_FILE"
+    if [ ${#SKIPPED_TESTS[@]} -ne 0 ]; then
+        echo "" | tee -a "$SUMMARY_FILE"
+        echo "Skipped analyses: ${SKIPPED_TESTS[*]}" | tee -a "$SUMMARY_FILE"
+    fi
     exit 0
 else
     echo "✗ Failed tests: ${FAILED_TESTS[*]}" | tee -a "$SUMMARY_FILE"

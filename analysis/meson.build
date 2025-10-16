@@ -47,6 +47,32 @@ run_target('analyze-sanitizers',
   command: [bash, meson.project_source_root() / 'analysis' / 'meson-sanitizers.sh', meson.project_source_root()]
 )
 
+# 5. fuzzing harness for calendar parser (requires clang + libFuzzer)
+fuzz_cc = meson.get_compiler('c')
+if fuzz_cc.get_id() == 'clang' and fuzz_cc.has_argument('-fsanitize=fuzzer-no-link') and fuzz_cc.has_link_argument('-fsanitize=fuzzer')
+  fuzz_c_args = ['-fsanitize=fuzzer-no-link']
+  fuzz_link_args = ['-fsanitize=fuzzer']
+  fuzz_calendar = executable(
+    'fuzz-calendar',
+    [
+      'fuzz/calendar_fuzz.c',
+      '../src/timer-daemon/calendar.c',
+    ],
+    include_directories: [
+      include_directories('../src'),
+      include_directories('../src/timer-daemon')
+    ],
+    c_args: fuzz_c_args,
+    link_args: fuzz_link_args
+  )
+
+  run_target(
+    'analyze-fuzz-calendar',
+    command: [fuzz_calendar, '-runs=5000'],
+    depends: fuzz_calendar
+  )
+endif
+
 # 5. valgrind - Memory analysis on regular build
 valgrind = find_program('valgrind', required: false)
 if valgrind.found()

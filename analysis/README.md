@@ -10,6 +10,9 @@ Install required tools:
 sudo apt install cppcheck flawfinder clang-tools valgrind
 ```
 
+To run the fuzz harness you also need clang with libFuzzer support
+(`clang >= 10` typically ships with it).
+
 ## Available Scripts
 
 ### Static Analysis
@@ -41,6 +44,11 @@ sudo apt install cppcheck flawfinder clang-tools valgrind
 - Catches memory errors and undefined behavior
 - Run: `./run-sanitizers.sh`
 
+**meson compile -C build analyze-fuzz-calendar** - Bounded fuzzing of the calendar parser
+- Requires clang with libFuzzer (`-fsanitize=fuzzer`)
+- Runs the calendar expression parser through 5,000 fuzz iterations
+- Automatically included in `meson compile -C build analyze-all` when supported
+
 ## Workflow
 
 Recommended order for comprehensive testing:
@@ -56,6 +64,8 @@ Recommended order for comprehensive testing:
 # 3. Dynamic analysis
 ./run-valgrind.sh
 ./run-sanitizers.sh
+# 4. Fuzzing (if libFuzzer available)
+meson compile -C build analyze-fuzz-calendar
 ```
 
 ## Output
