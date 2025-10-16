@@ -47,6 +47,13 @@ enum unit_state {
     STATE_FAILED
 };
 
+/* Dependency traversal state */
+enum dependency_visit_state {
+    DEP_VISIT_NONE = 0,
+    DEP_VISIT_IN_PROGRESS,
+    DEP_VISIT_DONE
+};
+
 /* [Unit] section */
 struct unit_section {
     char description[256];
@@ -141,6 +148,12 @@ struct unit_file {
     pid_t pid;              /* For services */
     int restart_count;
     time_t last_start;
+
+    /* Dependency traversal bookkeeping */
+    unsigned int start_traversal_id;
+    unsigned int stop_traversal_id;
+    enum dependency_visit_state start_visit_state;
+    enum dependency_visit_state stop_visit_state;
 
     /* Linked list for dependency graph */
     struct unit_file *next;
