@@ -9,6 +9,15 @@
  * - Accept systemctl connections
  * - Log to syslog
  *
+ * Concurrency model:
+ *   The worker runs a single-threaded event loop (poll/select) and services
+ *   one request at a time. Dependency walks (`start_unit_recursive_depth`,
+ *   `stop_unit_recursive_depth`) are therefore always executed serially and
+ *   never interleave. This guarantees deterministic ordering without the
+ *   complexity of locking; if the design ever changes to permit multiple
+ *   outstanding operations, the dependency walkers would need additional
+ *   synchronization.
+ *
  * Copyright (c) 2025 DJ Lucas
  * SPDX-License-Identifier: MIT
  */
