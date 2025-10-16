@@ -29,6 +29,7 @@
 #include "../common/parser.h"
 #include "../common/path-security.h"
 #include "service-registry.h"
+#include "process-tracking.h"
 
 #ifndef WORKER_PATH
 #define WORKER_PATH "/usr/libexecdir/initd/initd-supervisor-worker"
@@ -409,9 +410,8 @@ static pid_t start_service_process(const struct service_section *service,
         /* Child: will become service */
 
         /* Create new process group so we can kill all children with killpg() */
-        if (setsid() < 0) {
+        if (process_tracking_setup_child() < 0) {
             perror("supervisor-master: setsid");
-            /* Non-fatal, continue anyway */
         }
 
         /* Setup service environment (PrivateTmp, LimitNOFILE) BEFORE dropping privileges */
@@ -644,7 +644,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         /* Register service in the registry to prevent arbitrary kill() attacks */
         if (register_service(pid, req->unit_name, unit.path, kill_mode) < 0) {
             /* Registry full - kill the service we just started */
-            kill(pid, SIGKILL);
+            process_tracking_signal_process(pid, SIGKILL);
             waitpid(pid, NULL, 0);
             resp->type = RESP_ERROR;
             resp->error_code = ENOMEM;
@@ -662,8 +662,8 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             fprintf(stderr, "supervisor-master: ExecStartPost failed for %s, terminating service\n",
                     unit.name);
             unregister_service(pid);
-            killpg(pid, SIGKILL);
-            kill(pid, SIGKILL);
+            process_tracking_signal_group(pid, SIGKILL);
+            process_tracking_signal_process(pid, SIGKILL);
             waitpid(pid, NULL, 0);
             resp->type = RESP_ERROR;
             resp->error_code = errno;
@@ -771,7 +771,7 @@ start_cleanup:
 
         case KILL_PROCESS:
             /* Kill only the main process (default) */
-            if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+            if (process_tracking_signal_process(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
                 kill_failed = true;
                 kill_errno = errno;
             }
@@ -779,9 +779,9 @@ start_cleanup:
 
         case KILL_CONTROL_GROUP:
             /* Kill entire process group using VALIDATED pgid from registry */
-            if (killpg(svc->pgid, SIGTERM) < 0 && errno != ESRCH) {
+            if (process_tracking_signal_group(svc->pgid, SIGTERM) < 0 && errno != ESRCH) {
                 /* If killpg fails (not a process group leader), fallback to kill */
-                if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+                if (process_tracking_signal_process(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
                     kill_failed = true;
                     kill_errno = errno;
                 }
@@ -790,14 +790,14 @@ start_cleanup:
 
         case KILL_MIXED:
             /* SIGTERM to main process, SIGKILL to rest of group */
-            if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+            if (process_tracking_signal_process(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
                 kill_failed = true;
                 kill_errno = errno;
             }
             /* Sleep briefly to let main process exit gracefully */
             usleep(100000); /* 100ms */
             /* Kill remaining processes in group */
-            if (!kill_failed && killpg(svc->pgid, SIGKILL) < 0 && errno != ESRCH) {
+            if (!kill_failed && process_tracking_signal_group(svc->pgid, SIGKILL) < 0 && errno != ESRCH) {
                 kill_failed = true;
                 kill_errno = errno;
             }
@@ -805,7 +805,7 @@ start_cleanup:
 
         default:
             /* Fallback to process mode */
-            if (kill(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
+            if (process_tracking_signal_process(svc->pid, SIGTERM) < 0 && errno != ESRCH) {
                 kill_failed = true;
                 kill_errno = errno;
             }
@@ -1163,7 +1163,7 @@ int main(int argc, char *argv[]) {
 
     /* Cleanup */
     if (slave_pid > 0) {
-        kill(slave_pid, SIGTERM);
+        process_tracking_signal_process(slave_pid, SIGTERM);
         waitpid(slave_pid, NULL, 0);
     }
 
