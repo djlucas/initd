@@ -27,6 +27,9 @@
 #include <time.h>
 #include <pwd.h>
 #include <grp.h>
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#include <sys/ucred.h>
+#endif
 #include "../common/ipc.h"
 #include "../common/control.h"
 #include "../common/unit.h"
@@ -47,6 +50,37 @@ static int start_unit_recursive(struct unit_file *unit);
 
 /* Maximum recursion depth for dependency resolution */
 #define MAX_RECURSION_DEPTH 100
+
+static bool is_control_client_authorized(int client_fd) {
+#if defined(__linux__)
+    struct ucred cred;
+    socklen_t len = sizeof(cred);
+    if (getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) == 0) {
+        if (cred.uid == 0 || cred.uid == getuid()) {
+            return true;
+        }
+        fprintf(stderr,
+                "supervisor-slave: unauthorized control socket client (uid=%u); connection rejected\n",
+                (unsigned int)cred.uid);
+        return false;
+    }
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    uid_t euid;
+    gid_t egid;
+    if (getpeereid(client_fd, &euid, &egid) == 0) {
+        if (euid == 0 || euid == getuid()) {
+            return true;
+        }
+        fprintf(stderr,
+                "supervisor-slave: unauthorized control socket client (uid=%u); connection rejected\n",
+                (unsigned int)euid);
+        return false;
+    }
+#endif
+    fprintf(stderr,
+            "supervisor-slave: warning: unable to verify control socket client credentials; permitting connection\n");
+    return true;
+}
 
 /* Signal handlers */
 static void sigterm_handler(int sig) {
@@ -413,6 +447,12 @@ static int create_control_socket(void) {
         return -1;
     }
 
+    if (mkdir("/run/initd", 0755) < 0 && errno != EEXIST) {
+        perror("slave: mkdir /run/initd");
+        close(fd);
+        return -1;
+    }
+
     /* Remove old socket if exists */
     unlink(CONTROL_SOCKET_PATH);
 
@@ -426,8 +466,11 @@ static int create_control_socket(void) {
         return -1;
     }
 
-    /* Make socket accessible - use fchmod to avoid race condition */
-    fchmod(fd, 0666);
+    if (fchmod(fd, 0600) < 0) {
+        perror("slave: fchmod");
+        close(fd);
+        return -1;
+    }
 
     if (listen(fd, 5) < 0) {
         perror("slave: listen");
@@ -817,7 +860,11 @@ static int main_loop(void) {
             if (fds[0].revents & POLLIN) {
                 int client_fd = accept(control_socket, NULL, NULL);
                 if (client_fd >= 0) {
-                    handle_control_command(client_fd);
+                    if (!is_control_client_authorized(client_fd)) {
+                        close(client_fd);
+                    } else {
+                        handle_control_command(client_fd);
+                    }
                 }
             }
 

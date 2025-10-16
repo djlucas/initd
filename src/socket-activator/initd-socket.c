@@ -37,6 +37,52 @@
 static volatile sig_atomic_t shutdown_requested = 0;
 static pid_t worker_pid = 0;
 
+static int fallback_to_nobody_allowed(void) {
+    const char *env = getenv("INITD_ALLOW_USER_FALLBACK");
+    if (!env) {
+        return 0;
+    }
+
+    return (strcmp(env, "1") == 0 ||
+            strcmp(env, "true") == 0 ||
+            strcmp(env, "TRUE") == 0 ||
+            strcmp(env, "yes") == 0 ||
+            strcmp(env, "YES") == 0);
+}
+
+static void warn_user_fallback(const char *component, const char *missing_user) {
+    fprintf(stderr,
+            "\033[1;31m%s: WARNING: dedicated user '%s' not found; falling back to 'nobody'. "
+            "This mode is UNSUPPORTED for production.\033[0m\n",
+            component, missing_user);
+}
+
+static int lookup_socket_user(uid_t *uid, gid_t *gid) {
+    struct passwd *pw = getpwnam(SOCKET_USER);
+    if (!pw) {
+        if (!fallback_to_nobody_allowed()) {
+            fprintf(stderr,
+                    "initd-socket: ERROR: user '%s' not found. "
+                    "Create the dedicated account or set INITD_ALLOW_USER_FALLBACK=1 "
+                    "to permit an UNSUPPORTED fallback to 'nobody'.\n",
+                    SOCKET_USER);
+            return -1;
+        }
+
+        warn_user_fallback("initd-socket", SOCKET_USER);
+        pw = getpwnam("nobody");
+        if (!pw) {
+            fprintf(stderr,
+                    "initd-socket: ERROR: fallback user 'nobody' not found; cannot continue.\n");
+            return -1;
+        }
+    }
+
+    *uid = pw->pw_uid;
+    *gid = pw->pw_gid;
+    return 0;
+}
+
 /* Signal handlers */
 static void sigterm_handler(int sig) {
     (void)sig;
@@ -165,14 +211,10 @@ static int spawn_worker(void) {
         return -1;
     }
 
-    /* Lookup worker user */
-    struct passwd *pw = getpwnam(SOCKET_USER);
-    if (pw) {
-        worker_uid = pw->pw_uid;
-        worker_gid = pw->pw_gid;
-    } else {
-        fprintf(stderr, "initd-socket: warning: user %s not found, worker will run as root\n",
-                SOCKET_USER);
+    if (lookup_socket_user(&worker_uid, &worker_gid) < 0) {
+        close(sockets[0]);
+        close(sockets[1]);
+        return -1;
     }
 
     pid_t pid = fork();

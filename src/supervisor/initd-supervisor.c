@@ -42,6 +42,26 @@ static volatile sig_atomic_t shutdown_requested = 0;
 static pid_t slave_pid = 0;
 static int ipc_socket = -1;
 
+static int fallback_to_nobody_allowed(void) {
+    const char *env = getenv("INITD_ALLOW_USER_FALLBACK");
+    if (!env) {
+        return 0;
+    }
+
+    return (strcmp(env, "1") == 0 ||
+            strcmp(env, "true") == 0 ||
+            strcmp(env, "TRUE") == 0 ||
+            strcmp(env, "yes") == 0 ||
+            strcmp(env, "YES") == 0);
+}
+
+static void warn_user_fallback(const char *component, const char *missing_user) {
+    fprintf(stderr,
+            "\033[1;31m%s: WARNING: dedicated user '%s' not found; falling back to 'nobody'. "
+            "This mode is UNSUPPORTED for production.\033[0m\n",
+            component, missing_user);
+}
+
 /* Signal handlers */
 static void sigterm_handler(int sig) {
     (void)sig;
@@ -94,13 +114,20 @@ static int create_ipc_socket(int *master_fd, int *slave_fd) {
 static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
     struct passwd *pw = getpwnam(SUPERVISOR_USER);
     if (!pw) {
-        fprintf(stderr, "supervisor-master: user '%s' not found\n", SUPERVISOR_USER);
-        fprintf(stderr, "supervisor-master: falling back to 'nobody'\n");
+        if (!fallback_to_nobody_allowed()) {
+            fprintf(stderr,
+                    "supervisor-master: ERROR: user '%s' not found. "
+                    "Create the dedicated account or set INITD_ALLOW_USER_FALLBACK=1 "
+                    "to permit an UNSUPPORTED fallback to 'nobody'.\n",
+                    SUPERVISOR_USER);
+            return -1;
+        }
 
-        /* Fallback to nobody */
+        warn_user_fallback("supervisor-master", SUPERVISOR_USER);
         pw = getpwnam("nobody");
         if (!pw) {
-            fprintf(stderr, "supervisor-master: user 'nobody' not found either\n");
+            fprintf(stderr,
+                    "supervisor-master: ERROR: fallback user 'nobody' not found; cannot continue.\n");
             return -1;
         }
     }
