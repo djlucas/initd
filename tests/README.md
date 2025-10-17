@@ -7,11 +7,11 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (16 test suites; 2 marked privileged)
+# Build and run all tests (17 test suites; 2 marked privileged)
 ninja -C build
 ninja -C build test
 
-# Run only non-privileged tests (14 test suites)
+# Run only non-privileged tests (15 test suites)
 ninja -C build test --suite initd
 
 # Run privileged tests (covers Exec* lifecycle and privileged ops)
@@ -30,6 +30,7 @@ meson test -C build "logging system"
 meson test -C build "integration"
 meson test -C build "timer IPC protocol"
 meson test -C build "socket IPC protocol"
+meson test -C build "timer inactivity notify"
 meson test -C build "service features"
 meson test -C build "service registry"
 meson test -C build "Exec lifecycle"          # Privileged suite
@@ -68,6 +69,13 @@ Tests the control protocol:
 - Empty list handling
 - State/command string conversion
 - Socket communication
+
+### test-timer-notify
+Validates timer inactivity notifications:
+- Synthesizes in-memory timer units with UNIT_TEST hooks
+- Calls CMD_NOTIFY_INACTIVE and checks rescheduling
+- Confirms unrelated services do not affect timers
+- Ensures OnUnitInactiveSec delays are applied exactly once
 
 ### test-socket
 Tests the socket activator:

@@ -24,12 +24,21 @@ an "e" package extracted from systemd, but a completely separate codebase. No
 systemd files or code are reused here.
 
 ## Current Status
-- ExecStart/ExecStartPre/ExecStartPost/ExecStop/ExecReload now execute exclusively through the privileged master with shared validation, environment setup, and UID/GID drops.
-- Cross-platform process-group supervision is under active development to guarantee a solid portable baseline before optional Linux cgroup support lands.
-- Control sockets restricted to `0600` and enforce peer credential checks (root or supervisor UID only).
+- ExecStart/ExecStartPre/ExecStartPost/ExecStop/ExecReload run strictly through
+  the privileged master with shared validation, environment setup, and UID/GID
+  drops.
+- Cross-platform process-group supervision is still in progress so the portable
+  baseline is solid before any optional Linux cgroup layer is added.
+- The timer daemon now accepts `CMD_NOTIFY_INACTIVE`, reschedules
+  `OnUnitInactiveSec`, persists last-inactive timestamps alongside last-run
+  state, and ships with a dedicated unit test.
+- Control sockets remain `0600` and enforce peer credential checks (root or the
+  supervisor UID only).
 - Restart limiter stores per-unit history to prevent hash-collision DoS.
-- Sender-side IPC bounds now match receiver limits (guards against overflow/oversized payloads).
-- Bounded libFuzzer harness exercises the calendar parser (5k runs) as part of the analysis suite when clang support is available.
+- Sender-side IPC bounds match receiver limits (guards against overflow /
+  oversized payloads).
+- Bounded libFuzzer harness exercises the calendar parser (5k runs) as part of
+  the analysis suite when clang support is available.
 
 ### Design Philosophy
 
@@ -369,7 +378,8 @@ Core init system functionality is implemented with comprehensive test coverage a
 - [x] Timer daemon architecture (master/worker split)
 - [x] Socket activator architecture (master/worker split)
 - [x] Daemon independence concept (separate control sockets)
-- [ ] Timer daemon implementation (cron replacement)
+- [x] Timer daemon implementation (cron replacement; inactivity notify and
+      last-inactive persistence in place)
 - [ ] Socket activator implementation (with idle timeout)
 - [ ] Full systemctl routing to independent daemons
 - [ ] Integration testing with all daemons
@@ -408,7 +418,7 @@ Core init system functionality is implemented with comprehensive test coverage a
 - **Control interface** (`initctl`/`systemctl` commands)
 - **System shutdown** with reverse dependency ordering and orphaned process cleanup
 - **DoS prevention** - restart rate limiting with sliding time windows
-- **Comprehensive test suite** (15 suites, 102 tests + privileged tests)
+- **Comprehensive test suite** (16 suites, 104 tests + privileged tests)
 - **Security hardening** - SOCK_CLOEXEC, signal race fixes, path security
 
 ### Test Coverage & Analysis

@@ -999,6 +999,47 @@ init (root, PID 1)
 - Ninja
 - pkg-config
 
+### Commit Message Guidelines
+
+Keep history easy to scan by using a structured template:
+
+**Feature commits**
+```
+Feature: Short title describing the addition
+Problem statement in one sentence explaining what was missing or broken.
+
+What Changed:
+- bullet for the first change
+- bullet for the next change
+- continue with additional bullets as needed
+```
+
+**Bugfix commits**
+```
+Bugfix: Short title describing the fix
+One-sentence description of the defect.
+
+What Changed:
+- bullets explaining the fix
+Security Benefits: optional single sentence when relevant
+```
+
+**Security commits**
+```
+Security: Short title describing the mitigation
+One-sentence description of the issue/risk.
+
+What Changed:
+- bullets describing code/config updates
+Security Benefits:
+- bullets highlighting the security impact
+```
+
+Notes:
+- Bullets should be concise, present tense, and use lowercase starts.
+- Omit the “Security Benefits” section when it does not apply.
+- Avoid duplicating information between the problem statement and bullets.
+
 ## Development Roadmap
 
 ### Phase 1: Minimal Boot ✅ COMPLETE
@@ -1026,7 +1067,7 @@ init (root, PID 1)
 14. ✅ **KillMode support** - using process groups (control-group, process, mixed, none)
 
 ### Phase 3: Independent Daemons + Portable Supervision (IN PROGRESS)
-1. ⚠️ Timer daemon (independent, cron replacement)
+1. ✅ Timer daemon (independent, cron replacement) — OnUnitInactiveSec reschedules and persists last-inactive timestamps
 2. ⚠️ Socket activator daemon (independent, with idle timeout)
 3. ⚠️ Daemon independence (separate control sockets, optional communication)
 4. ⚠️ Full systemctl compatibility (command routing to daemons)
