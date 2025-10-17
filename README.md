@@ -102,7 +102,7 @@ Many of the service scripts for sysinit.target (checkfs, console, createfiles, l
 
 **Key Components:**
 
-1. **init** – Optional PID 1 wrapper that reaps zombies and launches the supervisor when running as system init.
+1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts the supervisor master.
 2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
 3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
 4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
@@ -341,15 +341,13 @@ systemctl status nginx
 
 ## Development Status
 
-### What Works Now
 - PID 1 + supervisor master/worker manage services with restart policies and safe shutdown ordering  
 - Systemctl-compatible CLI drives services, timers, sockets, and journal logs  
 - Security guardrails (service registry, rate limiting, path/IPC checks) are all active  
 - Socket/timer daemons deliver on-demand activation and cron-style scheduling  
-- Automated coverage: 20 suites / 106 tests (details in `tests/README.md`)
-- For a suite-by-suite breakdown (service features, registry DoS, integration, privileged ops, etc.) see `tests/README.md`.
+- Automated coverage: 20 suites / 106 tests (see `tests/README.md` for suite details)
 
-**Running Tests:**
+## Running Tests
 ```bash
 # Build all tests
 ninja -C build
