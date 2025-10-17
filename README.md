@@ -135,8 +135,6 @@ Many of the service scripts for sysinit.target (checkfs, console, createfiles, l
 
 - **Socket Activator with Idle Timeout**
   - Kill idle services after configurable timeout
-  - Feature systemd doesn't have
-  - Saves resources on low-traffic services
 
 - **True Portability**
   - Not just "works on Linux"
@@ -144,8 +142,7 @@ Many of the service scripts for sysinit.target (checkfs, console, createfiles, l
   - Platform abstraction from the start
 
 - **No Ecosystem Lock-in**
-  - Use existing syslog (rsyslog, syslog-ng)
-  - Use existing elogind for session management
+  - Use existing syslog (syslogd, rsyslog, syslog-ng)
   - Plain text logs, standard tools
 
 - **Reuses Existing Infrastructure**
@@ -175,13 +172,13 @@ initd supports the essential systemd unit types:
 - ✅ `.target` - Unit grouping and ordering
 
 Unit types **not supported** (use traditional alternatives):
-- ❌ `.mount` - Use `/etc/fstab` for filesystem mounts
-- ❌ `.automount` - Use `/etc/fstab` with auto mount options
-- ❌ `.swap` - Use `/etc/fstab` for swap configuration
-- ❌ `.path` - Path-based activation not implemented
-- ❌ `.device` - Hardware management not implemented
-- ❌ `.scope` - Runtime-created units (systemd internal)
-- ❌ `.slice` - cgroup hierarchy management (not implemented)
+- ❌ `.mount`     - Use `/etc/fstab`
+- ❌ `.automount` - Use `/etc/fstab`
+- ❌ `.swap`      - Use `/etc/fstab`
+- ❌ `.device`    - Use eudev or udev directly
+- ❌ `.path`      - Path-based activation not implemented
+- ❌ `.scope`     - Runtime-created units (systemd internal)
+- ❌ `.slice`     - cgroup hierarchy management (not implemented)
 
 ### Supported Service Directives
 
@@ -257,11 +254,11 @@ The default installation (`ninja install`) installs **only the core binaries** -
 ```bash
 # Install ONLY core binaries (init, supervisor, timer, socket, initctl)
 # NO targets or services are installed by default
-DESTDIR=/path/to/staging ninja -C build install
+sudo ninja -C build install
 
 # Install reference implementation (17 targets + 19 core services)
 # This gives you a working system as a starting point
-DESTDIR=/path/to/staging ninja -C build install-reference
+sudo ninja -C build install-reference
 ```
 
 **Reference Implementation Includes:**
@@ -274,13 +271,13 @@ You can use the reference implementation as-is, modify it, or ignore it complete
 **Optional Services:**
 ```bash
 # Install individual optional services (51 available)
-DESTDIR=/path/to/staging ninja -C build install-acpid
-DESTDIR=/path/to/staging ninja -C build install-samba
-DESTDIR=/path/to/staging ninja -C build install-httpd
+sudo ninja -C build install-acpid
+sudo ninja -C build install-samba
+sudo ninja -C build install-httpd
 # ... etc for any of 51 optional services
 
 # Or install all optional services at once
-DESTDIR=/path/to/staging ninja -C build install-everything
+sudo ninja -C build install-everything
 ```
 
 **Configuration File Protection:**
