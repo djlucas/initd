@@ -1068,7 +1068,7 @@ Notes:
 
 ### Phase 3: Independent Daemons + Portable Supervision (IN PROGRESS)
 1. ✅ Timer daemon (independent, cron replacement) — OnUnitInactiveSec reschedules and persists last-inactive timestamps
-2. ⚠️ Socket activator daemon (independent, with idle timeout)
+2. ✅ Socket activator daemon (independent, idle timeout, RuntimeMaxSec, supervisor adoption)
 3. ⚠️ Daemon independence (separate control sockets, optional communication)
 4. ⚠️ Full systemctl compatibility (command routing to daemons)
 5. ⚠️ journalctl wrapper

@@ -32,6 +32,8 @@ systemd files or code are reused here.
 - The timer daemon now accepts `CMD_NOTIFY_INACTIVE`, reschedules
   `OnUnitInactiveSec`, persists last-inactive timestamps alongside last-run
   state, and ships with a dedicated unit test.
+- Socket activation keeps a dedicated listener, enforces IdleTimeout and
+  RuntimeMaxSec, and now notifies the supervisor when services are adopted.
 - Control sockets remain `0600` and enforce peer credential checks (root or the
   supervisor UID only).
 - Restart limiter stores per-unit history to prevent hash-collision DoS.
@@ -344,112 +346,47 @@ Core init system functionality is implemented with comprehensive test coverage a
 
 ### Implementation Phases
 
-#### ✅ Phase 1: Minimal Boot - **COMPLETE (100%)**
-- [x] Init binary (PID 1, zombie reaping)
-- [x] Supervisor master/worker split with privilege separation
-- [x] Basic unit file parser (systemd-compatible format)
-- [x] Start/stop simple services
-- [x] Shutdown handling with proper service ordering
-- [x] Service PID monitoring and restart policies
-- [x] **Process groups** (setsid, killpg) - POSIX portable foundation
+#### ✅ Phase 1: Minimal Boot  
+- PID 1 handles signals/zombie reaping and launches the privilege-separated supervisor  
+- Basic systemd-compatible unit parsing and simple service lifecycle are in place  
+- Shutdown walks dependencies in order so early services don’t tear down the system
 
-#### ✅ Phase 2: Core Features & Security - **COMPLETE (100%)**
-- [x] Dependency resolution (Requires, Wants, After, Before)
-- [x] **Circular dependency detection** with STATE_ACTIVATING/DEACTIVATING guards
-- [x] **Recursion depth limits** to prevent stack overflow
-- [x] Target support
-- [x] Service restart/recovery (RESTART_ALWAYS, RESTART_ON_FAILURE)
-- [x] Basic systemctl commands (start, stop, status, is-active, enable, disable)
-- [x] Syslog integration with early boot buffering
-- [x] List-units command (with --all flag for systemd directories)
-- [x] list-timers command
-- [x] journalctl wrapper (complete)
-- [x] **Service registry** - prevents arbitrary kill() attacks with 256-service limit
-- [x] **DoS prevention** - restart rate limiting (5 restarts/60s window, 1s min interval)
-- [x] **IPC security** - proper serialization, no raw struct pointers, malformed input validation
-- [x] **Privilege escalation prevention** - master validates User/Group from unit files
-- [x] **TOCTOU and path traversal prevention** - realpath(), O_NOFOLLOW, symlink protection
-- [x] **File descriptor leak prevention** - SOCK_CLOEXEC on all sockets
-- [x] **Signal race hardening** - sigprocmask() during critical operations
-- [x] **Orphaned process cleanup** - kill_remaining_processes() during shutdown
-- [x] **KillMode support** using process groups (control-group, process, mixed, none)
+#### ✅ Phase 2: Core Features & Security  
+- Dependency graph (Requires/Wants/After/Before) with cycle detection and recursion guards  
+- Systemctl-compatible commands, logging, and journalctl wrapper wired up  
+- Security hardening: service registry, rate limiting, path/IPC safeguards, and KillMode support
 
-#### ⏳ Phase 3: Independent Daemons - **IN PROGRESS (30%)**
-- [x] Timer daemon architecture (master/worker split)
-- [x] Socket activator architecture (master/worker split)
-- [x] Daemon independence concept (separate control sockets)
-- [x] Timer daemon implementation (cron replacement; inactivity notify and
-      last-inactive persistence in place)
-- [ ] Socket activator implementation (with idle timeout)
-- [ ] Full systemctl routing to independent daemons
-- [ ] Integration testing with all daemons
+#### ⏳ Phase 3: Independent Daemons  
+- Timer daemon delivers cron-style scheduling (calendar + OnUnitInactiveSec persistence)  
+- Socket activator manages listeners, IdleTimeout, RuntimeMaxSec, and supervisor adoption  
+- Remaining work: fold timers/sockets fully into `initctl` routing and add end-to-end daemon integration tests
 
-#### ⏳ Phase 4: Linux-Specific Enhancements - **FUTURE (0%)**
-- [ ] **Cgroup v2 integration** (Linux-only, parallel to process groups)
-  - Process tracking (replaces kill(pid, 0) checks)
-  - Memory/CPU limits
-  - OOM handling
-- [ ] Additional Linux namespaces beyond PrivateTmp
-- [ ] Seccomp filters (optional security hardening)
+#### ⏳ Phase 4: Linux-Specific Enhancements  
+- Planned: cgroup v2 support (tracking, limits, OOM) plus broader namespace/ seccomp options
 
-#### ⏳ Phase 5: Multi-Platform & Standalone Mode - **FUTURE (0%)**
-- [ ] Platform detection and feature flags
-- [ ] Standalone supervisor mode (run without replacing init)
-- [ ] Multi-platform testing (BSD, Hurd)
-- [ ] Platform-specific optimizations
+#### ⏳ Phase 5: Multi-Platform & Standalone Mode  
+- Focus will shift to standalone supervisor workflows, platform detection, and BSD/Hurd validation
 
-#### ⏳ Phase 6: Production Hardening - **FUTURE (0%)**
-- [ ] Service script testing
-- [ ] Comprehensive documentation
-- [ ] Performance optimization
-- [ ] External security audit
+#### ⏳ Phase 6: Production Hardening  
+- Final polish: service script QA, documentation sweep, performance tuning, and external review
 
 ### What Works Now
-- **PID 1 init** with signal handling and zombie reaping
-- **Privilege-separated supervisor** (master/worker architecture)
-- **Unit file parsing** with systemd compatibility
-- **Dependency resolution** with circular dependency detection and recursion limits
-- **Service lifecycle** - start, stop, restart with proper state transitions
-- **Service registry** - prevents arbitrary process termination attacks
-- **Secure IPC** - no raw pointers, proper serialization
-- **Path security** - TOCTOU prevention, symlink attack protection
-- **Process groups** - POSIX-portable service isolation (setsid, killpg)
-- **KillMode support** - control-group, process, mixed, none
-- **Control interface** (`initctl`/`systemctl` commands)
-- **System shutdown** with reverse dependency ordering and orphaned process cleanup
-- **DoS prevention** - restart rate limiting with sliding time windows
-- **Comprehensive test suite** (16 suites, 104 tests + privileged tests)
-- **Security hardening** - SOCK_CLOEXEC, signal race fixes, path security
-
-### Test Coverage & Analysis
-The project includes extensive automated testing and static/dynamic analysis:
-
-**Test Suites:**
-- **15 test suites** with **102 individual tests** (100% passing)
-- Calendar expression parser tests
-- Unit file parser and validation tests
-- Control protocol serialization tests
-- Socket activation tests
-- IPC communication tests (supervisor, timer, socket daemons)
-  - Includes malformed input tests (invalid types, oversized fields, many/large args)
-- Unit scanner tests
-- Dependency resolution tests
-- State machine tests
-- Logging system tests
-- Service features tests (PrivateTmp, LimitNOFILE, KillMode)
-- Service registry tests (DoS prevention, rate limiting - includes 62-second timing test)
-- Integration tests
-- **Privileged operations tests** (requires root)
+- PID 1 + supervisor master/worker manage services with restart policies and safe shutdown ordering  
+- Systemctl-compatible CLI drives services, timers, sockets, and journal logs  
+- Security guardrails (service registry, rate limiting, path/IPC checks) are all active  
+- Socket/timer daemons deliver on-demand activation and cron-style scheduling  
+- Automated coverage: 20 suites / 106 tests (details in `tests/README.md`)
+- For a suite-by-suite breakdown (service features, registry DoS, integration, privileged ops, etc.) see `tests/README.md`.
 
 **Running Tests:**
 ```bash
 # Build all tests
 ninja -C build
 
-# Run all tests (15 test suites total - includes non-privileged tests)
+# Run all tests (18 non-privileged suites)
 ninja -C build test
 
-# Run privileged tests (requires root - 1 test with 6 sub-tests)
+# Run privileged tests (requires root for privileged-ops suite)
 sudo ninja -C build test-privileged
 ```
 
