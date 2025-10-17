@@ -242,8 +242,19 @@ static void load_timer_state(struct timer_instance *timer) {
         (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
     }
 
-    if (fscanf(f, "%ld", &timer->last_run) != 1) {
+    long run = 0;
+    long inactive = 0;
+    int scanned = fscanf(f, "%ld %ld", &run, &inactive);
+    if (scanned >= 1) {
+        timer->last_run = run;
+    } else {
         timer->last_run = 0;
+    }
+
+    if (scanned >= 2) {
+        timer->last_inactive = inactive;
+    } else {
+        timer->last_inactive = 0;
     }
 
     fclose(f);
@@ -270,7 +281,7 @@ static void save_timer_state(struct timer_instance *timer) {
         (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
     }
 
-    fprintf(f, "%ld\n", timer->last_run);
+    fprintf(f, "%ld %ld\n", (long)timer->last_run, (long)timer->last_inactive);
     fclose(f);
 }
 
