@@ -302,14 +302,6 @@ systemctl start nginx
 systemctl status nginx
 ```
 
-## Development Status
-
-- PID 1 + supervisor master/worker manage services with restart policies and safe shutdown ordering  
-- Systemctl-compatible CLI drives services, timers, sockets, and journal logs  
-- Security guardrails (service registry, rate limiting, path/IPC checks) are all active  
-- Socket/timer daemons deliver on-demand activation and cron-style scheduling  
-- Automated coverage: 20 suites / 106 tests (see `tests/README.md` for suite details)
-
 ## Running Tests
 ```bash
 # Build all tests
