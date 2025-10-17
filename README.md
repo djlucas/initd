@@ -92,16 +92,6 @@ initctl/systemctl
   - Privilege-separated architecture (master/worker supervisor)
   - Minimal code running as root
   - Service registry prevents arbitrary kill() attacks
-- DoS prevention via restart rate limiting
-- Restart limiter keyed per-unit to prevent hash-collision abuse
-- Path security with TOCTOU and symlink attack prevention
-- Secure IPC with proper serialization (no raw pointers)
-- Supervisor control socket locked down (0600 perms + peer credential checks)
-- Master re-parses unit files and rebuilds Exec* argv before exec (never trusts worker input)
-- File descriptor leak prevention (SOCK_CLOEXEC)
-- Signal race condition hardening
-- Service sandboxing via User/Group directives
-- Optional cgroup isolation (Linux only - not implemented yet)
 
 - **Platform Support**
   - Linux: Full feature set with cgroups v2
