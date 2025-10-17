@@ -188,12 +188,11 @@ Unit types **not supported** (use traditional alternatives):
 - `KillMode=` - process, control-group, mixed, none (portable)
 
 **Security & Resource Control:**
-- ✅ **PrivateTmp** - Isolated /tmp per service (Linux only, uses mount namespaces)
-- ✅ **LimitNOFILE** - Control max open files (portable, uses setrlimit)
-- ✅ **KillMode** - Fine-grained process termination control (portable, uses killpg)
-- ❌ **Other resource limits** - Not yet implemented
-- ❌ **Capabilities** - Not yet implemented
-- ❌ **SecureBits** - Not yet implemented
+- ✅ **PrivateTmp** – Isolated `/tmp` per service (Linux mount namespaces)
+- ✅ **LimitNOFILE** – Portable file descriptor limits via `setrlimit`
+- ✅ **KillMode** – Process/control-group/mixed/none using process groups
+- ✅ **RuntimeMaxSec / IdleTimeout** – Service-runtime and socket-idle enforcement
+- ❌ **Other resource limits / capabilities** – Planned for future phases
 
 ## Quick Start
 
@@ -234,13 +233,13 @@ The project follows a consistent organization:
 
 **Important: Zero Default Policy**
 
-The default installation (`ninja install`) installs **only the core binaries** - no targets, no services, no configuration. This is intentional:
+The default installation (`ninja install`) installs **only the core binaries**—no targets, services, or configuration. This is intentional:
 
-✅ **Provides complete freedom** - Design your own system organization
-✅ **No forced policy** - Choose your own boot sequence and dependencies
-✅ **No lock-in** - Not tied to any particular init philosophy
+- ✅ **Provides complete freedom** – Design your own system organization
+- ✅ **No forced policy** – Choose your own boot sequence and dependencies
+- ✅ **No lock-in** – Not tied to any particular init philosophy
 
-**Main Installation:**
+**Main installation:**
 ```bash
 # Install ONLY core binaries (init, supervisor, timer, socket, initctl)
 # NO targets or services are installed by default
@@ -258,7 +257,7 @@ sudo ninja -C build install-reference
 
 You can use the reference implementation as-is, modify it, or ignore it completely and build your own.
 
-**Optional Services:**
+**Optional services:**
 ```bash
 # Install individual optional services (51 available)
 sudo ninja -C build install-acpid
@@ -270,7 +269,7 @@ sudo ninja -C build install-httpd
 sudo ninja -C build install-everything
 ```
 
-**Configuration File Protection:**
+**Configuration file protection:**
 
 When reinstalling services, existing configuration files in `/etc/sysconfig/` are preserved:
 - First reinstall: `config.new`
@@ -344,6 +343,7 @@ When run without root, the test properly skips with exit code 77 (meson skip).
 - **Clang scan-build** - Static analyzer with deeper checks
 - **AddressSanitizer/UndefinedBehaviorSanitizer** - Runtime memory error detection
 - **Valgrind** - Memory leak and error detection
+- **Calendar fuzz harness** - libFuzzer run (requires clang) for calendar parser
 - **shellcheck** - Shell script static analysis
 
 Run complete analysis suite:
@@ -358,6 +358,7 @@ ninja -C build analyze-flawfinder
 ninja -C build analyze-scan
 ninja -C build analyze-sanitizers
 ninja -C build analyze-valgrind
+ninja -C build analyze-fuzz-calendar
 ninja -C build analyze-shellcheck
 ```
 
