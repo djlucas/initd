@@ -23,24 +23,50 @@ maintaining a clean, auditable codebase and true portability. Note: this is not
 an "e" package extracted from systemd, but a completely separate codebase. No
 systemd files or code are reused here.
 
-## Current Status
-- ExecStart/ExecStartPre/ExecStartPost/ExecStop/ExecReload run strictly through
-  the privileged master with shared validation, environment setup, and UID/GID
-  drops.
-- Cross-platform process-group supervision is still in progress so the portable
-  baseline is solid before any optional Linux cgroup layer is added.
-- The timer daemon now accepts `CMD_NOTIFY_INACTIVE`, reschedules
-  `OnUnitInactiveSec`, persists last-inactive timestamps alongside last-run
-  state, and ships with a dedicated unit test.
-- Socket activation keeps a dedicated listener, enforces IdleTimeout and
-  RuntimeMaxSec, and now notifies the supervisor when services are adopted.
-- Control sockets remain `0600` and enforce peer credential checks (root or the
-  supervisor UID only).
-- Restart limiter stores per-unit history to prevent hash-collision DoS.
-- Sender-side IPC bounds match receiver limits (guards against overflow /
-  oversized payloads).
-- Bounded libFuzzer harness exercises the calendar parser (5k runs) as part of
-  the analysis suite when clang support is available.
+## Key Components
+
+1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts the supervisor master.
+2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
+3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
+4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
+5. **initctl / systemctl** – CLI front-end that routes requests to the appropriate daemon over their control sockets.
+6. **journalctl wrapper** – Convenience shim over syslog for journalctl-like log viewing.
+
+### Architecture
+
+**Core Principle:** Each component is a separate, independent daemon - fundamentally different from systemd's monolithic design.
+
+- Each daemon can be installed and run standalone
+- Cross-daemon communication is optional
+- Each manages its own control socket
+- Components can be packaged separately or as a suite
+
+```
+init (PID 1, optional)
+  └─ Launches initd-supervisor master and reaps zombies when running as the system init
+
+initd-supervisor (root master)
+  └─ initd-supervisor-worker (unprivileged logic)
+      ├─ Parses unit files
+      ├─ Resolves dependencies
+      ├─ Monitors services
+      └─ Control socket: /run/initd/supervisor.sock
+
+initd-timer (independent master)
+  └─ initd-timer-worker (unprivileged worker)
+      ├─ Manages .timer units
+      ├─ Cron replacement functionality
+      └─ Control socket: /run/initd/timer.sock
+
+initd-socket (independent master)
+  └─ initd-socket-worker (unprivileged worker)
+      ├─ Manages .socket units
+      ├─ On-demand service activation
+      └─ Control socket: /run/initd/socket-activator.sock
+
+initctl/systemctl
+  └─ Routes commands to appropriate daemon based on unit type
+```
 
 ### Design Philosophy
 
@@ -97,55 +123,6 @@ systemd files or code are reused here.
 Many of the service scripts for sysinit.target (checkfs, console, createfiles, localnet, modules-load, mountvirtfs, udev-retry, udev-trigger) were adapted from the [Linux From Scratch bootscripts](https://github.com/lfs-book/lfs/tree/trunk/bootscripts) project.
 
 ## Architecture
-
-### Architecture
-
-**Key Components:**
-
-1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts the supervisor master.
-2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
-3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
-4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
-5. **initctl / systemctl** – CLI front-end that routes requests to the appropriate daemon over their control sockets.
-6. **journalctl wrapper** – Convenience shim over syslog for journalctl-like log viewing.
-
-### Daemon Independence
-
-**Core Principle:** Each component is a separate, independent daemon - fundamentally different from systemd's monolithic design.
-
-- Each daemon can be installed and run standalone
-- No interdependencies - cross-daemon communication is optional
-- Each manages its own control socket
-- Can be packaged separately or as a suite
-
-### Components
-
-```
-initd-supervisor (root master)
-  └─ initd-supervisor-worker (unprivileged logic)
-      ├─ Parses unit files
-      ├─ Resolves dependencies
-      ├─ Monitors services
-      └─ Control socket: /run/initd/supervisor.sock
-
-initd-timer (independent master)
-  └─ initd-timer-worker (unprivileged worker)
-      ├─ Manages .timer units
-      ├─ Cron replacement functionality
-      └─ Control socket: /run/initd/timer.sock
-
-initd-socket (independent master)
-  └─ initd-socket-worker (unprivileged worker)
-      ├─ Manages .socket units
-      ├─ On-demand service activation
-      └─ Control socket: /run/initd/socket-activator.sock
-
-initctl/systemctl
-  └─ Routes commands to appropriate daemon based on unit type
-
-init (PID 1, optional)
-  └─ Launches initd-supervisor master and reaps zombies when running as the system init
-```
 
 ## Differentiating Features
 
