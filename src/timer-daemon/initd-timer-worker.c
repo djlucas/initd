@@ -33,7 +33,6 @@
 #include "../common/path-security.h"
 #include "calendar.h"
 
-#define TIMER_SOCKET_PATH "/run/initd/timer.sock"
 #define TIMER_STATE_DIR "/var/lib/initd/timers"
 
 static int daemon_socket = -1;
@@ -43,6 +42,7 @@ struct timer_instance {
     struct unit_file *unit;
     time_t next_run;        /* Next scheduled run (CLOCK_REALTIME) */
     time_t last_run;        /* Last actual run (for persistence) */
+    time_t last_inactive;   /* Last time linked service became inactive */
     bool enabled;
     struct timer_instance *next;
 };
@@ -50,6 +50,10 @@ struct timer_instance {
 static volatile sig_atomic_t shutdown_requested = 0;
 static int control_socket = -1;
 static struct timer_instance *timers = NULL;
+
+#ifdef UNIT_TEST
+static void timer_daemon_test_clear_instances(void);
+#endif
 
 static void format_time_iso(time_t ts, char *buf, size_t len) {
     if (ts <= 0) {
@@ -124,6 +128,36 @@ static void free_timer_instances(void) {
         t = next;
     }
     timers = NULL;
+}
+
+#ifdef UNIT_TEST
+static void timer_daemon_test_clear_instances(void) {
+    struct timer_instance *t = timers;
+    while (t) {
+        struct timer_instance *next = t->next;
+        free(t);
+        t = next;
+    }
+    timers = NULL;
+}
+#endif
+
+static void timer_service_name(const struct timer_instance *timer, char *buf, size_t len) {
+    const char *name = timer->unit->name;
+    const char *dot = strrchr(name, '.');
+    size_t base_len = strlen(name);
+    if (dot && strcmp(dot, ".timer") == 0) {
+        base_len = (size_t)(dot - name);
+    }
+
+    if (base_len + strlen(".service") + 1 > len) {
+        snprintf(buf, len, "%s", name);
+        return;
+    }
+
+    memcpy(buf, name, base_len);
+    buf[base_len] = '\0';
+    strcat(buf, ".service");
 }
 
 /* Signal handlers */
@@ -282,9 +316,13 @@ static time_t calculate_next_run(struct timer_instance *timer) {
         }
     }
 
-    /* OnUnitInactiveSec - run when unit becomes inactive */
-    /* TODO: Requires service state notifications from supervisor - Phase 3 enhancement */
-    /* For now, this timer type is not supported */
+    /* OnUnitInactiveSec - seconds after the service becomes inactive */
+    if (t->on_unit_inactive_sec > 0 && timer->last_inactive > 0) {
+        time_t inactive_next = timer->last_inactive + t->on_unit_inactive_sec;
+        if (inactive_next > now && (next == 0 || inactive_next < next)) {
+            next = inactive_next;
+        }
+    }
 
     /* If no timer matched and last_run is set, recalculate from last_run */
     if (next == 0 && t->on_calendar) {
@@ -449,6 +487,25 @@ static int activate_service(const char *service_name) {
     return activate_direct(service_name);
 }
 
+static int update_timers_for_inactive_service(const char *service_name, time_t now) {
+    int updated = 0;
+
+    for (struct timer_instance *t = timers; t; t = t->next) {
+        char derived_service[MAX_UNIT_NAME + 16];
+        timer_service_name(t, derived_service, sizeof(derived_service));
+
+        if (strcmp(derived_service, service_name) != 0) {
+            continue;
+        }
+
+        t->last_inactive = now;
+        t->next_run = calculate_next_run(t);
+        updated++;
+    }
+
+    return updated;
+}
+
 /* Handle timer firing */
 static int fire_timer(struct timer_instance *timer) {
     if (!timer->enabled) {
@@ -458,15 +515,7 @@ static int fire_timer(struct timer_instance *timer) {
     /* Determine service to activate */
     /* Timer name: backup.timer -> activate backup.service */
     char service_name[MAX_UNIT_NAME + 16];
-    char *dot = strrchr(timer->unit->name, '.');
-    if (dot) {
-        size_t len = dot - timer->unit->name;
-        strncpy(service_name, timer->unit->name, len);
-        service_name[len] = '\0';
-        strcat(service_name, ".service");
-    } else {
-        snprintf(service_name, sizeof(service_name), "%s.service", timer->unit->name);
-    }
+    timer_service_name(timer, service_name, sizeof(service_name));
 
     fprintf(stderr, "timer-daemon: timer %s fired\n", timer->unit->name);
 
@@ -474,6 +523,7 @@ static int fire_timer(struct timer_instance *timer) {
     if (result == 0) {
         timer->last_run = time(NULL);
         save_timer_state(timer);
+        timer->last_inactive = 0;
     }
 
     /* Calculate next run */
@@ -827,6 +877,25 @@ static void handle_control_command(int client_fd) {
         return;
     }
 
+    case CMD_NOTIFY_INACTIVE: {
+        time_t now = time(NULL);
+        int updated = update_timers_for_inactive_service(req.unit_name, now);
+
+        resp.pid = -1;
+
+        if (updated == 0) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message),
+                     "No timers linked to %s", req.unit_name);
+        } else {
+            resp.code = RESP_SUCCESS;
+            resp.state = UNIT_STATE_INACTIVE;
+            snprintf(resp.message, sizeof(resp.message),
+                     "Updated %d timer(s) for %s", updated, req.unit_name);
+        }
+        break;
+    }
+
     default:
         resp.code = RESP_INVALID_COMMAND;
         snprintf(resp.message, sizeof(resp.message),
@@ -870,6 +939,56 @@ static int event_loop(void) {
     return 0;
 }
 
+#ifdef UNIT_TEST
+int timer_daemon_test_add_instance(struct unit_file *unit,
+                                   time_t last_run,
+                                   time_t last_inactive,
+                                   bool enabled) {
+    struct timer_instance *instance = calloc(1, sizeof(struct timer_instance));
+    if (!instance) {
+        return -1;
+    }
+
+    instance->unit = unit;
+    instance->last_run = last_run;
+    instance->last_inactive = last_inactive;
+    instance->enabled = enabled;
+    instance->next_run = calculate_next_run(instance);
+    instance->next = timers;
+    timers = instance;
+    return 0;
+}
+
+void timer_daemon_test_reset(void) {
+    timer_daemon_test_clear_instances();
+}
+
+void timer_daemon_test_set_time_base(time_t boot, time_t start) {
+    boot_time = boot;
+    daemon_start_time = start;
+}
+
+int timer_daemon_test_notify_inactive(const char *service_name, time_t now) {
+    return update_timers_for_inactive_service(service_name, now);
+}
+
+time_t timer_daemon_test_get_next_run(const char *timer_name) {
+    struct timer_instance *timer = find_timer(timer_name);
+    if (!timer) {
+        return 0;
+    }
+    return timer->next_run;
+}
+
+time_t timer_daemon_test_get_last_inactive(const char *timer_name) {
+    struct timer_instance *timer = find_timer(timer_name);
+    if (!timer) {
+        return 0;
+    }
+    return timer->last_inactive;
+}
+#endif
+
 /* Get system boot time */
 static time_t get_boot_time(void) {
     FILE *f = fopen("/proc/uptime", "r");
@@ -890,6 +1009,7 @@ static time_t get_boot_time(void) {
     return time(NULL);
 }
 
+#ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "initd-timer-worker: usage: %s <ipc_fd>\n", argv[0]);
@@ -938,3 +1058,4 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+#endif

@@ -159,6 +159,7 @@ void test_command_strings(void) {
     assert(strcmp(command_to_string(CMD_LIST_UNITS), "list-units") == 0);
     assert(strcmp(command_to_string(CMD_LIST_TIMERS), "list-timers") == 0);
     assert(strcmp(command_to_string(CMD_LIST_SOCKETS), "list-sockets") == 0);
+    assert(strcmp(command_to_string(CMD_NOTIFY_INACTIVE), "notify-inactive") == 0);
 
     PASS();
 }

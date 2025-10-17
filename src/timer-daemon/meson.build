@@ -21,7 +21,7 @@ timer_worker = executable(
   'initd-timer-worker',
   timer_worker_sources,
   c_args: timer_c_args,
-  dependencies: [common_dep, timer_ipc_dep],
+  dependencies: [common_dep, privileged_ops_dep, timer_ipc_dep],
   install: true,
   install_dir: get_option('libexecdir') / 'initd',
 )

@@ -1131,6 +1131,7 @@ static int main_loop(void) {
     return 0;
 }
 
+#ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
@@ -1170,3 +1171,4 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "supervisor-master: exiting\n");
     return 0;
 }
+#endif /* !UNIT_TEST */

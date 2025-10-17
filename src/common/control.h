@@ -30,7 +30,8 @@ enum control_command {
     CMD_LIST_TIMERS,
     CMD_LIST_SOCKETS,
     CMD_DAEMON_RELOAD,
-    CMD_ISOLATE
+    CMD_ISOLATE,
+    CMD_NOTIFY_INACTIVE
 };
 
 /* Response codes */

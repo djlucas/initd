@@ -88,11 +88,23 @@ test_service_registry = executable(
   dependencies: common_dep
 )
 
+test_timer_notify = executable(
+  'test-timer-notify',
+  [
+    'test-timer-notify.c',
+    '../src/timer-daemon/initd-timer-worker.c',
+    '../src/timer-daemon/calendar.c',
+  ],
+  dependencies: [common_dep, privileged_ops_dep, timer_ipc_dep],
+  c_args: ['-DUNIT_TEST']
+)
+
 test_exec_lifecycle = executable(
   'test-exec-lifecycle',
   [
     'test-exec-lifecycle.c',
     '../src/supervisor/initd-supervisor.c',
+    '../src/supervisor/process-tracking.c',
     '../src/supervisor/service-registry.c',
   ],
   dependencies: [common_dep, privileged_ops_dep],
@@ -125,6 +137,7 @@ test('service features', test_service_features)
 test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
 test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged')
 test('isolate closure', test_isolate)
+test('timer inactivity notify', test_timer_notify)
 
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')

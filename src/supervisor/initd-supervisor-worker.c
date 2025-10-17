@@ -502,6 +502,46 @@ static struct unit_file *find_unit_by_pid(pid_t pid) {
     return NULL;
 }
 
+/* Notify timer daemon that a service became inactive */
+static void notify_timer_daemon_inactive(const char *service_name) {
+    if (!service_name || service_name[0] == '\0') {
+        return;
+    }
+
+    int fd = connect_to_timer_daemon();
+    if (fd < 0) {
+        log_msg(LOG_DEBUG, service_name, "timer daemon unavailable for notify-inactive");
+        return;
+    }
+
+    struct control_request req = {0};
+    struct control_response resp = {0};
+
+    req.header.length = sizeof(req);
+    req.header.command = CMD_NOTIFY_INACTIVE;
+    strncpy(req.unit_name, service_name, sizeof(req.unit_name) - 1);
+
+    if (send_control_request(fd, &req) < 0) {
+        log_msg(LOG_WARNING, service_name, "failed to send notify-inactive to timer daemon");
+        close(fd);
+        return;
+    }
+
+    if (recv_control_response(fd, &resp) < 0) {
+        log_msg(LOG_WARNING, service_name, "no response from timer daemon for notify-inactive");
+        close(fd);
+        return;
+    }
+
+    close(fd);
+
+    if (resp.code != RESP_SUCCESS) {
+        log_msg(LOG_DEBUG, service_name, "timer daemon notify-inactive: %s", resp.message);
+    } else {
+        log_msg(LOG_DEBUG, service_name, "timer daemon acknowledged notify-inactive");
+    }
+}
+
 /* Check if unit provides a specific service */
 static bool unit_provides(struct unit_file *unit, const char *service_name) {
     for (int i = 0; i < unit->unit.provides_count; i++) {
@@ -532,6 +572,10 @@ static void handle_service_exit(pid_t pid, int exit_status) {
         unit->state = STATE_INACTIVE;
     } else {
         unit->state = STATE_FAILED;
+    }
+
+    if (success && unit->type == UNIT_SERVICE) {
+        notify_timer_daemon_inactive(unit->name);
     }
 
     /* Handle restart policy */
@@ -1113,6 +1157,8 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
 
     unit->start_visit_state = DEP_VISIT_DONE;
     return 0;
+}
+
 #ifdef UNIT_TEST
 void supervisor_test_set_unit_context(struct unit_file **list, int count) {
     units = list;

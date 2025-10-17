@@ -5,6 +5,9 @@
  * can swap in alternative tracking without touching the higher layers.
  */
 
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
+#endif
 #define _POSIX_C_SOURCE 200809L
 #include <unistd.h>
 #include <signal.h>
