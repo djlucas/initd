@@ -31,7 +31,8 @@ enum control_command {
     CMD_LIST_SOCKETS,
     CMD_DAEMON_RELOAD,
     CMD_ISOLATE,
-    CMD_NOTIFY_INACTIVE
+    CMD_NOTIFY_INACTIVE,
+    CMD_SOCKET_ADOPT
 };
 
 /* Response codes */
@@ -69,6 +70,8 @@ struct msg_header {
 struct control_request {
     struct msg_header header;
     char unit_name[256];
+    uint32_t aux_pid;      // Optional: external PID (socket activation)
+    uint32_t aux_data;     // Reserved for future use
 };
 
 /* Response message (header + status info) */

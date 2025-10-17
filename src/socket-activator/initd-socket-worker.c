@@ -46,7 +46,10 @@ struct socket_instance {
     int listen_fd;              /* Listening socket */
     bool is_stream;             /* TCP/Unix stream vs UDP/Unix dgram */
     pid_t service_pid;          /* Active service PID (0 if none) */
+    char service_name[MAX_UNIT_NAME];
+    time_t service_start;       /* Time when current service started */
     time_t last_activity;       /* Last connection/activity time */
+    int runtime_max_sec;        /* Max runtime for activated service */
     bool enabled;
     struct socket_instance *next;
 };
@@ -54,6 +57,79 @@ struct socket_instance {
 static volatile sig_atomic_t shutdown_requested = 0;
 static int control_socket = -1;
 static struct socket_instance *sockets = NULL;
+
+#ifdef UNIT_TEST
+static int test_idle_kill_count = 0;
+static int test_runtime_kill_count = 0;
+#endif
+
+static void derive_service_name(struct socket_instance *sock) {
+    const char *unit_name = sock->unit->name;
+    const char *dot = strrchr(unit_name, '.');
+    size_t base_len = dot && strcmp(dot, ".socket") == 0 ?
+        (size_t)(dot - unit_name) : strlen(unit_name);
+    if (base_len >= sizeof(sock->service_name)) {
+        base_len = sizeof(sock->service_name) - 1;
+    }
+    memcpy(sock->service_name, unit_name, base_len);
+    sock->service_name[base_len] = '\0';
+    strncat(sock->service_name, ".service",
+            sizeof(sock->service_name) - strlen(sock->service_name) - 1);
+}
+
+/* Notify supervisor about socket-managed service state */
+static void notify_supervisor_socket_state(const struct socket_instance *sock, pid_t pid) {
+    if (!sock || sock->service_name[0] == '\0') {
+        return;
+    }
+
+    int fd = connect_to_supervisor();
+    if (fd < 0) {
+        fprintf(stderr, "socket-activator: failed to notify supervisor for %s\n",
+                sock->service_name);
+        return;
+    }
+
+    struct control_request req = {0};
+    struct control_response resp = {0};
+
+    req.header.length = sizeof(req);
+    req.header.command = CMD_SOCKET_ADOPT;
+    strncpy(req.unit_name, sock->service_name, sizeof(req.unit_name) - 1);
+    req.aux_pid = (uint32_t)(pid > 0 ? pid : 0);
+
+    if (send_control_request(fd, &req) < 0) {
+        close(fd);
+        return;
+    }
+
+    if (recv_control_response(fd, &resp) < 0) {
+        close(fd);
+        return;
+    }
+
+    close(fd);
+
+    if (resp.code != RESP_SUCCESS) {
+        fprintf(stderr, "socket-activator: supervisor refused adopt for %s: %s\n",
+                sock->service_name, resp.message);
+    }
+}
+
+static void mark_service_exit(pid_t pid) {
+    for (struct socket_instance *s = sockets; s; s = s->next) {
+        if (s->service_pid == pid) {
+            fprintf(stderr, "socket-activator: service for %s exited (pid %d)\n",
+                    s->unit->name, pid);
+            s->service_pid = 0;
+            s->service_start = 0;
+            s->last_activity = 0;
+            s->runtime_max_sec = 0;
+            notify_supervisor_socket_state(s, 0);
+            break;
+        }
+    }
+}
 
 /* Signal handlers */
 static void sigterm_handler(int sig) {
@@ -64,7 +140,11 @@ static void sigterm_handler(int sig) {
 static void sigchld_handler(int sig) {
     (void)sig;
     /* Reap zombie processes */
-    while (waitpid(-1, NULL, WNOHANG) > 0);
+    int status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        mark_service_exit(pid);
+    }
 }
 
 /* Setup signal handlers */
@@ -296,29 +376,8 @@ static int create_listen_socket(struct socket_instance *sock) {
 }
 
 /* Try to activate service via supervisor */
-static int activate_via_supervisor(const char *service_name, int client_fd) {
-    /* TODO: Requires IPC with supervisor to delegate service startup + FD passing */
-    /* Optional Phase 3 enhancement - allows supervisor to manage service lifecycle */
-    /* For now, return failure to fall back to direct */
-    (void)service_name;  /* Unused in stub implementation */
-    (void)client_fd;     /* Unused in stub implementation */
-    return -1;
-}
-
 /* Activate service directly and pass socket */
-static int activate_direct(struct socket_instance *sock, int client_fd) {
-    /* Determine service name from socket name */
-    char service_name[MAX_UNIT_NAME + 16];  /* Room for ".service" suffix */
-    char *dot = strrchr(sock->unit->name, '.');
-    if (dot) {
-        size_t len = dot - sock->unit->name;
-        strncpy(service_name, sock->unit->name, len);
-        service_name[len] = '\0';
-        strcat(service_name, ".service");
-    } else {
-        snprintf(service_name, sizeof(service_name), "%s.service", sock->unit->name);
-    }
-
+static int activate_direct(struct socket_instance *sock) {
     /* Load service unit */
     char unit_path[1024];
     struct unit_file unit;
@@ -332,7 +391,7 @@ static int activate_direct(struct socket_instance *sock, int client_fd) {
 
     bool found = false;
     for (int i = 0; dirs[i]; i++) {
-        snprintf(unit_path, sizeof(unit_path), "%s/%s", dirs[i], service_name);
+        snprintf(unit_path, sizeof(unit_path), "%s/%s", dirs[i], sock->service_name);
         if (parse_unit_file(unit_path, &unit) == 0) {
             found = true;
             break;
@@ -340,7 +399,7 @@ static int activate_direct(struct socket_instance *sock, int client_fd) {
     }
 
     if (!found) {
-        fprintf(stderr, "socket-activator: service %s not found\n", service_name);
+        fprintf(stderr, "socket-activator: service %s not found\n", sock->service_name);
         return -1;
     }
 
@@ -353,6 +412,8 @@ static int activate_direct(struct socket_instance *sock, int client_fd) {
         free_unit_file(&unit);
         return -1;
     }
+
+    int runtime_limit = unit.config.service.runtime_max_sec;
 
     /* Fork and exec service */
     pid_t pid = fork();
@@ -368,13 +429,18 @@ static int activate_direct(struct socket_instance *sock, int client_fd) {
         char listen_fds[32];
         snprintf(listen_fds, sizeof(listen_fds), "%d", 1);
         setenv("LISTEN_FDS", listen_fds, 1);
-        setenv("LISTEN_PID", "0", 1);  /* Will be updated after exec */
+        char listen_pid[32];
+        snprintf(listen_pid, sizeof(listen_pid), "%d", (int)getpid());
+        setenv("LISTEN_PID", listen_pid, 1);
 
-        /* Duplicate client socket to fd 3 (standard for socket activation) */
-        if (client_fd >= 0) {
-            dup2(client_fd, 3);
-            close(client_fd);
+        /* Duplicate listening socket to fd 3 (systemd convention) */
+        if (dup2(sock->listen_fd, 3) < 0) {
+            perror("socket-activator: dup2");
+            exit(1);
         }
+
+        /* Close the original listening fd in the child (fd 3 remains) */
+        close(sock->listen_fd);
 
         /* Close other fds */
         for (int i = 4; i < 1024; i++) {
@@ -400,55 +466,44 @@ static int activate_direct(struct socket_instance *sock, int client_fd) {
 
     /* Parent */
     free_unit_file(&unit);
-    fprintf(stderr, "socket-activator: activated %s (pid %d)\n", service_name, pid);
+    fprintf(stderr, "socket-activator: activated %s (pid %d)\n", sock->service_name, pid);
 
     sock->service_pid = pid;
-    sock->last_activity = time(NULL);
+    sock->runtime_max_sec = runtime_limit;
+    sock->service_start = time(NULL);
+    sock->last_activity = sock->service_start;
+
+    notify_supervisor_socket_state(sock, pid);
 
     return 0;
 }
 
-/* Handle incoming connection */
-static void handle_connection(struct socket_instance *sock) {
-    int client_fd = -1;
+/* Ensure the socket's service is active */
+static void handle_socket_ready(struct socket_instance *sock) {
+    time_t now = time(NULL);
+    sock->last_activity = now;
 
-    if (sock->is_stream) {
-        /* Accept connection */
-        client_fd = accept(sock->listen_fd, NULL, NULL);
-        if (client_fd < 0) {
-            perror("socket-activator: accept");
-            return;
-        }
+    if (sock->listen_fd < 0) {
+        return;
     }
 
-    fprintf(stderr, "socket-activator: connection on %s\n", sock->unit->name);
+    if (!sock->enabled) {
+        return;
+    }
 
-    /* Update activity time */
-    sock->last_activity = time(NULL);
+    fprintf(stderr, "socket-activator: activity detected on %s\n", sock->unit->name);
 
-    /* If service is already running, pass connection to it */
     if (sock->service_pid > 0) {
-        /* Check if process is still alive */
         if (kill(sock->service_pid, 0) == 0) {
-            fprintf(stderr, "socket-activator: service already active, connection handled by existing process\n");
-            /* For simplicity, just close. Real impl would pass to service. */
-            if (client_fd >= 0) close(client_fd);
+            /* Service is already running and will handle the connection */
             return;
-        } else {
-            /* Process died */
-            sock->service_pid = 0;
         }
+        /* Stale PID */
+        mark_service_exit(sock->service_pid);
     }
 
-    /* Try to activate via supervisor, fall back to direct */
-    if (activate_via_supervisor(sock->unit->name, client_fd) < 0) {
-        fprintf(stderr, "socket-activator: supervisor unavailable, activating directly\n");
-        activate_direct(sock, client_fd);
-    }
-
-    /* Close client fd in parent (child has it) */
-    if (client_fd >= 0) {
-        close(client_fd);
+    if (activate_direct(sock) < 0) {
+        fprintf(stderr, "socket-activator: failed to activate %s\n", sock->service_name);
     }
 }
 
@@ -467,7 +522,42 @@ static void check_idle_timeouts(void) {
             fprintf(stderr, "socket-activator: killing idle service %s (pid %d) after %ld seconds\n",
                     s->unit->name, s->service_pid, idle_time);
             kill(s->service_pid, SIGTERM);
+#ifdef UNIT_TEST
+            test_idle_kill_count++;
+#endif
             s->service_pid = 0;
+            s->service_start = 0;
+            s->runtime_max_sec = 0;
+            /* Avoid spamming signals; treat kill attempt as activity */
+            s->last_activity = now;
+        }
+    }
+}
+
+/* Enforce RuntimeMaxSec for activated services */
+static void check_runtime_limits(void) {
+    time_t now = time(NULL);
+
+    for (struct socket_instance *s = sockets; s; s = s->next) {
+        if (s->service_pid == 0) {
+            continue;
+        }
+        if (s->runtime_max_sec <= 0 || s->service_start == 0) {
+            continue;
+        }
+
+        time_t runtime = now - s->service_start;
+        if (runtime >= s->runtime_max_sec) {
+            fprintf(stderr, "socket-activator: killing %s (pid %d) after RuntimeMaxSec=%d\n",
+                    s->service_name, s->service_pid, s->runtime_max_sec);
+            kill(s->service_pid, SIGTERM);
+#ifdef UNIT_TEST
+            test_runtime_kill_count++;
+#endif
+            s->service_pid = 0;
+            s->service_start = 0;
+            s->runtime_max_sec = 0;
+            s->last_activity = now;
         }
     }
 }
@@ -495,9 +585,15 @@ static int load_sockets(void) {
         instance->unit = units[i];
         instance->enabled = units[i]->enabled;
         instance->service_pid = 0;
+        instance->service_start = 0;
         instance->last_activity = 0;
+        instance->runtime_max_sec = 0;
+
+        /* Derive service name (foo.socket -> foo.service) */
+        derive_service_name(instance);
 
         /* Create listening socket */
+        instance->listen_fd = -1;
         instance->listen_fd = create_listen_socket(instance);
         if (instance->listen_fd < 0) {
             fprintf(stderr, "socket-activator: failed to create socket for %s\n",
@@ -687,7 +783,17 @@ static void handle_control_command(int client_fd) {
                 snprintf(resp.message, sizeof(resp.message), "Failed to enable %s: %s",
                         short_name, short_msg);
             } else {
+                if (sock->listen_fd < 0) {
+                    int fd = create_listen_socket(sock);
+                    if (fd < 0) {
+                        resp.code = RESP_FAILURE;
+                        snprintf(resp.message, sizeof(resp.message), "Failed to bind %s", req.unit_name);
+                        break;
+                    }
+                    sock->listen_fd = fd;
+                }
                 sock->enabled = true;
+                sock->unit->enabled = true;
                 snprintf(resp.message, sizeof(resp.message), "Enabled %s", req.unit_name);
             }
         }
@@ -723,6 +829,24 @@ static void handle_control_command(int client_fd) {
                         short_name, short_msg);
             } else {
                 sock->enabled = false;
+                sock->unit->enabled = false;
+                if (sock->service_pid > 0) {
+                    kill(sock->service_pid, SIGTERM);
+                    sock->service_pid = 0;
+                    sock->service_start = 0;
+                    sock->runtime_max_sec = 0;
+                }
+                if (sock->listen_fd >= 0) {
+                    close(sock->listen_fd);
+                    sock->listen_fd = -1;
+                    struct socket_section *sec = &sock->unit->config.socket;
+                    if (sec->listen_stream && sec->listen_stream[0] == '/') {
+                        unlink(sec->listen_stream);
+                    }
+                    if (sec->listen_datagram && sec->listen_datagram[0] == '/') {
+                        unlink(sec->listen_datagram);
+                    }
+                }
                 snprintf(resp.message, sizeof(resp.message), "Disabled %s", req.unit_name);
             }
         }
@@ -774,9 +898,11 @@ static int event_loop(void) {
         /* Add all listening sockets */
         struct socket_instance *s = sockets;
         while (s && nfds < MAX_SOCKETS) {
-            pfds[nfds].fd = s->listen_fd;
-            pfds[nfds].events = POLLIN;
-            nfds++;
+            if (s->listen_fd >= 0) {
+                pfds[nfds].fd = s->listen_fd;
+                pfds[nfds].events = POLLIN;
+                nfds++;
+            }
             s = s->next;
         }
 
@@ -789,8 +915,9 @@ static int event_loop(void) {
             return -1;
         }
 
-        /* Check idle timeouts */
+        /* Check idle and runtime timeouts */
         check_idle_timeouts();
+        check_runtime_limits();
 
         if (ret == 0) continue;  /* Timeout */
 
@@ -804,16 +931,113 @@ static int event_loop(void) {
 
         /* Handle listening sockets */
         int idx = 1;
-        for (s = sockets; s && idx < nfds; s = s->next, idx++) {
-            if (pfds[idx].revents & POLLIN) {
-                handle_connection(s);
+        for (s = sockets; s && idx < nfds; s = s->next) {
+            if (s->listen_fd < 0) {
+                continue;
             }
+            if (pfds[idx].revents & POLLIN) {
+                handle_socket_ready(s);
+            }
+            idx++;
         }
     }
 
     return 0;
 }
 
+#ifdef UNIT_TEST
+struct socket_instance *socket_worker_test_create(struct unit_file *unit) {
+    struct socket_instance *inst = calloc(1, sizeof(struct socket_instance));
+    if (!inst) return NULL;
+    inst->unit = unit;
+    inst->listen_fd = -1;
+    inst->enabled = true;
+    derive_service_name(inst);
+    return inst;
+}
+
+int socket_worker_test_bind(struct socket_instance *inst) {
+    if (!inst) return -1;
+    int fd = create_listen_socket(inst);
+    inst->listen_fd = fd;
+    return fd;
+}
+
+void socket_worker_test_register(struct socket_instance *inst) {
+    if (!inst) return;
+    inst->next = sockets;
+    sockets = inst;
+}
+
+void socket_worker_test_unregister_all(void) {
+    struct socket_instance *cur = sockets;
+    while (cur) {
+        struct socket_instance *next = cur->next;
+        if (cur->listen_fd >= 0) {
+            close(cur->listen_fd);
+        }
+        cur->listen_fd = -1;
+        cur->service_pid = 0;
+        cur->service_start = 0;
+        cur->last_activity = 0;
+        cur->runtime_max_sec = 0;
+        cur->next = NULL;
+        cur = next;
+    }
+    sockets = NULL;
+    test_idle_kill_count = 0;
+    test_runtime_kill_count = 0;
+}
+
+void socket_worker_test_set_service(struct socket_instance *inst, pid_t pid,
+                                    time_t start, time_t last, int runtime_max_sec) {
+    if (!inst) return;
+    inst->service_pid = pid;
+    inst->service_start = start;
+    inst->last_activity = last;
+    inst->runtime_max_sec = runtime_max_sec;
+}
+
+pid_t socket_worker_test_get_service_pid(const struct socket_instance *inst) {
+    return inst ? inst->service_pid : 0;
+}
+
+time_t socket_worker_test_get_last_activity(const struct socket_instance *inst) {
+    return inst ? inst->last_activity : 0;
+}
+
+void socket_worker_test_check_idle(void) {
+    check_idle_timeouts();
+}
+
+void socket_worker_test_check_runtime(void) {
+    check_runtime_limits();
+}
+
+int socket_worker_test_idle_kills(void) {
+    return test_idle_kill_count;
+}
+
+int socket_worker_test_runtime_kills(void) {
+    return test_runtime_kill_count;
+}
+
+void socket_worker_test_reset_counters(void) {
+    test_idle_kill_count = 0;
+    test_runtime_kill_count = 0;
+}
+
+void socket_worker_test_destroy(struct socket_instance *inst) {
+    if (!inst) return;
+    if (inst->listen_fd >= 0) {
+        close(inst->listen_fd);
+        inst->listen_fd = -1;
+    }
+    free(inst);
+}
+#endif
+
+#ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "initd-socket-worker: usage: %s <ipc_fd>\n", argv[0]);
@@ -853,3 +1077,4 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+#endif

@@ -88,6 +88,16 @@ test_service_registry = executable(
   dependencies: common_dep
 )
 
+test_socket_worker = executable(
+  'test-socket-worker',
+  [
+    'test-socket-worker.c',
+    '../src/socket-activator/initd-socket-worker.c',
+  ],
+  dependencies: [common_dep, socket_ipc_dep],
+  c_args: ['-DUNIT_TEST']
+)
+
 test_timer_notify = executable(
   'test-timer-notify',
   [
@@ -106,6 +116,16 @@ test_exec_lifecycle = executable(
     '../src/supervisor/initd-supervisor.c',
     '../src/supervisor/process-tracking.c',
     '../src/supervisor/service-registry.c',
+  ],
+  dependencies: [common_dep, privileged_ops_dep],
+  c_args: ['-DUNIT_TEST']
+)
+
+test_supervisor_socket = executable(
+  'test-supervisor-socket',
+  [
+    'test-supervisor-socket.c',
+    '../src/supervisor/initd-supervisor-worker.c',
   ],
   dependencies: [common_dep, privileged_ops_dep],
   c_args: ['-DUNIT_TEST']
@@ -135,8 +155,10 @@ test('timer IPC protocol', test_timer_ipc)
 test('socket IPC protocol', test_socket_ipc)
 test('service features', test_service_features)
 test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
+test('socket worker', test_socket_worker)
 test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged')
 test('isolate closure', test_isolate)
+test('supervisor socket IPC', test_supervisor_socket)
 test('timer inactivity notify', test_timer_notify)
 
 # Privileged tests - run separately with: meson test --suite privileged

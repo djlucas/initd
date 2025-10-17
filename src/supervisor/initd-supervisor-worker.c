@@ -767,6 +767,28 @@ static void handle_control_command(int client_fd) {
         }
         break;
 
+    case CMD_SOCKET_ADOPT:
+        if (!unit) {
+            resp.code = RESP_UNIT_NOT_FOUND;
+            snprintf(resp.message, sizeof(resp.message), "Unit %s not found", req.unit_name);
+        } else if (unit->type != UNIT_SERVICE) {
+            resp.code = RESP_INVALID_COMMAND;
+            snprintf(resp.message, sizeof(resp.message), "%s is not a service", req.unit_name);
+        } else {
+            if (req.aux_pid > 0) {
+                unit->pid = (pid_t)req.aux_pid;
+                unit->state = STATE_ACTIVE;
+                unit->last_start = time(NULL);
+                snprintf(resp.message, sizeof(resp.message), "Adopted %s (pid %d)",
+                         req.unit_name, unit->pid);
+            } else {
+                unit->pid = 0;
+                unit->state = STATE_INACTIVE;
+                snprintf(resp.message, sizeof(resp.message), "Marked %s inactive", req.unit_name);
+            }
+        }
+        break;
+
     case CMD_IS_ENABLED:
         if (!unit) {
             resp.code = RESP_UNIT_NOT_FOUND;
@@ -835,13 +857,60 @@ static void handle_control_command(int client_fd) {
             strncpy(entries[i].description, u->unit.description, sizeof(entries[i].description) - 1);
         }
 
+        size_t total_count = (size_t)scanned_count;
+
+        /* Attempt to append active sockets from socket activator */
+        int sock_fd = connect_to_socket_activator();
+        if (sock_fd >= 0) {
+            struct control_request sock_req = {0};
+            struct control_response sock_resp = {0};
+            sock_req.header.length = sizeof(sock_req);
+            sock_req.header.command = CMD_LIST_SOCKETS;
+
+            if (send_control_request(sock_fd, &sock_req) == 0 &&
+                recv_control_response(sock_fd, &sock_resp) == 0 &&
+                sock_resp.code == RESP_SUCCESS) {
+                struct socket_list_entry *socket_entries = NULL;
+                size_t socket_count = 0;
+
+                if (recv_socket_list(sock_fd, &socket_entries, &socket_count) == 0 && socket_count > 0) {
+                    struct unit_list_entry *tmp =
+                        realloc(entries, (total_count + socket_count) * sizeof(struct unit_list_entry));
+                    if (tmp) {
+                        entries = tmp;
+                        for (size_t i = 0; i < socket_count; i++) {
+                            struct socket_list_entry *se = &socket_entries[i];
+                            struct unit_list_entry *dst = &entries[total_count + i];
+                            memset(dst, 0, sizeof(*dst));
+                            strncpy(dst->name, se->name, sizeof(dst->name) - 1);
+                            dst->state = se->state;
+                            dst->pid = se->service_pid;
+                            if (se->description[0] != '\0') {
+                                strncpy(dst->description, se->description, sizeof(dst->description) - 1);
+                            } else {
+                                const char *detail = se->listen[0] ? se->listen : se->unit;
+                                strncpy(dst->description, "[socket] ", sizeof(dst->description) - 1);
+                                strncat(dst->description, detail,
+                                        sizeof(dst->description) - strlen(dst->description) - 1);
+                            }
+                        }
+                        total_count += socket_count;
+                    }
+
+                    free(socket_entries);
+                }
+            }
+
+            close(sock_fd);
+        }
+
         /* Send success response first */
         resp.code = RESP_SUCCESS;
-        snprintf(resp.message, sizeof(resp.message), "Listing %d units", scanned_count);
+        snprintf(resp.message, sizeof(resp.message), "Listing %zu units", total_count);
         send_control_response(client_fd, &resp);
 
         /* Then send unit list */
-        send_unit_list(client_fd, entries, scanned_count);
+        send_unit_list(client_fd, entries, total_count);
 
         free(entries);
         free_units(scanned_units, scanned_count);
@@ -1177,6 +1246,10 @@ void supervisor_test_reset_generations(void) {
 void supervisor_test_mark_isolate(struct unit_file *target) {
     unsigned int generation = next_isolate_generation();
     mark_isolate_closure(target, generation);
+}
+
+void supervisor_test_handle_control_fd(int fd) {
+    handle_control_command(fd);
 }
 #endif
 

@@ -150,6 +150,7 @@ const char *command_to_string(enum control_command cmd) {
     case CMD_DAEMON_RELOAD: return "daemon-reload";
     case CMD_ISOLATE:       return "isolate";
     case CMD_NOTIFY_INACTIVE:return "notify-inactive";
+    case CMD_SOCKET_ADOPT:  return "socket-adopt";
     default:                return "unknown";
     }
 }

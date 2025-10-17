@@ -7,11 +7,11 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (17 test suites; 2 marked privileged)
+# Build and run all tests (19 test suites; 2 marked privileged)
 ninja -C build
 ninja -C build test
 
-# Run only non-privileged tests (15 test suites)
+# Run only non-privileged tests (17 test suites)
 ninja -C build test --suite initd
 
 # Run privileged tests (covers Exec* lifecycle and privileged ops)
@@ -31,6 +31,8 @@ meson test -C build "integration"
 meson test -C build "timer IPC protocol"
 meson test -C build "socket IPC protocol"
 meson test -C build "timer inactivity notify"
+meson test -C build "socket worker"
+meson test -C build "supervisor socket IPC"
 meson test -C build "service features"
 meson test -C build "service registry"
 meson test -C build "Exec lifecycle"          # Privileged suite
@@ -260,11 +262,22 @@ Tests service registry and DoS prevention mechanisms:
 the sliding time window. The test displays a user-friendly notice during
 this delay. Test timeout is set to 90 seconds.
 
+### test-socket-worker
+Uses UNIT_TEST hooks in the socket worker to verify:
+- Unix stream listeners bind successfully
+- IdleTimeout kills idle services exactly once
+- RuntimeMaxSec enforcement triggers as expected
+
+### test-supervisor-socket
+Exercises the supervisor/worker control path:
+- Sends `CMD_SOCKET_ADOPT` over the control socket
+- Confirms the supervisor marks services active or inactive accordingly
+
 ## Test Statistics
 
-**Total: 16 test suites, 104 individual tests - all passing ✅**
+**Total: 20 test suites, 106 individual tests - all passing ✅**
 
-**Regular tests:** 14 suites, 96 tests (no root required)
+**Regular tests:** 18 suites, 98 tests (no root required)
 **Privileged tests:** 2 suites, 8 tests (Exec lifecycle runs unprivileged, privileged ops requires root)
 
 ## CI Integration

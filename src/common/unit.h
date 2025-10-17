@@ -100,6 +100,7 @@ struct service_section {
     bool private_tmp;
     enum kill_mode kill_mode;
     int limit_nofile;    /* -1 = not set, 0 = unlimited (infinity) */
+    int runtime_max_sec; /* 0 = no limit */
 };
 
 /* [Timer] section */

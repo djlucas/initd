@@ -118,6 +118,8 @@ static int parse_service_key(struct service_section *service, const char *key, c
         service->timeout_start_sec = atoi(value);
     } else if (strcmp(key, "TimeoutStopSec") == 0) {
         service->timeout_stop_sec = atoi(value);
+    } else if (strcmp(key, "RuntimeMaxSec") == 0) {
+        service->runtime_max_sec = atoi(value);
     } else if (strcmp(key, "PrivateTmp") == 0) {
         if (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "1") == 0) {
             service->private_tmp = true;
@@ -232,6 +234,7 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.kill_mode = KILL_PROCESS;  /* Default: only kill main process */
     unit->config.service.limit_nofile = -1;         /* Default: not set (inherit system default) */
     unit->config.service.private_tmp = false;        /* Default: no private /tmp */
+    unit->config.service.runtime_max_sec = 0;        /* Default: unlimited */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

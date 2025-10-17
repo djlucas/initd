@@ -111,7 +111,8 @@ void test_parse_forking_service(void) {
         "Type=forking\n"
         "ExecStart=/usr/sbin/daemon\n"
         "Restart=always\n"
-        "RestartSec=5\n";
+        "RestartSec=5\n"
+        "RuntimeMaxSec=120\n";
 
     const char *path = create_temp_unit(unit_content, ".service");
     assert(path != NULL);
@@ -121,6 +122,7 @@ void test_parse_forking_service(void) {
     assert(unit.config.service.type == SERVICE_FORKING);
     assert(unit.config.service.restart == RESTART_ALWAYS);
     assert(unit.config.service.restart_sec == 5);
+    assert(unit.config.service.runtime_max_sec == 120);
 
     free_unit_file(&unit);
     unlink(path);
