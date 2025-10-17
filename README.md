@@ -98,6 +98,17 @@ Many of the service scripts for sysinit.target (checkfs, console, createfiles, l
 
 ## Architecture
 
+### Architecture
+
+**Key Components:**
+
+1. **init** – Optional PID 1 wrapper that reaps zombies and launches the supervisor when running as system init.
+2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
+3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
+4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
+5. **initctl / systemctl** – CLI front-end that routes requests to the appropriate daemon over their control sockets.
+6. **journalctl wrapper** – Convenience shim over syslog for journalctl-like log viewing.
+
 ### Daemon Independence
 
 **Core Principle:** Each component is a separate, independent daemon - fundamentally different from systemd's monolithic design.
@@ -110,14 +121,12 @@ Many of the service scripts for sysinit.target (checkfs, console, createfiles, l
 ### Components
 
 ```
-init (PID 1) - optional, not needed in standalone mode
-  └─ initd-supervisor (root, minimal master)
-      ├─ initd-supervisor-worker (unprivileged, main logic)
-      │   ├─ Parses unit files
-      │   ├─ Resolves dependencies
-      │   ├─ Monitors services
-      │   └─ Control socket: /run/initd/supervisor.sock
-      └─ Spawns services with privilege dropping
+initd-supervisor (root master)
+  └─ initd-supervisor-worker (unprivileged logic)
+      ├─ Parses unit files
+      ├─ Resolves dependencies
+      ├─ Monitors services
+      └─ Control socket: /run/initd/supervisor.sock
 
 initd-timer (independent master)
   └─ initd-timer-worker (unprivileged worker)
@@ -133,16 +142,10 @@ initd-socket (independent master)
 
 initctl/systemctl
   └─ Routes commands to appropriate daemon based on unit type
+
+init (PID 1, optional)
+  └─ Launches initd-supervisor master and reaps zombies when running as the system init
 ```
-
-**Key Components:**
-
-1. **init** - PID 1, zombie reaping, supervisor lifecycle (optional)
-2. **initd-supervisor** (master + worker) - Service management daemon with privilege separation
-3. **initd-timer** (master + worker) - Timer/cron functionality (independent, optional)
-4. **initd-socket** (master + worker) - On-demand service activation (independent, optional)
-5. **initctl/systemctl** - Control interface (routes to correct daemon)
-6. **journalctl** - Log query tool (syslog wrapper)
 
 ## Differentiating Features
 
@@ -337,38 +340,6 @@ systemctl status nginx
 ```
 
 ## Development Status
-
-**Current Phase:** Phase 2 Complete - Starting Phase 3
-
-**Overall Progress:** ~60% complete
-
-Core init system functionality is implemented with comprehensive test coverage and security hardening.
-
-### Implementation Phases
-
-#### ✅ Phase 1: Minimal Boot  
-- PID 1 handles signals/zombie reaping and launches the privilege-separated supervisor  
-- Basic systemd-compatible unit parsing and simple service lifecycle are in place  
-- Shutdown walks dependencies in order so early services don’t tear down the system
-
-#### ✅ Phase 2: Core Features & Security  
-- Dependency graph (Requires/Wants/After/Before) with cycle detection and recursion guards  
-- Systemctl-compatible commands, logging, and journalctl wrapper wired up  
-- Security hardening: service registry, rate limiting, path/IPC safeguards, and KillMode support
-
-#### ⏳ Phase 3: Independent Daemons  
-- Timer daemon delivers cron-style scheduling (calendar + OnUnitInactiveSec persistence)  
-- Socket activator manages listeners, IdleTimeout, RuntimeMaxSec, and supervisor adoption  
-- Remaining work: fold timers/sockets fully into `initctl` routing and add end-to-end daemon integration tests
-
-#### ⏳ Phase 4: Linux-Specific Enhancements  
-- Planned: cgroup v2 support (tracking, limits, OOM) plus broader namespace/ seccomp options
-
-#### ⏳ Phase 5: Multi-Platform & Standalone Mode  
-- Focus will shift to standalone supervisor workflows, platform detection, and BSD/Hurd validation
-
-#### ⏳ Phase 6: Production Hardening  
-- Final polish: service script QA, documentation sweep, performance tuning, and external review
 
 ### What Works Now
 - PID 1 + supervisor master/worker manage services with restart policies and safe shutdown ordering  
