@@ -268,44 +268,45 @@ static bool is_unit_enabled(struct unit_file *unit) {
 
     /* This is a simplified check - we look for the unit in common target .wants dirs */
     char symlink_path[1024];
+    struct stat st;
 
     /* Check multi-user.target.wants */
     snprintf(symlink_path, sizeof(symlink_path),
              "/etc/initd/system/multi-user.target.wants/%s", unit->name);
-    if (access(symlink_path, F_OK) == 0) return true;
+    if (stat(symlink_path, &st) == 0) return true;
 
     snprintf(symlink_path, sizeof(symlink_path),
              "/lib/initd/system/multi-user.target.wants/%s", unit->name);
-    if (access(symlink_path, F_OK) == 0) return true;
+    if (stat(symlink_path, &st) == 0) return true;
 
     /* Check default.target.wants */
     snprintf(symlink_path, sizeof(symlink_path),
              "/etc/initd/system/default.target.wants/%s", unit->name);
-    if (access(symlink_path, F_OK) == 0) return true;
+    if (stat(symlink_path, &st) == 0) return true;
 
     snprintf(symlink_path, sizeof(symlink_path),
              "/lib/initd/system/default.target.wants/%s", unit->name);
-    if (access(symlink_path, F_OK) == 0) return true;
+    if (stat(symlink_path, &st) == 0) return true;
 
     /* Check if unit has WantedBy or RequiredBy */
     for (int i = 0; i < unit->install.wanted_by_count; i++) {
         snprintf(symlink_path, sizeof(symlink_path),
                  "/etc/initd/system/%s.wants/%s", unit->install.wanted_by[i], unit->name);
-        if (access(symlink_path, F_OK) == 0) return true;
+        if (stat(symlink_path, &st) == 0) return true;
 
         snprintf(symlink_path, sizeof(symlink_path),
                  "/lib/initd/system/%s.wants/%s", unit->install.wanted_by[i], unit->name);
-        if (access(symlink_path, F_OK) == 0) return true;
+        if (stat(symlink_path, &st) == 0) return true;
     }
 
     for (int i = 0; i < unit->install.required_by_count; i++) {
         snprintf(symlink_path, sizeof(symlink_path),
                  "/etc/initd/system/%s.requires/%s", unit->install.required_by[i], unit->name);
-        if (access(symlink_path, F_OK) == 0) return true;
+        if (stat(symlink_path, &st) == 0) return true;
 
         snprintf(symlink_path, sizeof(symlink_path),
                  "/lib/initd/system/%s.requires/%s", unit->install.required_by[i], unit->name);
-        if (access(symlink_path, F_OK) == 0) return true;
+        if (stat(symlink_path, &st) == 0) return true;
     }
 
     return false;

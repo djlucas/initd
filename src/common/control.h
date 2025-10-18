@@ -146,7 +146,6 @@ int send_socket_list(int fd, const struct socket_list_entry *entries, size_t cou
 int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count);
 
 /* Helper functions */
-const char *initd_runtime_dir(void);
 int initd_set_runtime_dir(const char *path);
 int initd_ensure_runtime_dir(void);
 int initd_default_user_runtime_dir(char *buf, size_t len);

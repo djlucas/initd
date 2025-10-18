@@ -333,22 +333,26 @@ int setup_service_environment(const struct service_section *service) {
             return -1;
         }
 
+        /* mkdtemp() already creates with mode 0700, use fd-based operations to avoid TOCTOU */
         if (service->user[0] != '\0') {
             pw = getpwnam(service->user);
             if (pw) {
-                if (chown(dir_path, pw->pw_uid, pw->pw_gid) < 0) {
-                    log_msg(LOG_WARNING, "init", "Failed to chown PrivateTmp directory to %s: %s",
-                            service->user, strerror(errno));
+                int dir_fd = open(dir_path, O_DIRECTORY | O_RDONLY);
+                if (dir_fd < 0) {
+                    log_msg(LOG_WARNING, "init", "Failed to open PrivateTmp directory: %s", strerror(errno));
+                } else {
+                    if (fchown(dir_fd, pw->pw_uid, pw->pw_gid) < 0) {
+                        log_msg(LOG_WARNING, "init", "Failed to chown PrivateTmp directory to %s: %s",
+                                service->user, strerror(errno));
+                    }
+                    if (fchmod(dir_fd, 0700) < 0) {
+                        log_msg(LOG_WARNING, "init", "Failed to chmod PrivateTmp directory: %s", strerror(errno));
+                    }
+                    close(dir_fd);
                 }
             } else {
                 log_msg(LOG_WARNING, "init", "Cannot resolve user '%s' for PrivateTmp ownership", service->user);
             }
-        }
-
-        /* Ensure directory is only accessible by the service */
-        if (chmod(dir_path, 0700) < 0) {
-            log_msg(LOG_WARNING, "init", "Failed to chmod PrivateTmp directory %s: %s",
-                    dir_path, strerror(errno));
         }
 
         if (chdir(dir_path) < 0) {

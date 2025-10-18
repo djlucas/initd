@@ -76,6 +76,9 @@ void unregister_service(pid_t pid) {
 }
 
 /* Get the number of registered services (for testing) */
+#ifndef UNIT_TEST
+static
+#endif
 int service_registry_count(void) {
     int count = 0;
     for (int i = 0; i < MAX_SERVICES; i++) {

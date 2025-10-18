@@ -281,7 +281,7 @@ static int create_status_socket(void) {
 /* Create listening socket from socket unit */
 static int create_listen_socket(struct socket_instance *sock) {
     struct socket_section *s = &sock->unit->config.socket;
-    int fd = -1;
+    int fd;
 
     /* Unix stream socket */
     if (s->listen_stream && s->listen_stream[0] == '/') {

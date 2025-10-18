@@ -360,7 +360,8 @@ static time_t calculate_next_run(struct timer_instance *timer) {
     /* OnCalendar - calendar-based scheduling */
     if (t->on_calendar) {
         time_t calendar_next = calendar_next_run(t->on_calendar, now);
-        if (calendar_next > 0 && (next == 0 || calendar_next < next)) {
+        /* First timer type: next is guaranteed to be 0, so just check validity */
+        if (calendar_next > 0) {
             next = calendar_next;
         }
     }

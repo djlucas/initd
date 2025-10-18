@@ -85,7 +85,8 @@ test_service_features = executable(
 test_service_registry = executable(
   'test-service-registry',
   ['test-service-registry.c', '../src/supervisor/service-registry.c'],
-  dependencies: common_dep
+  dependencies: common_dep,
+  c_args: ['-DUNIT_TEST']
 )
 
 test_socket_worker = executable(

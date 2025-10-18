@@ -575,8 +575,17 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             goto start_cleanup;
         }
 
+        /* Defensive: exec_argv should never be NULL after successful build_exec_argv,
+         * but verify before dereferencing to satisfy static analysis */
+        if (!exec_argv || !exec_argv[0]) {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart parsing produced empty command");
+            goto start_cleanup;
+        }
+
         exec_path = exec_argv[0];
-        if (!exec_path || exec_path[0] != '/') {
+        if (exec_path[0] != '/') {
             resp->type = RESP_ERROR;
             resp->error_code = EINVAL;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart must use absolute path");
@@ -647,10 +656,9 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
                                           validated_uid, validated_gid);
         int saved_errno = errno;
 
-        if (exec_argv) {
-            free_exec_argv(exec_argv);
-            exec_argv = NULL;
-        }
+        /* exec_argv is guaranteed non-NULL here (validated at line 580) */
+        free_exec_argv(exec_argv);
+        exec_argv = NULL;
 
         if (pid < 0) {
             resp->type = RESP_ERROR;

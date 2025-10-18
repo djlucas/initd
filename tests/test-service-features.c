@@ -53,6 +53,7 @@ static void test_parse_private_tmp(void) {
     );
     assert(parse_unit_file(path1, &unit) == 0);
     assert(unit.config.service.private_tmp == true);
+    free_unit_file(&unit);
     cleanup_temp_file(path1);
 
     /* Test PrivateTmp=false */
@@ -64,6 +65,7 @@ static void test_parse_private_tmp(void) {
     memset(&unit, 0, sizeof(unit));
     assert(parse_unit_file(path2, &unit) == 0);
     assert(unit.config.service.private_tmp == false);
+    free_unit_file(&unit);
     cleanup_temp_file(path2);
 
     printf("✓ PrivateTmp parsing works\n");
@@ -81,6 +83,7 @@ static void test_parse_limit_nofile(void) {
     );
     assert(parse_unit_file(path1, &unit) == 0);
     assert(unit.config.service.limit_nofile == 65536);
+    free_unit_file(&unit);
     cleanup_temp_file(path1);
 
     /* Test infinity */
@@ -92,6 +95,7 @@ static void test_parse_limit_nofile(void) {
     memset(&unit, 0, sizeof(unit));
     assert(parse_unit_file(path2, &unit) == 0);
     assert(unit.config.service.limit_nofile == 0); /* 0 = infinity */
+    free_unit_file(&unit);
     cleanup_temp_file(path2);
 
     /* Test default (not set) */
@@ -102,6 +106,7 @@ static void test_parse_limit_nofile(void) {
     memset(&unit, 0, sizeof(unit));
     assert(parse_unit_file(path3, &unit) == 0);
     assert(unit.config.service.limit_nofile == -1); /* -1 = not set */
+    free_unit_file(&unit);
     cleanup_temp_file(path3);
 
     printf("✓ LimitNOFILE parsing works\n");
@@ -119,6 +124,7 @@ static void test_parse_kill_mode(void) {
     );
     assert(parse_unit_file(path1, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_PROCESS);
+    free_unit_file(&unit);
     cleanup_temp_file(path1);
 
     /* Test control-group mode */
@@ -130,6 +136,7 @@ static void test_parse_kill_mode(void) {
     memset(&unit, 0, sizeof(unit));
     assert(parse_unit_file(path2, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_CONTROL_GROUP);
+    free_unit_file(&unit);
     cleanup_temp_file(path2);
 
     /* Test mixed mode */
@@ -141,6 +148,7 @@ static void test_parse_kill_mode(void) {
     memset(&unit, 0, sizeof(unit));
     assert(parse_unit_file(path3, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_MIXED);
+    free_unit_file(&unit);
     cleanup_temp_file(path3);
 
     /* Test none mode */
@@ -152,6 +160,7 @@ static void test_parse_kill_mode(void) {
     memset(&unit, 0, sizeof(unit));
     assert(parse_unit_file(path4, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_NONE);
+    free_unit_file(&unit);
     cleanup_temp_file(path4);
 
     /* Test default (should be process) */
@@ -162,6 +171,7 @@ static void test_parse_kill_mode(void) {
     memset(&unit, 0, sizeof(unit));
     assert(parse_unit_file(path5, &unit) == 0);
     assert(unit.config.service.kill_mode == KILL_PROCESS); /* Default */
+    free_unit_file(&unit);
     cleanup_temp_file(path5);
 
     printf("✓ KillMode parsing works\n");
@@ -182,6 +192,7 @@ static void test_combined_features(void) {
     assert(unit.config.service.private_tmp == true);
     assert(unit.config.service.limit_nofile == 0); /* infinity */
     assert(unit.config.service.kill_mode == KILL_CONTROL_GROUP);
+    free_unit_file(&unit);
     cleanup_temp_file(path);
 
     printf("✓ Combined features parsing works\n");

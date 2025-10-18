@@ -100,9 +100,11 @@ static int configure_runtime_dir(enum runtime_scope scope) {
                 int written = snprintf(socket_path, sizeof(socket_path),
                                        "%s/%s", user_dir,
                                        CONTROL_STATUS_SOCKET_NAME);
-                if (written >= 0 && (size_t)written < sizeof(socket_path) &&
-                    access(socket_path, F_OK) == 0) {
-                    target = user_dir;
+                if (written >= 0 && (size_t)written < sizeof(socket_path)) {
+                    struct stat st;
+                    if (stat(socket_path, &st) == 0) {
+                        target = user_dir;
+                    }
                 }
             }
         }
@@ -231,16 +233,29 @@ static int ensure_directory_owned(const char *path, mode_t mode, uid_t uid, gid_
         return -1;
     }
 
-    if (chown(path, uid, gid) < 0) {
-        perror("chown");
+    /* Use fd-based operations to avoid TOCTOU race */
+    int dir_fd = open(path, O_DIRECTORY | O_RDONLY);
+    if (dir_fd < 0) {
+        perror("open");
+        rmdir(path);
         return -1;
     }
 
-    if (chmod(path, mode) < 0) {
-        perror("chmod");
+    if (fchown(dir_fd, uid, gid) < 0) {
+        perror("fchown");
+        close(dir_fd);
+        rmdir(path);
         return -1;
     }
 
+    if (fchmod(dir_fd, mode) < 0) {
+        perror("fchmod");
+        close(dir_fd);
+        rmdir(path);
+        return -1;
+    }
+
+    close(dir_fd);
     return 0;
 }
 
@@ -546,7 +561,8 @@ static int handle_user_command(int argc, char *argv[], int index) {
         char marker_path[PATH_MAX];
         snprintf(marker_path, sizeof(marker_path),
                  USER_MARKER_DIR "/%s", user);
-        bool marker_exists = (access(marker_path, F_OK) == 0);
+        struct stat st;
+        bool marker_exists = (stat(marker_path, &st) == 0);
 
         print_daemon_status(user, &cfg, marker_exists);
         return 0;
@@ -803,12 +819,12 @@ int main(int argc, char *argv[]) {
         }
 
         size_t total = count + timer_count;
-        if (timer_count > 0) {
+        if (timer_count > 0 && timer_entries) {
             struct unit_list_entry *tmp = realloc(entries, total * sizeof(*entries));
             if (!tmp) {
                 fprintf(stderr, "Error: Out of memory expanding unit list\n");
                 free(entries);
-                if (timer_entries) free(timer_entries);
+                free(timer_entries);
                 return 1;
             }
             entries = tmp;

@@ -68,7 +68,7 @@ static int set_runtime_dir_internal(const char *path) {
     return 0;
 }
 
-const char *initd_runtime_dir(void) {
+static const char *initd_runtime_dir(void) {
     if (!runtime_dir_initialized) {
         const char *env = getenv(INITD_RUNTIME_DIR_ENV);
         if (!env || env[0] == '\0') {

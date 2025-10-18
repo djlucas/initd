@@ -163,6 +163,9 @@ int secure_copy_file(const char *src_path, const char *dst_path, mode_t mode) {
     struct stat st;
     int result = -1;
 
+    /* Initialize temp_path to avoid undefined behavior in cleanup path */
+    temp_path[0] = '\0';
+
     /* Open source file with O_NOFOLLOW to prevent symlink attacks */
     src_fd = open(src_path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     if (src_fd < 0) {

@@ -216,7 +216,10 @@ static void run_initctl(char **argv,
 
     setenv(INITD_RUNTIME_DIR_ENV, runtime_dir, 1);
     if (user_scope) {
-        setenv("XDG_RUNTIME_DIR", user_runtime_parent, 1);
+        /* user_runtime_parent is guaranteed non-NULL by main(), but add check for analyzer */
+        if (user_runtime_parent) {
+            setenv("XDG_RUNTIME_DIR", user_runtime_parent, 1);
+        }
     } else {
         unsetenv("XDG_RUNTIME_DIR");
     }

@@ -64,7 +64,9 @@ struct service_record *lookup_service_by_name(const char *unit_name);
 void unregister_service(pid_t pid);
 
 /* Get the number of registered services (for testing) */
+#ifdef UNIT_TEST
 int service_registry_count(void);
+#endif
 
 /* DoS Prevention: Check if a service restart should be allowed
  * Returns 1 if restart is allowed, 0 if rate limited
