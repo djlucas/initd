@@ -29,13 +29,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <stdbool.h>
 #include "../common/control.h"
 #include "../common/unit.h"
 #include "../common/scanner.h"
 #include "../common/parser.h"
 #include "../common/socket-ipc.h"
 
-#define SOCKET_ACTIVATOR_SOCKET_PATH "/run/initd/socket-activator.sock"
 #define MAX_SOCKETS 64
 
 static int daemon_socket = -1;
@@ -56,6 +56,7 @@ struct socket_instance {
 
 static volatile sig_atomic_t shutdown_requested = 0;
 static int control_socket = -1;
+static int status_socket = -1;
 static struct socket_instance *sockets = NULL;
 
 #ifdef UNIT_TEST
@@ -212,6 +213,47 @@ static int create_control_socket(void) {
 
     fprintf(stderr, "socket-activator: control socket created at %s\n",
             SOCKET_ACTIVATOR_SOCKET_PATH);
+    return fd;
+}
+
+static int create_status_socket(void) {
+    int fd;
+    struct sockaddr_un addr;
+
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        perror("socket-activator: status socket");
+        return -1;
+    }
+
+    mkdir("/run/initd", 0755);
+    unlink(SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, SOCKET_ACTIVATOR_STATUS_SOCKET_PATH,
+            sizeof(addr.sun_path) - 1);
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("socket-activator: bind status");
+        close(fd);
+        return -1;
+    }
+
+    if (listen(fd, 5) < 0) {
+        perror("socket-activator: listen status");
+        close(fd);
+        return -1;
+    }
+
+    if (fchmod(fd, 0666) < 0) {
+        perror("socket-activator: fchmod status");
+        close(fd);
+        return -1;
+    }
+
+    fprintf(stderr, "socket-activator: status socket created at %s\n",
+            SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
     return fd;
 }
 
@@ -624,11 +666,35 @@ static struct socket_instance *find_socket(const char *unit_name) {
     return NULL;
 }
 
-static void handle_control_command(int client_fd) {
+static bool socket_command_is_read_only(enum control_command cmd) {
+    switch (cmd) {
+    case CMD_STATUS:
+    case CMD_IS_ACTIVE:
+    case CMD_IS_ENABLED:
+    case CMD_LIST_SOCKETS:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void handle_control_command(int client_fd, bool read_only) {
     struct control_request req = {0};
     struct control_response resp = {0};
 
     if (recv_control_request(client_fd, &req) < 0) {
+        close(client_fd);
+        return;
+    }
+
+    if (read_only && !socket_command_is_read_only(req.header.command)) {
+        resp.header.length = sizeof(resp);
+        resp.header.command = req.header.command;
+        resp.code = RESP_PERMISSION_DENIED;
+        snprintf(resp.message, sizeof(resp.message),
+                 "Command %s requires privileged socket",
+                 command_to_string(req.header.command));
+        send_control_response(client_fd, &resp);
         close(client_fd);
         return;
     }
@@ -884,16 +950,25 @@ static void handle_control_command(int client_fd) {
 
 /* Main event loop */
 static int event_loop(void) {
-    struct pollfd pfds[MAX_SOCKETS + 1];
+    struct pollfd pfds[MAX_SOCKETS + 2];
     int nfds;
+    int status_idx;
 
     while (!shutdown_requested) {
         nfds = 0;
+        status_idx = -1;
 
         /* Add control socket */
         pfds[nfds].fd = control_socket;
         pfds[nfds].events = POLLIN;
         nfds++;
+
+        if (status_socket >= 0) {
+            status_idx = nfds;
+            pfds[nfds].fd = status_socket;
+            pfds[nfds].events = POLLIN;
+            nfds++;
+        }
 
         /* Add all listening sockets */
         struct socket_instance *s = sockets;
@@ -925,12 +1000,19 @@ static int event_loop(void) {
         if (pfds[0].revents & POLLIN) {
             int client_fd = accept(control_socket, NULL, NULL);
             if (client_fd >= 0) {
-                handle_control_command(client_fd);
+                handle_control_command(client_fd, false);
+            }
+        }
+
+        if (status_idx >= 0 && (pfds[status_idx].revents & POLLIN)) {
+            int client_fd = accept(status_socket, NULL, NULL);
+            if (client_fd >= 0) {
+                handle_control_command(client_fd, true);
             }
         }
 
         /* Handle listening sockets */
-        int idx = 1;
+        int idx = (status_idx >= 0) ? status_idx + 1 : 1;
         for (s = sockets; s && idx < nfds; s = s->next) {
             if (s->listen_fd < 0) {
                 continue;
@@ -1060,9 +1142,20 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    status_socket = create_status_socket();
+    if (status_socket < 0) {
+        close(control_socket);
+        unlink(SOCKET_ACTIVATOR_SOCKET_PATH);
+        return 1;
+    }
+
     /* Load socket units */
     if (load_sockets() < 0) {
         fprintf(stderr, "socket-activator: failed to load sockets\n");
+        close(control_socket);
+        close(status_socket);
+        unlink(SOCKET_ACTIVATOR_SOCKET_PATH);
+        unlink(SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
         return 1;
     }
 
@@ -1074,6 +1167,10 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "socket-activator: shutting down\n");
     close(control_socket);
     unlink(SOCKET_ACTIVATOR_SOCKET_PATH);
+    if (status_socket >= 0) {
+        close(status_socket);
+        unlink(SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
+    }
 
     return 0;
 }

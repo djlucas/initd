@@ -12,8 +12,11 @@
 
 /* Control socket paths */
 #define CONTROL_SOCKET_PATH "/run/initd/control.sock"
+#define CONTROL_STATUS_SOCKET_PATH "/run/initd/control.status.sock"
 #define TIMER_SOCKET_PATH "/run/initd/timer.sock"
+#define TIMER_STATUS_SOCKET_PATH "/run/initd/timer.status.sock"
 #define SOCKET_ACTIVATOR_SOCKET_PATH "/run/initd/socket-activator.sock"
+#define SOCKET_ACTIVATOR_STATUS_SOCKET_PATH "/run/initd/socket-activator.status.sock"
 
 /* Command codes */
 enum control_command {
@@ -131,8 +134,11 @@ int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count);
 
 /* Helper functions */
 int connect_to_supervisor(void);
+int connect_to_supervisor_status(void);
 int connect_to_timer_daemon(void);
+int connect_to_timer_status(void);
 int connect_to_socket_activator(void);
+int connect_to_socket_status(void);
 const char *state_to_string(enum unit_state_response state);
 const char *command_to_string(enum control_command cmd);
 

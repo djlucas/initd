@@ -25,6 +25,7 @@
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <poll.h>
+#include <stdbool.h>
 #include "../common/control.h"
 #include "../common/unit.h"
 #include "../common/scanner.h"
@@ -49,6 +50,7 @@ struct timer_instance {
 
 static volatile sig_atomic_t shutdown_requested = 0;
 static int control_socket = -1;
+static int status_socket = -1;
 static struct timer_instance *timers = NULL;
 
 #ifdef UNIT_TEST
@@ -223,6 +225,45 @@ static int create_control_socket(void) {
     fchmod(fd, 0666);
 
     fprintf(stderr, "timer-daemon: control socket created at %s\n", TIMER_SOCKET_PATH);
+    return fd;
+}
+
+static int create_status_socket(void) {
+    int fd;
+    struct sockaddr_un addr;
+
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        perror("timer-daemon: status socket");
+        return -1;
+    }
+
+    mkdir("/run/initd", 0755);
+    unlink(TIMER_STATUS_SOCKET_PATH);
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, TIMER_STATUS_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("timer-daemon: bind status");
+        close(fd);
+        return -1;
+    }
+
+    if (listen(fd, 5) < 0) {
+        perror("timer-daemon: listen status");
+        close(fd);
+        return -1;
+    }
+
+    if (fchmod(fd, 0666) < 0) {
+        perror("timer-daemon: fchmod status");
+        close(fd);
+        return -1;
+    }
+
+    fprintf(stderr, "timer-daemon: status socket created at %s\n", TIMER_STATUS_SOCKET_PATH);
     return fd;
 }
 
@@ -650,11 +691,35 @@ static struct timer_instance *find_timer(const char *unit_name) {
     return NULL;
 }
 
-static void handle_control_command(int client_fd) {
+static bool timer_command_is_read_only(enum control_command cmd) {
+    switch (cmd) {
+    case CMD_STATUS:
+    case CMD_IS_ACTIVE:
+    case CMD_IS_ENABLED:
+    case CMD_LIST_TIMERS:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void handle_control_command(int client_fd, bool read_only) {
     struct control_request req = {0};
     struct control_response resp = {0};
 
     if (recv_control_request(client_fd, &req) < 0) {
+        close(client_fd);
+        return;
+    }
+
+    if (read_only && !timer_command_is_read_only(req.header.command)) {
+        resp.header.length = sizeof(resp);
+        resp.header.command = req.header.command;
+        resp.code = RESP_PERMISSION_DENIED;
+        snprintf(resp.message, sizeof(resp.message),
+                 "Command %s requires privileged socket",
+                 command_to_string(req.header.command));
+        send_control_response(client_fd, &resp);
         close(client_fd);
         return;
     }
@@ -920,14 +985,24 @@ static void handle_control_command(int client_fd) {
 
 /* Main event loop */
 static int event_loop(void) {
-    struct pollfd pfd;
+    struct pollfd fds[2];
+    nfds_t nfds = 0;
+    int idx_control = nfds;
+    fds[nfds].fd = control_socket;
+    fds[nfds].events = POLLIN;
+    nfds++;
 
-    pfd.fd = control_socket;
-    pfd.events = POLLIN;
+    int idx_status = -1;
+    if (status_socket >= 0) {
+        idx_status = nfds;
+        fds[nfds].fd = status_socket;
+        fds[nfds].events = POLLIN;
+        nfds++;
+    }
 
     while (!shutdown_requested) {
         /* Poll with 1 second timeout for timer checks */
-        int ret = poll(&pfd, 1, 1000);
+        int ret = poll(fds, nfds, 1000);
 
         if (ret < 0) {
             if (errno == EINTR) continue;
@@ -939,10 +1014,17 @@ static int event_loop(void) {
         check_timers();
 
         /* Handle control connections */
-        if (ret > 0 && (pfd.revents & POLLIN)) {
+        if (ret > 0 && (fds[idx_control].revents & POLLIN)) {
             int client_fd = accept(control_socket, NULL, NULL);
             if (client_fd >= 0) {
-                handle_control_command(client_fd);
+                handle_control_command(client_fd, false);
+            }
+        }
+
+        if (ret > 0 && idx_status >= 0 && (fds[idx_status].revents & POLLIN)) {
+            int client_fd = accept(status_socket, NULL, NULL);
+            if (client_fd >= 0) {
+                handle_control_command(client_fd, true);
             }
         }
     }
@@ -1051,9 +1133,20 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    status_socket = create_status_socket();
+    if (status_socket < 0) {
+        close(control_socket);
+        unlink(TIMER_SOCKET_PATH);
+        return 1;
+    }
+
     /* Load timer units */
     if (load_timers() < 0) {
         fprintf(stderr, "timer-daemon: failed to load timers\n");
+        close(control_socket);
+        close(status_socket);
+        unlink(TIMER_SOCKET_PATH);
+        unlink(TIMER_STATUS_SOCKET_PATH);
         return 1;
     }
 
@@ -1065,6 +1158,10 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "timer-daemon: shutting down\n");
     close(control_socket);
     unlink(TIMER_SOCKET_PATH);
+    if (status_socket >= 0) {
+        close(status_socket);
+        unlink(TIMER_STATUS_SOCKET_PATH);
+    }
     free_timer_instances();
 
     return 0;

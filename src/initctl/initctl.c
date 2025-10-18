@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdbool.h>
 #include "../common/control.h"
 
 /* Print usage */
@@ -93,6 +94,20 @@ static int parse_command(const char *cmd_str, enum control_command *cmd) {
     return 0;
 }
 
+static bool command_is_read_only(enum control_command cmd) {
+    switch (cmd) {
+    case CMD_STATUS:
+    case CMD_IS_ACTIVE:
+    case CMD_IS_ENABLED:
+    case CMD_LIST_UNITS:
+    case CMD_LIST_TIMERS:
+    case CMD_LIST_SOCKETS:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /* Normalize unit name - add .service extension if missing */
 static void normalize_unit_name(char *dest, const char *src, size_t dest_size) {
     strncpy(dest, src, dest_size - 1);
@@ -163,6 +178,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    bool read_only_cmd = command_is_read_only(cmd);
+
     /* Handle list-units command */
     if (cmd == CMD_LIST_UNITS) {
         uint16_t flags = 0;
@@ -172,8 +189,8 @@ int main(int argc, char *argv[]) {
             flags |= REQ_FLAG_ALL;
         }
 
-        /* Connect to supervisor */
-        int fd = connect_to_supervisor();
+        /* Connect to supervisor (read-only socket) */
+        int fd = connect_to_supervisor_status();
         if (fd < 0) {
             fprintf(stderr, "Error: Failed to connect to supervisor\n");
             fprintf(stderr, "Is the init system running?\n");
@@ -220,7 +237,7 @@ int main(int argc, char *argv[]) {
         /* Optionally pull timer units */
         struct timer_list_entry *timer_entries = NULL;
         size_t timer_count = 0;
-        int timer_fd = connect_to_timer_daemon();
+        int timer_fd = connect_to_timer_status();
         if (timer_fd >= 0) {
             struct control_request timer_req = {0};
             struct control_response timer_resp = {0};
@@ -324,8 +341,8 @@ int main(int argc, char *argv[]) {
 
     /* Handle list-timers command */
     if (cmd == CMD_LIST_TIMERS) {
-        /* Connect to timer daemon */
-        int fd = connect_to_timer_daemon();
+        /* Connect to timer daemon (read-only socket) */
+        int fd = connect_to_timer_status();
         if (fd < 0) {
             fprintf(stderr, "Error: Failed to connect to timer daemon\n");
             fprintf(stderr, "Is the timer daemon running?\n");
@@ -431,8 +448,8 @@ int main(int argc, char *argv[]) {
 
     /* Handle list-sockets command */
     if (cmd == CMD_LIST_SOCKETS) {
-        /* Connect to socket activator */
-        int fd = connect_to_socket_activator();
+        /* Connect to socket activator (read-only socket) */
+        int fd = connect_to_socket_status();
         if (fd < 0) {
             fprintf(stderr, "Error: Failed to connect to socket activator\n");
             fprintf(stderr, "Is the socket activator running?\n");
@@ -567,7 +584,7 @@ int main(int argc, char *argv[]) {
     const char *ext = strrchr(unit_name, '.');
     if (ext && strcmp(ext, ".timer") == 0) {
         /* Route timer units to timer daemon */
-        fd = connect_to_timer_daemon();
+        fd = read_only_cmd ? connect_to_timer_status() : connect_to_timer_daemon();
         if (fd < 0) {
             fprintf(stderr, "Error: Failed to connect to timer daemon\n");
             fprintf(stderr, "Is the timer daemon running?\n");
@@ -575,7 +592,7 @@ int main(int argc, char *argv[]) {
         }
     } else if (ext && strcmp(ext, ".socket") == 0) {
         /* Route socket units to socket activator */
-        fd = connect_to_socket_activator();
+        fd = read_only_cmd ? connect_to_socket_status() : connect_to_socket_activator();
         if (fd < 0) {
             fprintf(stderr, "Error: Failed to connect to socket activator\n");
             fprintf(stderr, "Is the socket activator running?\n");
@@ -583,7 +600,7 @@ int main(int argc, char *argv[]) {
         }
     } else {
         /* Route service/target units to supervisor */
-        fd = connect_to_supervisor();
+        fd = read_only_cmd ? connect_to_supervisor_status() : connect_to_supervisor();
         if (fd < 0) {
             fprintf(stderr, "Error: Failed to connect to supervisor\n");
             fprintf(stderr, "Is the init system running?\n");

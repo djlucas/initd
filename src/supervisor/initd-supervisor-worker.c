@@ -40,6 +40,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <limits.h>
+#include <stdbool.h>
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <sys/ucred.h>
 #endif
@@ -53,6 +54,7 @@
 static volatile sig_atomic_t shutdown_requested = 0;
 static int master_socket = -1;
 static int control_socket = -1;
+static int status_socket = -1;
 static struct unit_file **units = NULL;
 static int unit_count = 0;
 static unsigned int start_traversal_generation = 0;
@@ -654,6 +656,47 @@ static int create_control_socket(void) {
     return fd;
 }
 
+static int create_status_socket(void) {
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        perror("slave: status socket");
+        return -1;
+    }
+
+    if (mkdir("/run/initd", 0755) < 0 && errno != EEXIST) {
+        perror("slave: mkdir /run/initd");
+        close(fd);
+        return -1;
+    }
+
+    unlink(CONTROL_STATUS_SOCKET_PATH);
+
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, CONTROL_STATUS_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("slave: bind status");
+        close(fd);
+        return -1;
+    }
+
+    if (fchmod(fd, 0666) < 0) {
+        perror("slave: fchmod status");
+        close(fd);
+        return -1;
+    }
+
+    if (listen(fd, 5) < 0) {
+        perror("slave: listen status");
+        close(fd);
+        return -1;
+    }
+
+    fprintf(stderr, "slave: status socket listening on %s\n", CONTROL_STATUS_SOCKET_PATH);
+    return fd;
+}
+
 /* Convert internal state to control protocol state */
 static enum unit_state_response convert_state(enum unit_state state) {
     switch (state) {
@@ -666,12 +709,36 @@ static enum unit_state_response convert_state(enum unit_state state) {
     }
 }
 
+static bool command_is_read_only(enum control_command cmd) {
+    switch (cmd) {
+    case CMD_STATUS:
+    case CMD_IS_ACTIVE:
+    case CMD_IS_ENABLED:
+    case CMD_LIST_UNITS:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /* Handle control command */
-static void handle_control_command(int client_fd) {
+static void handle_control_command(int client_fd, bool read_only) {
     struct control_request req = {0};
     struct control_response resp = {0};
 
     if (recv_control_request(client_fd, &req) < 0) {
+        close(client_fd);
+        return;
+    }
+
+    if (read_only && !command_is_read_only(req.header.command)) {
+        resp.header.length = sizeof(resp);
+        resp.header.command = req.header.command;
+        resp.code = RESP_PERMISSION_DENIED;
+        snprintf(resp.message, sizeof(resp.message),
+                 "Command %s requires privileged socket",
+                 command_to_string(req.header.command));
+        send_control_response(client_fd, &resp);
         close(client_fd);
         return;
     }
@@ -1249,7 +1316,7 @@ void supervisor_test_mark_isolate(struct unit_file *target) {
 }
 
 void supervisor_test_handle_control_fd(int fd) {
-    handle_control_command(fd);
+    handle_control_command(fd, false);
 }
 #endif
 
@@ -1269,15 +1336,29 @@ static int main_loop(void) {
         return -1;
     }
 
-    struct pollfd fds[2];
-    fds[0].fd = control_socket;
-    fds[0].events = POLLIN;
-    fds[1].fd = master_socket;
-    fds[1].events = POLLIN;
+    struct pollfd fds[3];
+    nfds_t nfds = 0;
+    int idx_control = nfds;
+    fds[nfds].fd = control_socket;
+    fds[nfds].events = POLLIN;
+    nfds++;
+
+    int idx_status = -1;
+    if (status_socket >= 0) {
+        idx_status = nfds;
+        fds[nfds].fd = status_socket;
+        fds[nfds].events = POLLIN;
+        nfds++;
+    }
+
+    int idx_master = nfds;
+    fds[nfds].fd = master_socket;
+    fds[nfds].events = POLLIN;
+    nfds++;
 
     while (!shutdown_requested) {
         /* Poll both control socket and master socket */
-        int ret = poll(fds, 2, 1000); /* 1 second timeout */
+        int ret = poll(fds, nfds, 1000); /* 1 second timeout */
 
         if (ret < 0) {
             if (errno == EINTR) continue;
@@ -1287,19 +1368,26 @@ static int main_loop(void) {
 
         if (ret > 0) {
             /* Check for initctl control requests */
-            if (fds[0].revents & POLLIN) {
+            if (fds[idx_control].revents & POLLIN) {
                 int client_fd = accept(control_socket, NULL, NULL);
                 if (client_fd >= 0) {
                     if (!is_control_client_authorized(client_fd)) {
                         close(client_fd);
                     } else {
-                        handle_control_command(client_fd);
+                        handle_control_command(client_fd, false);
                     }
                 }
             }
 
+            if (idx_status >= 0 && (fds[idx_status].revents & POLLIN)) {
+                int client_fd = accept(status_socket, NULL, NULL);
+                if (client_fd >= 0) {
+                    handle_control_command(client_fd, true);
+                }
+            }
+
             /* Check for notifications from master */
-            if (fds[1].revents & POLLIN) {
+            if (fds[idx_master].revents & POLLIN) {
                 struct priv_response notif = {0};
                 if (recv_response(master_socket, &notif) == 0) {
                     if (notif.type == RESP_SERVICE_EXITED) {
@@ -1362,12 +1450,24 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    status_socket = create_status_socket();
+    if (status_socket < 0) {
+        fprintf(stderr, "supervisor-slave: failed to create status socket\n");
+        close(control_socket);
+        unlink(CONTROL_SOCKET_PATH);
+        return 1;
+    }
+
     /* Scan unit directories */
     fprintf(stderr, "supervisor-slave: scanning unit directories\n");
     if (scan_unit_directories(&units, &unit_count) < 0) {
         fprintf(stderr, "supervisor-slave: failed to scan unit directories\n");
         close(control_socket);
         unlink(CONTROL_SOCKET_PATH);
+        if (status_socket >= 0) {
+            close(status_socket);
+            unlink(CONTROL_STATUS_SOCKET_PATH);
+        }
         return 1;
     }
 
@@ -1396,6 +1496,10 @@ int main(int argc, char *argv[]) {
     if (control_socket >= 0) {
         close(control_socket);
         unlink(CONTROL_SOCKET_PATH);
+    }
+    if (status_socket >= 0) {
+        close(status_socket);
+        unlink(CONTROL_STATUS_SOCKET_PATH);
     }
 
     log_msg(LOG_INFO, NULL, "exiting");
