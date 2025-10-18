@@ -447,7 +447,7 @@ static void print_daemon_status(const char *user,
     printf("  supervisor: %s\n", cfg->supervisor ? "enabled" : "disabled");
     printf("  timer: %s\n", cfg->timer ? "enabled" : "disabled");
     printf("  socket: %s\n", cfg->socket_act ? "enabled" : "disabled");
-    printf("  linger marker: %s\n", marker_exists ? "present" : "absent");
+    printf("  reboot persistence marker: %s\n", marker_exists ? "present" : "absent");
 }
 
 static bool daemon_any_enabled(const struct user_daemon_config *cfg) {
