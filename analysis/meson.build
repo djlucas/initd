@@ -3,30 +3,18 @@
 # 1. cppcheck - Static analysis
 cppcheck = find_program('cppcheck', required: false)
 if cppcheck.found()
+  bash = find_program('bash')
   run_target('analyze-cppcheck',
-    command: [
-      cppcheck,
-      '--enable=all',
-      '--suppress=missingIncludeSystem',
-      '--std=c11',
-      '--platform=unix64',
-      '--verbose',
-      meson.project_source_root() / 'src'
-    ]
+    command: [bash, meson.project_source_root() / 'analysis' / 'meson-cppcheck.sh', meson.project_source_root()]
   )
 endif
 
 # 2. flawfinder - Security-focused static analysis
 flawfinder = find_program('flawfinder', required: false)
 if flawfinder.found()
+  bash = find_program('bash')
   run_target('analyze-flawfinder',
-    command: [
-      flawfinder,
-      '--minlevel=1',
-      '--context',
-      '--dataonly',
-      meson.project_source_root() / 'src'
-    ]
+    command: [bash, meson.project_source_root() / 'analysis' / 'meson-flawfinder.sh', meson.project_source_root()]
   )
 endif
 
