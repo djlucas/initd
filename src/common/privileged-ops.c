@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
+#include <pwd.h>
 #ifdef __linux__
 #include <sched.h>
 #include <sys/mount.h>
@@ -317,9 +318,53 @@ int setup_service_environment(const struct service_section *service) {
         log_msg(LOG_INFO, "init", "Created private /tmp for service");
     }
 #else
-    /* TODO: On non-Linux, create real directory: mkdir /tmp/initd-<service>-<pid> and chdir() to it */
     if (service->private_tmp) {
-        log_msg(LOG_WARNING, "init", "PrivateTmp not supported on this platform, ignoring");
+        char template[] = "/tmp/initd-privateXXXXXX";
+        char pathbuf[sizeof(template)];
+        char *dir_path = NULL;
+        struct passwd *pw = NULL;
+
+        strncpy(pathbuf, template, sizeof(pathbuf) - 1);
+        pathbuf[sizeof(pathbuf) - 1] = '\0';
+
+        dir_path = mkdtemp(pathbuf);
+        if (!dir_path) {
+            log_msg(LOG_ERR, "init", "Failed to create PrivateTmp directory: %s", strerror(errno));
+            return -1;
+        }
+
+        if (service->user[0] != '\0') {
+            pw = getpwnam(service->user);
+            if (pw) {
+                if (chown(dir_path, pw->pw_uid, pw->pw_gid) < 0) {
+                    log_msg(LOG_WARNING, "init", "Failed to chown PrivateTmp directory to %s: %s",
+                            service->user, strerror(errno));
+                }
+            } else {
+                log_msg(LOG_WARNING, "init", "Cannot resolve user '%s' for PrivateTmp ownership", service->user);
+            }
+        }
+
+        /* Ensure directory is only accessible by the service */
+        if (chmod(dir_path, 0700) < 0) {
+            log_msg(LOG_WARNING, "init", "Failed to chmod PrivateTmp directory %s: %s",
+                    dir_path, strerror(errno));
+        }
+
+        if (chdir(dir_path) < 0) {
+            log_msg(LOG_ERR, "init", "Failed to chdir to PrivateTmp directory %s: %s",
+                    dir_path, strerror(errno));
+            rmdir(dir_path);
+            return -1;
+        }
+
+        /* Override TMPDIR so libc temp helpers use the private tree */
+        if (setenv("TMPDIR", dir_path, 1) < 0) {
+            log_msg(LOG_WARNING, "init", "Failed to set TMPDIR to %s: %s",
+                    dir_path, strerror(errno));
+        }
+
+        log_msg(LOG_INFO, "init", "Created private tmp directory at %s", dir_path);
     }
 #endif
 
