@@ -594,3 +594,9 @@ int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count) 
 
     return 0;
 }
+
+/* Detect if we're running as part of the initd init system vs standalone */
+bool initd_is_running_as_init(void) {
+    const char *mode = getenv("INITD_MODE");
+    return (mode && strcmp(mode, "init") == 0);
+}

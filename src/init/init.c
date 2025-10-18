@@ -99,15 +99,22 @@ static pid_t start_supervisor(void) {
     }
 
     if (pid == 0) {
-        /* Child: exec supervisor */
-        execl(supervisor_path, "supervisor-master", NULL);
+        /* Child: Set environment to indicate we're running as init */
+        setenv("INITD_MODE", "init", 1);
+
+        /* Extract basename for argv[0] so ps shows correct process name */
+        char *name = strrchr(supervisor_path, '/');
+        name = name ? name + 1 : supervisor_path;
+
+        /* exec supervisor */
+        execl(supervisor_path, name, NULL);
         /* If exec fails */
         perror("init: exec supervisor failed");
         _exit(1);
     }
 
     /* Parent */
-    fprintf(stderr, "init: started supervisor-master (pid %d)\n", pid);
+    fprintf(stderr, "init: started %s (pid %d)\n", supervisor_path, pid);
     return pid;
 }
 

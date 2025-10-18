@@ -18,7 +18,10 @@ enum priv_request_type {
     REQ_DISABLE_UNIT,       /* Disable a unit */
     REQ_CONVERT_UNIT,       /* Convert systemd unit to initd */
     REQ_RELOAD_SERVICE,     /* Execute ExecReload for a running service */
-    REQ_SHUTDOWN_COMPLETE   /* Worker finished shutdown */
+    REQ_SHUTDOWN_COMPLETE,  /* Worker finished shutdown */
+    REQ_POWEROFF,           /* Initiate system poweroff */
+    REQ_REBOOT,             /* Initiate system reboot */
+    REQ_HALT                /* Initiate system halt */
 };
 
 /* Request structure */

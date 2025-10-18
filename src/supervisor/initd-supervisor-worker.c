@@ -1107,6 +1107,40 @@ static void handle_control_command(int client_fd, bool read_only) {
         }
         break;
 
+    case CMD_POWEROFF:
+    case CMD_REBOOT:
+    case CMD_HALT: {
+        struct priv_request shutdown_req = {0};
+        struct priv_response shutdown_resp = {0};
+
+        /* Map control command to IPC request type */
+        if (req.header.command == CMD_POWEROFF) {
+            shutdown_req.type = REQ_POWEROFF;
+        } else if (req.header.command == CMD_REBOOT) {
+            shutdown_req.type = REQ_REBOOT;
+        } else {
+            shutdown_req.type = REQ_HALT;
+        }
+
+        /* Send shutdown request to master */
+        if (send_request(master_socket, &shutdown_req) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to send shutdown request to master");
+        } else if (recv_response(master_socket, &shutdown_resp) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to receive response from master");
+        } else if (shutdown_resp.type == RESP_OK) {
+            resp.code = RESP_SUCCESS;
+            const char *action = (req.header.command == CMD_POWEROFF) ? "poweroff" :
+                                 (req.header.command == CMD_REBOOT) ? "reboot" : "halt";
+            snprintf(resp.message, sizeof(resp.message), "System %s initiated", action);
+        } else {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "%s", shutdown_resp.error_msg);
+        }
+        break;
+    }
+
     default:
         resp.code = RESP_INVALID_COMMAND;
         snprintf(resp.message, sizeof(resp.message), "Unknown command");

@@ -25,6 +25,9 @@
 #include <pwd.h>
 #include <grp.h>
 #include <limits.h>
+#ifdef __linux__
+#include <sys/reboot.h>
+#endif
 #include "../common/ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
@@ -41,7 +44,16 @@
 #define SUPERVISOR_USER "initd-supervisor"
 #endif
 
+/* Shutdown types */
+enum shutdown_type {
+    SHUTDOWN_NONE = 0,
+    SHUTDOWN_POWEROFF,
+    SHUTDOWN_REBOOT,
+    SHUTDOWN_HALT
+};
+
 static volatile sig_atomic_t shutdown_requested = 0;
+static enum shutdown_type shutdown_type = SHUTDOWN_NONE;
 static pid_t slave_pid = 0;
 static int ipc_socket = -1;
 static bool user_mode = false;
@@ -1058,6 +1070,27 @@ start_cleanup:
         shutdown_requested = 1;
         break;
 
+    case REQ_POWEROFF:
+        fprintf(stderr, "supervisor-master: poweroff requested\n");
+        resp->type = RESP_OK;
+        shutdown_requested = 1;
+        shutdown_type = SHUTDOWN_POWEROFF;
+        break;
+
+    case REQ_REBOOT:
+        fprintf(stderr, "supervisor-master: reboot requested\n");
+        resp->type = RESP_OK;
+        shutdown_requested = 1;
+        shutdown_type = SHUTDOWN_REBOOT;
+        break;
+
+    case REQ_HALT:
+        fprintf(stderr, "supervisor-master: halt requested\n");
+        resp->type = RESP_OK;
+        shutdown_requested = 1;
+        shutdown_type = SHUTDOWN_HALT;
+        break;
+
     default:
         resp->type = RESP_ERROR;
         resp->error_code = EINVAL;
@@ -1240,6 +1273,76 @@ int main(int argc, char *argv[]) {
     if (slave_pid > 0) {
         process_tracking_signal_process(slave_pid, SIGTERM);
         waitpid(slave_pid, NULL, 0);
+    }
+
+    /* Handle shutdown/reboot/halt if requested */
+    if (shutdown_type != SHUTDOWN_NONE) {
+        if (initd_is_running_as_init()) {
+            /* Running as PID 1 or child of initd-init - perform system action */
+            fprintf(stderr, "supervisor-master: performing system shutdown\n");
+
+            #ifdef __linux__
+            sync();
+
+            switch (shutdown_type) {
+            case SHUTDOWN_POWEROFF:
+                reboot(RB_POWER_OFF);
+                break;
+            case SHUTDOWN_REBOOT:
+                reboot(RB_AUTOBOOT);
+                break;
+            case SHUTDOWN_HALT:
+                reboot(RB_HALT_SYSTEM);
+                break;
+            default:
+                break;
+            }
+            #else
+            /* Non-Linux: execute native shutdown commands */
+            switch (shutdown_type) {
+            case SHUTDOWN_POWEROFF:
+                execl("/sbin/poweroff", "poweroff", NULL);
+                execl("/sbin/shutdown", "shutdown", "-p", "now", NULL);
+                break;
+            case SHUTDOWN_REBOOT:
+                execl("/sbin/reboot", "reboot", NULL);
+                execl("/sbin/shutdown", "shutdown", "-r", "now", NULL);
+                break;
+            case SHUTDOWN_HALT:
+                execl("/sbin/halt", "halt", NULL);
+                execl("/sbin/shutdown", "shutdown", "-h", "now", NULL);
+                break;
+            default:
+                break;
+            }
+            #endif
+
+            perror("shutdown failed");
+            return 1;
+        } else {
+            /* Running standalone - execute native shutdown commands */
+            fprintf(stderr, "supervisor-master: executing native shutdown command\n");
+
+            switch (shutdown_type) {
+            case SHUTDOWN_POWEROFF:
+                execlp("poweroff", "poweroff", NULL);
+                execlp("shutdown", "shutdown", "-P", "now", NULL);
+                break;
+            case SHUTDOWN_REBOOT:
+                execlp("reboot", "reboot", NULL);
+                execlp("shutdown", "shutdown", "-r", "now", NULL);
+                break;
+            case SHUTDOWN_HALT:
+                execlp("halt", "halt", NULL);
+                execlp("shutdown", "shutdown", "-h", "now", NULL);
+                break;
+            default:
+                break;
+            }
+
+            perror("shutdown command failed");
+            return 1;
+        }
     }
 
     fprintf(stderr, "supervisor-master: exiting\n");

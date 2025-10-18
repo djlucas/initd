@@ -62,6 +62,9 @@ static void print_usage(const char *progname) {
     fprintf(stderr, "  list-timers         List all timers\n");
     fprintf(stderr, "  list-sockets        List all sockets\n");
     fprintf(stderr, "  daemon-reload       Reload unit files\n");
+    fprintf(stderr, "  poweroff            Shut down and power off the system\n");
+    fprintf(stderr, "  reboot              Shut down and reboot the system\n");
+    fprintf(stderr, "  halt                Shut down and halt the system\n");
     fprintf(stderr, "  user enable USER [DAEMON...]\n");
     fprintf(stderr, "                     Enable per-user daemons (requires root)\n");
     fprintf(stderr, "  user disable USER [DAEMON...]\n");
@@ -153,6 +156,12 @@ static int parse_command(const char *cmd_str, enum control_command *cmd) {
         *cmd = CMD_DAEMON_RELOAD;
     } else if (strcmp(cmd_str, "isolate") == 0) {
         *cmd = CMD_ISOLATE;
+    } else if (strcmp(cmd_str, "poweroff") == 0) {
+        *cmd = CMD_POWEROFF;
+    } else if (strcmp(cmd_str, "reboot") == 0) {
+        *cmd = CMD_REBOOT;
+    } else if (strcmp(cmd_str, "halt") == 0) {
+        *cmd = CMD_HALT;
     } else {
         return -1;
     }
@@ -1130,6 +1139,43 @@ int main(int argc, char *argv[]) {
             return 0;
         }
         return 1;
+    }
+
+    /* Handle shutdown commands (poweroff, reboot, halt) */
+    if (cmd == CMD_POWEROFF || cmd == CMD_REBOOT || cmd == CMD_HALT) {
+        int fd = connect_to_supervisor();
+        if (fd < 0) {
+            fprintf(stderr, "Error: Failed to connect to supervisor\n");
+            fprintf(stderr, "Is the init system running?\n");
+            return 1;
+        }
+
+        struct control_request req = {0};
+        struct control_response resp = {0};
+        req.header.length = sizeof(req);
+        req.header.command = cmd;
+
+        if (send_control_request(fd, &req) < 0) {
+            fprintf(stderr, "Error: Failed to send shutdown request\n");
+            close(fd);
+            return 1;
+        }
+
+        if (recv_control_response(fd, &resp) < 0) {
+            fprintf(stderr, "Error: Failed to receive response\n");
+            close(fd);
+            return 1;
+        }
+
+        close(fd);
+
+        if (resp.code == RESP_SUCCESS) {
+            printf("%s\n", resp.message[0] ? resp.message : "Shutdown initiated");
+            return 0;
+        } else {
+            fprintf(stderr, "Error: %s\n", resp.message);
+            return 1;
+        }
     }
 
     /* Commands that require a unit name */

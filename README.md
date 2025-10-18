@@ -25,7 +25,7 @@ systemd files or code are reused here.
 
 ## Key Components
 
-1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts the supervisor master.
+1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts a service manager. The service manager is configurable via the kernel command line `supervisor=PATH` parameter, allowing you to use the initd supervisor, traditional BSD rc, runit, s6, or even a custom shell script. This makes init truly agnostic about service management philosophy.
 2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
 3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
 4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
@@ -207,6 +207,17 @@ Unit types **not supported** (use traditional alternatives):
 ### Building
 
 ```bash
+# Create required system users and groups (before building)
+# Each daemon runs as a dedicated unprivileged user for security
+sudo groupadd -r initd-supervisor
+sudo useradd -r -g initd-supervisor -d /var/empty -s /bin/false -c "initd supervisor" initd-supervisor
+
+sudo groupadd -r initd-timer
+sudo useradd -r -g initd-timer -d /var/empty -s /bin/false -c "initd timer daemon" initd-timer
+
+sudo groupadd -r initd-socket
+sudo useradd -r -g initd-socket -d /var/empty -s /bin/false -c "initd socket activator" initd-socket
+
 # Generate build files with Meson
 meson setup build
 
@@ -216,6 +227,35 @@ ninja -C build
 # Install (requires root)
 sudo ninja -C build install
 ```
+
+### Init Flexibility
+
+The init binary is service-manager agnostic. By default it launches the initd supervisor, but you can use any service manager via the kernel command line:
+
+```bash
+# Default: use initd supervisor
+linux /vmlinuz root=/dev/sda1 init=/sbin/init
+
+# Use traditional BSD rc
+linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/etc/rc
+
+# Use runit
+linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/sbin/runit
+
+# Use s6
+linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/bin/s6-svscan /service
+
+# Use your own custom shell script
+linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/usr/local/bin/my-init
+```
+
+The init process simply:
+- Reaps zombies (universal PID 1 responsibility)
+- Starts and monitors the specified service manager
+- Handles shutdown signals (SIGTERM=poweroff, SIGINT=reboot, SIGUSR1=halt)
+
+This design provides complete freedom to choose your service management approach while still benefiting from a clean, minimal PID 1 implementation.
+
 
 ### Configuration
 
@@ -305,9 +345,15 @@ grep nginx /var/log/messages | tail -20
 # View logs with journalctl wrapper
 journalctl -u nginx -f
 
+# System shutdown commands
+initctl poweroff    # Shut down and power off
+initctl reboot      # Shut down and reboot
+initctl halt        # Halt the system
+
 # systemctl compatibility (symlink to initctl)
 systemctl start nginx
 systemctl status nginx
+systemctl reboot
 ```
 
 ## Running Tests

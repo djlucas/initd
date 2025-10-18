@@ -48,7 +48,10 @@ enum control_command {
     CMD_DAEMON_RELOAD,
     CMD_ISOLATE,
     CMD_NOTIFY_INACTIVE,
-    CMD_SOCKET_ADOPT
+    CMD_SOCKET_ADOPT,
+    CMD_POWEROFF,
+    CMD_REBOOT,
+    CMD_HALT
 };
 
 /* Response codes */
@@ -152,6 +155,9 @@ int initd_default_user_runtime_dir(char *buf, size_t len);
 const char *control_socket_path(bool status);
 const char *timer_socket_path(bool status);
 const char *socket_activator_socket_path(bool status);
+
+/* Runtime mode detection */
+bool initd_is_running_as_init(void);
 
 int connect_to_supervisor(void);
 int connect_to_supervisor_status(void);
