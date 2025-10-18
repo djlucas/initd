@@ -74,20 +74,20 @@ echo "" | tee -a "$SUMMARY_FILE"
 
 # 5. valgrind
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
-echo "5/7 Running calendar fuzz harness..." | tee -a "$SUMMARY_FILE"
+echo "5/7 Running fuzzing suite..." | tee -a "$SUMMARY_FILE"
 echo "----------------------------------------" | tee -a "$SUMMARY_FILE"
 set +e
-meson compile -C build analyze-fuzz-calendar 2>&1 | tee "$OUTPUT_DIR/fuzz-calendar.log"
+meson compile -C build analyze-fuzz 2>&1 | tee "$OUTPUT_DIR/fuzz.log"
 FUZZ_STATUS=${PIPESTATUS[0]}
 set -e
 if [ "$FUZZ_STATUS" -eq 0 ]; then
-    echo "✓ calendar fuzz completed (5,000 runs)" | tee -a "$SUMMARY_FILE"
-elif grep -qi "unknown target" "$OUTPUT_DIR/fuzz-calendar.log" || grep -qi "Unknown target" "$OUTPUT_DIR/fuzz-calendar.log"; then
-    echo "∙ calendar fuzz skipped (clang/libFuzzer unavailable)" | tee -a "$SUMMARY_FILE"
-    SKIPPED_TESTS+=("fuzz-calendar")
+    echo "✓ fuzzing suite completed (4 fuzzers, 5,000 runs each)" | tee -a "$SUMMARY_FILE"
+elif grep -qi "unknown target" "$OUTPUT_DIR/fuzz.log" || grep -qi "Unknown target" "$OUTPUT_DIR/fuzz.log"; then
+    echo "∙ fuzzing suite skipped (clang/libFuzzer unavailable)" | tee -a "$SUMMARY_FILE"
+    SKIPPED_TESTS+=("fuzz")
 else
-    echo "✗ calendar fuzz failed" | tee -a "$SUMMARY_FILE"
-    FAILED_TESTS+=("fuzz-calendar")
+    echo "✗ fuzzing suite failed" | tee -a "$SUMMARY_FILE"
+    FAILED_TESTS+=("fuzz")
 fi
 echo "" | tee -a "$SUMMARY_FILE"
 
@@ -126,7 +126,7 @@ if [ ${#FAILED_TESTS[@]} -eq 0 ]; then
     echo "  - flawfinder:  $OUTPUT_DIR/flawfinder.log" | tee -a "$SUMMARY_FILE"
     echo "  - scan-build:  $OUTPUT_DIR/scan-build.log" | tee -a "$SUMMARY_FILE"
     echo "  - sanitizers:  $OUTPUT_DIR/sanitizers.log" | tee -a "$SUMMARY_FILE"
-    echo "  - fuzz:        $OUTPUT_DIR/fuzz-calendar.log" | tee -a "$SUMMARY_FILE"
+    echo "  - fuzz:        $OUTPUT_DIR/fuzz.log" | tee -a "$SUMMARY_FILE"
     echo "  - valgrind:    $OUTPUT_DIR/valgrind.log" | tee -a "$SUMMARY_FILE"
     echo "  - shellcheck:  $OUTPUT_DIR/shellcheck.log" | tee -a "$SUMMARY_FILE"
     if [ ${#SKIPPED_TESTS[@]} -ne 0 ]; then

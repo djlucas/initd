@@ -1,10 +1,10 @@
-.TH SUPERVISOR-SLAVE 8 "2025" "initd 0.1" "System Manager's Manual"
+.TH INITD-SUPERVISOR-WORKER 8 "2025" "initd 0.1" "System Manager's Manual"
 .SH NAME
-supervisor-slave \- unprivileged service management daemon for initd
+initd-supervisor-worker \- unprivileged service management daemon for initd
 .SH SYNOPSIS
-.B supervisor-slave
+.B initd-supervisor-worker
 .SH DESCRIPTION
-.B supervisor-slave
+.B initd-supervisor-worker
 is the unprivileged, main logic component of the initd supervisor system.
 It handles all service management operations including unit file parsing,
 dependency resolution, state tracking, and user command processing.
@@ -12,12 +12,12 @@ dependency resolution, state tracking, and user command processing.
 Running as a dedicated unprivileged user, supervisor-slave contains the bulk
 of the service management code while maintaining a minimal attack surface.
 All operations requiring root privileges are delegated to
-.BR supervisor-master (8)
+.BR initd-supervisor (8)
 via IPC.
 .PP
-.B supervisor-slave
+.B initd-supervisor-worker
 is automatically started by
-.BR supervisor-master (8)
+.BR initd-supervisor (8)
 and should not be invoked directly by users.
 .SH RESPONSIBILITIES
 .TP
@@ -48,7 +48,7 @@ Processes start, stop, restart, enable, disable, and status commands.
 Buffers early boot logs in memory, flushes to syslog when available,
 and handles all service output redirection.
 .SH OPERATION
-.B supervisor-slave
+.B initd-supervisor-worker
 follows this operational flow:
 .IP 1. 4
 Scan unit directories (/etc/initd/system, /lib/initd/system, etc.)
@@ -62,7 +62,7 @@ Enter main event loop:
 .IP \(bu 2
 Poll control socket for user commands
 .IP \(bu
-Monitor service PIDs via supervisor-master
+Monitor service PIDs via initd-supervisor
 .IP \(bu
 Handle service exits and restarts
 .IP \(bu
@@ -148,7 +148,7 @@ Distribution service unit files
 .I /var/log/messages
 System log (via syslog)
 .SH SECURITY
-.B supervisor-slave
+.B initd-supervisor-worker
 runs as an unprivileged user (typically
 .IR initd-supervisor )
 with no special privileges. It cannot:
@@ -160,7 +160,7 @@ Modify system files
 Access privileged system calls
 .PP
 All privileged operations are performed by
-.BR supervisor-master (8)
+.BR initd-supervisor (8)
 after request validation.
 .SH LOGGING
 Early boot logs (before syslog starts) are buffered in memory with
@@ -173,7 +173,7 @@ go directly to syslog with the format:
 .RE
 .SH SEE ALSO
 .BR init (8),
-.BR supervisor-master (8),
+.BR initd-supervisor (8),
 .BR initctl (1),
 .BR systemctl (1),
 .BR timer-daemon (8),

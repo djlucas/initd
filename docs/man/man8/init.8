@@ -8,7 +8,7 @@ init \- initd system initialization
 .SH DESCRIPTION
 .B init
 is the parent of all processes on the system, running as PID 1. It is responsible
-for starting the supervisor-master process, reaping zombie processes, and
+for starting the initd-supervisor process, reaping zombie processes, and
 coordinating system shutdown.
 .PP
 This is a minimal init implementation designed for simplicity, security, and
@@ -19,10 +19,10 @@ The kernel command line or bootloader may pass the following arguments to init:
 .TP
 .BI supervisor= PATH
 Specifies the path to the service manager to launch. This can be any executable
-that manages services - the initd supervisor-master, traditional BSD rc, runit,
+that manages services - the initd initd-supervisor, traditional BSD rc, runit,
 s6-svscan, or even a custom shell script. If not specified, the default compiled-in
 path is used (typically
-.IR /usr/libexec/initd/supervisor-master ).
+.IR /usr/sbin/initd-supervisor ).
 The process name shown in
 .BR ps (1)
 output will be the basename of the path (e.g., "rc" for "/etc/rc").
@@ -36,7 +36,7 @@ integer.
 handles the following signals:
 .TP
 .B SIGCHLD
-Reaps zombie processes. If the supervisor-master exits unexpectedly, init will
+Reaps zombie processes. If the initd-supervisor exits unexpectedly, init will
 automatically restart it unless shutdown has been requested.
 .TP
 .B SIGTERM
@@ -74,7 +74,7 @@ Parses command line arguments
 .IP 3. 4
 Installs signal handlers
 .IP 4. 4
-Forks and executes supervisor-master
+Forks and executes initd-supervisor
 .IP 5. 4
 Enters main loop: checks for shutdown requests and reaps zombies
 .PP
@@ -82,7 +82,7 @@ During shutdown,
 .B init
 coordinates an orderly system halt:
 .IP 1. 4
-Sends SIGTERM to supervisor-master
+Sends SIGTERM to initd-supervisor
 .IP 2. 4
 Waits up to
 .I timeout
@@ -99,8 +99,8 @@ Calls
 with appropriate command
 .SH FILES
 .TP
-.I /usr/libexec/initd/supervisor-master
-Default location of supervisor-master executable (compile-time configurable)
+.I /usr/sbin/initd-supervisor
+Default location of initd-supervisor executable (compile-time configurable)
 .SH EXIT STATUS
 .B init
 does not exit under normal operation. If it cannot start as PID 1 or fails
@@ -110,7 +110,7 @@ to initialize, it exits with status 1.
 is designed to be statically linked for minimal dependencies. It contains
 no complex logic - all service management is delegated to supervisor processes.
 .PP
-The supervisor-master process runs with root privileges but only performs
+The initd-supervisor process runs with root privileges but only performs
 specific privileged operations. The supervisor-slave process (spawned by master)
 runs unprivileged and handles the bulk of service management logic.
 .SH EXAMPLES
@@ -144,7 +144,7 @@ With custom timeout:
     linux /vmlinuz root=/dev/sda1 init=/sbin/init timeout=60
 .EE
 .SH SEE ALSO
-.BR supervisor-master (8),
+.BR initd-supervisor (8),
 .BR initctl (1),
 .BR reboot (2),
 .BR signal (7)

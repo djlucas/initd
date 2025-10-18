@@ -39,7 +39,7 @@ Each component is a **separate, independent daemon** that can be installed and r
 ### Components
 
 1. **init** - PID 1, minimal responsibilities (optional - not needed in standalone mode)
-2. **supervisor** (master + slave) - service management daemon
+2. **supervisor** (master + worker) - service management daemon
 3. **timer-daemon** - timer/cron functionality (independent, optional)
 4. **socket-activator** - on-demand service activation (independent, optional)
 5. **initctl** - control interface (routes to appropriate daemon)
@@ -51,7 +51,7 @@ Each component is a **separate, independent daemon** that can be installed and r
 
 **Responsibilities:**
 - Reap zombie processes (waitpid loop)
-- Start supervisor-master
+- Start initd-supervisor
 - Monitor supervisor health
 - Handle shutdown signals (SIGTERM, SIGINT)
 - Coordinate system shutdown
@@ -77,7 +77,7 @@ Each component is a **separate, independent daemon** that can be installed and r
 #### 2. Supervisor Master (root)
 
 **Responsibilities:**
-- Fork supervisor-worker
+- Fork initd-supervisor-worker
 - Handle privileged requests from worker
 - Set up cgroups (Linux only)
 - Set up namespaces
@@ -575,7 +575,7 @@ graphical.target
 ## Boot Sequence
 
 1. **Kernel starts init**
-2. **Init starts supervisor-master**
+2. **Init starts initd-supervisor**
 3. **Master forks slave (drops privs)**
 4. **Slave scans unit directories**
 5. **Slave parses unit files**
@@ -1001,7 +1001,7 @@ WantedBy=multi-user.target
 
 ```
 init (root, PID 1)
-  └─> supervisor-master (root)
+  └─> initd-supervisor (root)
       ├─> supervisor-worker (unprivileged)
       │   └─> manages service registry
       │       └─> enforces DoS prevention
@@ -1015,7 +1015,6 @@ init (root, PID 1)
 ### Runtime Dependencies
 - libc
 - syslog daemon (rsyslog, syslog-ng, etc.)
-- elogind (for session management)
 
 ### Optional Dependencies
 - Linux kernel with cgroup v2 support
@@ -1108,7 +1107,7 @@ Notes:
 13. ✅ **Orphaned process cleanup** - kill_remaining_processes() during shutdown
 14. ✅ **KillMode support** - using process groups (control-group, process, mixed, none)
 
-### Phase 3: Independent Daemons + Portable Supervision (IN PROGRESS)
+### Phase 3: Independent Daemons + Portable Supervision ✅ COMPLETE
 1. ✅ Timer daemon (independent, cron replacement) — OnUnitInactiveSec reschedules and persists last-inactive timestamps
 2. ✅ Socket activator daemon (independent, idle timeout, RuntimeMaxSec, supervisor adoption)
 3. ✅ Daemon independence (separate control sockets, optional communication)
@@ -1117,6 +1116,8 @@ Notes:
 5. ✅ journalctl wrapper
 6. ✅ Cross-platform process-group supervision parity (Linux/BSD/Hurd) with shared abstraction layer
 7. ✅ Platform detection/build plumbing for shared code paths (headers, feature flags, CI coverage)
+8. ✅ Shutdown/reboot/halt implementation with PID 1 vs standalone mode detection
+9. ✅ Per-user daemon support with reboot persistence (independent of elogind)
 
 ### User-Mode Follow-ups
 - ✅ Documented and tested per-user reboot persistence workflows
@@ -1129,13 +1130,6 @@ Notes:
 2. ⬜ Linux namespaces (already have PrivateTmp mount namespace)
 3. ⬜ Seccomp filters (optional security hardening)
 
-### Phase 5: Standalone & Packaging Polish (FUTURE)
-
-- Documented standalone supervisor workflows (non-PID1)
-- PID detection / graceful reboot-handling refinements
-- Packaging, installers, and cross-distro guidance
-- Final cross-platform documentation once process-group parity (Phase 3) is complete
-
 #### Design Constraints for Phases 1-3
 To avoid writing ourselves into a corner, the following must be considered during early phases:
 
@@ -1145,20 +1139,20 @@ To avoid writing ourselves into a corner, the following must be considered durin
 
 **Supervisor Master**
 - ✅ Already mode-agnostic (doesn't check PID)
-- ⚠️ TODO: Detect if running as descendant of PID 1 vs direct child
-- ⚠️ TODO: Conditional reboot() - only if we ARE the init
-- ⚠️ TODO: Finalize shared process-group abstraction (Phase 3 deliverable) before adding optional cgroup enhancements
+- ✅ PID 1 detection via INITD_MODE environment variable
+- ✅ Conditional reboot() - uses reboot(2) in PID 1 mode, native commands in standalone
+- ✅ Shared process-group abstraction (Phase 3 complete) - cgroups deferred to Phase 4
 
 **Supervisor Slave**
 - ✅ Already unprivileged and mode-agnostic
-- ⚠️ TODO: Abstract process supervision (process groups first, cgroups optional)
-- ⚠️ TODO: Platform-specific includes
+- ✅ Process supervision via process groups (portable, POSIX-compliant)
+- ✅ Platform-specific includes properly abstracted
 
 **Control Protocol**
 - ✅ Already Unix socket based - works in both modes
-- ⚠️ TODO: Add shutdown/reboot/halt commands to initctl
-- ⚠️ TODO: In standalone mode, exec native shutdown command (shutdown, halt, reboot)
-- ⚠️ TODO: In PID 1 mode, signal init directly
+- ✅ Shutdown/reboot/halt commands implemented in initctl
+- ✅ Standalone mode execs native shutdown commands (poweroff, reboot, halt)
+- ✅ PID 1 mode sends requests through supervisor to init
 
 **Unit File Parser**
 - ✅ Already platform-agnostic
@@ -1169,62 +1163,6 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - Optimise dependency resolver to avoid redundant traversals (explicit DONE markers, clearer visited semantics).
 - Audit remaining file handling for `FD_CLOEXEC`, TOCTOU-safe temp files, and consistent privilege drops.
 - Optional: introduce versioned/authenticated IPC for future protocol evolution.
-
-**Key Abstraction Points:**
-1. **Process Tracking** - Wrap cgroup operations for BSD/Hurd
-   ```c
-   // supervisor-master.c
-   #ifdef HAVE_CGROUPS
-     setup_cgroup(pid, unit);
-   #else
-     setup_process_group(pid, unit);
-   #endif
-   ```
-
-2. **Shutdown Handling** - Conditional reboot
-   ```c
-   // supervisor-master.c - shutdown complete
-   if (getpid() == 1) {
-     // We are PID 1 init - perform system reboot
-     sync(); sync();
-     reboot(RB_POWER_OFF);
-   } else {
-     // Standalone mode - just exit
-     exit(0);
-   }
-   ```
-
-3. **Startup Detection** - Know our mode
-   ```c
-   // supervisor-master.c
-   static bool running_as_init = false;
-
-   int main() {
-     running_as_init = (getppid() == 0); // Parent is kernel
-     // OR: detect if we were started by init.c vs rc
-   }
-   ```
-
-4. **Shutdown Commands** - initctl should handle both modes
-   ```c
-   // initctl.c - systemctl poweroff/reboot/halt
-   if (running_as_init_mode()) {
-     // Send signal to init/supervisor
-     send_shutdown_signal(POWEROFF);
-   } else {
-     // Standalone mode - exec native command
-     execl("/sbin/shutdown", "shutdown", "-h", "now", NULL);
-     // OR on BSD: execl("/sbin/halt", "halt", NULL);
-   }
-   ```
-
-These changes should be made during Phase 2-3 to avoid refactoring later.
-
-### Phase 5: Polish
-1. Service script rewrites
-2. Documentation
-3. Performance optimization
-4. Security audit
 
 ## Key Design Decisions
 

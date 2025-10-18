@@ -1,10 +1,10 @@
-.TH SUPERVISOR-MASTER 8 "2025" "initd 0.1" "System Manager's Manual"
+.TH INITD-SUPERVISOR 8 "2025" "initd 0.1" "System Manager's Manual"
 .SH NAME
-supervisor-master \- privileged supervisor component for initd
+initd-supervisor \- privileged supervisor component for initd
 .SH SYNOPSIS
-.B supervisor-master
+.B initd-supervisor
 .SH DESCRIPTION
-.B supervisor-master
+.B initd-supervisor
 is the privileged root component of the initd supervisor system. It handles
 all operations that require root privileges, including process creation,
 privilege dropping, and cgroup management on Linux systems.
@@ -12,35 +12,35 @@ privilege dropping, and cgroup management on Linux systems.
 This daemon implements privilege separation by design - it performs only
 the minimal operations that require root, delegating all service management
 logic to the unprivileged
-.BR supervisor-slave (8)
+.BR initd-supervisor-worker (8)
 process.
 .PP
-.B supervisor-master
+.B initd-supervisor
 is typically started by
 .BR init (8)
 at system boot, but can also run standalone under other init systems.
 .SH RESPONSIBILITIES
 .TP
 .B Process Management
-Forks and executes service processes on behalf of supervisor-slave.
+Forks and executes service processes on behalf of initd-supervisor-worker.
 Drops privileges to the specified User/Group before executing services.
 .TP
 .B IPC Communication
-Maintains a bidirectional IPC channel with supervisor-slave to receive
+Maintains a bidirectional IPC channel with initd-supervisor-worker to receive
 privilege requests and send responses.
 .TP
 .B Cgroup Management (Linux only)
 Creates and configures cgroups for service isolation and resource control.
 .TP
 .B Supervisor Lifecycle
-Forks the unprivileged supervisor-slave process at startup and monitors
-its health. Restarts supervisor-slave if it exits unexpectedly.
+Forks the unprivileged initd-supervisor-worker process at startup and monitors
+its health. Restarts initd-supervisor-worker if it exits unexpectedly.
 .SH OPERATION
-.B supervisor-master
+.B initd-supervisor
 follows this operational flow:
 .IP 1. 4
 Fork and exec
-.B supervisor-slave
+.B initd-supervisor-worker
 as an unprivileged user
 .IP 2.
 Establish IPC communication channel (socketpair)
@@ -48,19 +48,19 @@ Establish IPC communication channel (socketpair)
 Enter main loop:
 .RS
 .IP \(bu 2
-Receive privilege requests from supervisor-slave
+Receive privilege requests from initd-supervisor-worker
 .IP \(bu
 Perform privileged operations
 .IP \(bu
-Send responses back to supervisor-slave
+Send responses back to initd-supervisor-worker
 .IP \(bu
-Monitor supervisor-slave health
+Monitor initd-supervisor-worker health
 .RE
 .IP 4.
-On shutdown signal, coordinate graceful supervisor-slave termination
+On shutdown signal, coordinate graceful initd-supervisor-worker termination
 .SH IPC PROTOCOL
-.B supervisor-master
-accepts the following request types from supervisor-slave:
+.B initd-supervisor
+accepts the following request types from initd-supervisor-worker:
 .TP
 .B REQ_START_SERVICE
 Fork and execute a service process. Includes unit name, executable path,
@@ -70,37 +70,40 @@ arguments, UID/GID for privilege dropping, and environment variables.
 Send SIGTERM to a service process (or process group).
 .TP
 .B REQ_SHUTDOWN_COMPLETE
-Notification that supervisor-slave has completed shutdown sequence.
+Notification that initd-supervisor-worker has completed shutdown sequence.
 .PP
 Responses include success/error status, PID of started services, and
 error messages.
 .SH SIGNALS
 .TP
 .B SIGTERM
-Initiates graceful shutdown. Signals supervisor-slave to shutdown, waits
+Initiates graceful shutdown. Signals initd-supervisor-worker to shutdown, waits
 for completion, then exits.
 .TP
 .B SIGINT
 Same as SIGTERM.
 .TP
 .B SIGCHLD
-Monitors child processes. If supervisor-slave exits, supervisor-master
+Monitors child processes. If initd-supervisor-worker exits, initd-supervisor
 will restart it unless shutdown was requested. Also tracks service process
-exits and notifies supervisor-slave.
+exits and notifies initd-supervisor-worker.
 .SH FILES
 .TP
-.I /run/initd/supervisor-master.pid
+.I /usr/sbin/initd-supervisor
+Installed location of the privileged supervisor binary (compile-time configurable)
+.TP
+.I /run/initd/initd-supervisor.pid
 PID file (if enabled)
 .TP
 .I /run/initd/supervisor.sock
-Control socket managed by supervisor-slave
+Control socket managed by initd-supervisor-worker
 .SH SECURITY
-.B supervisor-master
+.B initd-supervisor
 implements defense-in-depth security:
 .IP \(bu 2
 Minimal code running as root (small attack surface)
 .IP \(bu
-All service management logic runs in unprivileged supervisor-slave
+All service management logic runs in unprivileged initd-supervisor-worker
 .IP \(bu
 Services are executed with dropped privileges (setuid/setgid)
 .IP \(bu
@@ -109,7 +112,7 @@ Request validation before performing privileged operations
 No direct network exposure or user input handling
 .SH SEE ALSO
 .BR init (8),
-.BR supervisor-slave (8),
+.BR initd-supervisor-worker (8),
 .BR initctl (1),
 .BR systemctl (1)
 .SH AUTHOR

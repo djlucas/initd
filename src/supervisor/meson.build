@@ -13,7 +13,7 @@ supervisor = executable(
   c_args: supervisor_c_args,
   dependencies: [common_dep, privileged_ops_dep],
   install: true,
-  install_dir: get_option('libexecdir') / 'initd',
+  install_dir: get_option('sbindir'),
 )
 
 # Build initd-supervisor-worker (unprivileged worker)

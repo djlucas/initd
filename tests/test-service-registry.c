@@ -322,8 +322,8 @@ void test_restart_rate_limiting(void) {
     /* Immediate restart should be blocked (MIN_RESTART_INTERVAL_SEC = 1) */
     assert(can_restart_service(unit_name) == 0);
 
-    /* Wait minimum interval */
-    sleep(MIN_RESTART_INTERVAL_SEC + 1);
+    /* Wait minimum interval plus buffer for time(NULL) granularity */
+    sleep(MIN_RESTART_INTERVAL_SEC + 2);
 
     /* Now should be allowed */
     assert(can_restart_service(unit_name) == 1);

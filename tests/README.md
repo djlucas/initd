@@ -45,6 +45,25 @@ meson test -C build -v
 meson test -C build --num-processes 4
 ```
 
+## Fuzzing (libFuzzer)
+
+The analysis harness builds several libFuzzer targets for parser and protocol
+surfaces. Clang with libFuzzer support is required.
+
+```bash
+# Build fuzzers (via analysis targets)
+ninja -C build analyze-fuzz        # builds and launches all fuzzers
+
+# Or run them individually
+meson compile -C build fuzz-calendar
+meson compile -C build fuzz-parser
+meson compile -C build fuzz-control
+meson compile -C build fuzz-ipc
+
+# Execute the unified script manually (optional RUNS override)
+analysis/fuzz/run-all-fuzzers.sh build 10000
+```
+
 ## Test Coverage
 
 ### test-calendar

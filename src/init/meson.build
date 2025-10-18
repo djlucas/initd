@@ -1,7 +1,7 @@
 init_sources = files('init.c')
 
 init_c_args = [
-  '-DSUPERVISOR_PATH="@0@"'.format(get_option('libexecdir') / 'initd' / 'supervisor-master'),
+  '-DSUPERVISOR_PATH="@0@"'.format(get_option('sbindir') / 'initd-supervisor'),
   '-DINITD_VERSION="@0@"'.format(meson.project_version()),
   '-DINITD_SHUTDOWN="@0@"'.format('poweroff'),
   '-DINITD_HALT="@0@"'.format('halt'),

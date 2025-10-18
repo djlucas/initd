@@ -35,11 +35,13 @@ run_target('analyze-sanitizers',
   command: [bash, meson.project_source_root() / 'analysis' / 'meson-sanitizers.sh', meson.project_source_root()]
 )
 
-# 5. fuzzing harness for calendar parser (requires clang + libFuzzer)
+# 5. fuzzing harnesses (requires clang + libFuzzer)
 fuzz_cc = meson.get_compiler('c')
 if fuzz_cc.get_id() == 'clang' and fuzz_cc.has_argument('-fsanitize=fuzzer-no-link') and fuzz_cc.has_link_argument('-fsanitize=fuzzer')
   fuzz_c_args = ['-fsanitize=fuzzer-no-link']
   fuzz_link_args = ['-fsanitize=fuzzer']
+
+  # Calendar parser fuzzer
   fuzz_calendar = executable(
     'fuzz-calendar',
     [
@@ -54,10 +56,51 @@ if fuzz_cc.get_id() == 'clang' and fuzz_cc.has_argument('-fsanitize=fuzzer-no-li
     link_args: fuzz_link_args
   )
 
+  # Unit file parser fuzzer
+  fuzz_parser = executable(
+    'fuzz-parser',
+    [
+      'fuzz/parser_fuzz.c',
+      '../src/common/parser.c',
+      '../src/common/scanner.c',
+    ],
+    include_directories: include_directories('../src'),
+    c_args: fuzz_c_args,
+    link_args: fuzz_link_args
+  )
+
+  # Control protocol fuzzer
+  fuzz_control = executable(
+    'fuzz-control',
+    [
+      'fuzz/control_fuzz.c',
+      '../src/common/control.c',
+    ],
+    include_directories: include_directories('../src'),
+    c_args: fuzz_c_args,
+    link_args: fuzz_link_args
+  )
+
+  # IPC protocol fuzzer
+  fuzz_ipc = executable(
+    'fuzz-ipc',
+    [
+      'fuzz/ipc_fuzz.c',
+      '../src/common/ipc.c',
+    ],
+    include_directories: include_directories('../src'),
+    c_args: fuzz_c_args,
+    link_args: fuzz_link_args
+  )
+
+  # Unified fuzzing target
   run_target(
-    'analyze-fuzz-calendar',
-    command: [fuzz_calendar, '-runs=5000'],
-    depends: fuzz_calendar
+    'analyze-fuzz',
+    command: [
+      bash,
+      meson.project_source_root() / 'analysis' / 'fuzz' / 'run-all-fuzzers.sh'
+    ],
+    depends: [fuzz_calendar, fuzz_parser, fuzz_control, fuzz_ipc]
   )
 endif
 

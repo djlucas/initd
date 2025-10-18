@@ -2,7 +2,7 @@
  *
  * Minimal init system responsibilities:
  * - Reap zombie processes
- * - Start and monitor initd-supervisor
+ * - Start and monitor supervisor-master
  * - Handle shutdown signals
  * - Coordinate system shutdown
  *
@@ -24,7 +24,7 @@
 #include <stdbool.h>
 
 #ifndef SUPERVISOR_PATH
-#define SUPERVISOR_PATH "/usr/libexec/initd/initd-supervisor"
+#define SUPERVISOR_PATH "/usr/libexec/initd/supervisor-master"
 #endif
 
 #define DEFAULT_TIMEOUT 30
@@ -89,7 +89,7 @@ static void parse_args(int argc, char *argv[]) {
     }
 }
 
-/* Start initd-supervisor */
+/* Start supervisor-master */
 static pid_t start_supervisor(void) {
     pid_t pid = fork();
 
@@ -125,13 +125,13 @@ static void reap_zombies(void) {
 
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         if (pid == supervisor_pid) {
-            fprintf(stderr, "init: initd-supervisor exited (status %d)\n",
+            fprintf(stderr, "init: supervisor-master exited (status %d)\n",
                     WIFEXITED(status) ? WEXITSTATUS(status) : -1);
             supervisor_pid = 0;
 
             /* If shutdown not requested, restart supervisor */
             if (!shutdown_requested) {
-                fprintf(stderr, "init: restarting initd-supervisor\n");
+                fprintf(stderr, "init: restarting supervisor-master\n");
                 supervisor_pid = start_supervisor();
             }
         }
@@ -140,7 +140,7 @@ static void reap_zombies(void) {
 
 /* Kill all remaining processes (safety net for orphaned services)
  *
- * SECURITY: This function handles the case where initd-supervisor is SIGKILL'd
+ * SECURITY: This function handles the case where supervisor-master is SIGKILL'd
  * during shutdown, potentially leaving orphaned service processes running.
  *
  * Current approach (Phase 2 - portable):
@@ -160,7 +160,7 @@ static void reap_zombies(void) {
  * - See: cgroup v2 with cgroup.kill interface
  *
  * Note: Services already use process groups (setsid), but we can't track
- * their PGIDs after initd-supervisor dies. Cgroups solve this via filesystem
+ * their PGIDs after supervisor-master dies. Cgroups solve this via filesystem
  * persistence of the cgroup hierarchy.
  */
 static void kill_remaining_processes(void) {
@@ -236,7 +236,7 @@ static void do_shutdown(void) {
             int status;
             pid_t pid = waitpid(supervisor_to_shutdown, &status, WNOHANG);
             if (pid == supervisor_to_shutdown) {
-                fprintf(stderr, "INIT: initd-supervisor exited gracefully (status %d)\n",
+                fprintf(stderr, "INIT: supervisor-master exited gracefully (status %d)\n",
                         WIFEXITED(status) ? WEXITSTATUS(status) : -1);
                 supervisor_pid = 0;
                 break;

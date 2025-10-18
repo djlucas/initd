@@ -27,7 +27,7 @@ systemd files or code are reused here.
 
 ## Key Components
 
-1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts initd-supervisor by default (optionaly any binary via the kernel command line `supervisor=PATH` parameter).
+1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts initd-supervisor by default (optionally any binary via the kernel command line `supervisor=PATH` parameter).
 2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
 3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
 4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
@@ -46,28 +46,28 @@ systemd files or code are reused here.
 
 ```
 init (PID 1, optional)
-  └─ Launches initd-supervisor master and reaps zombies when running as the system init
+  └─ Launches initd-supervisor and reaps zombies when running as the system init
 
-initd-supervisor (root master)
+initd-supervisor (supervisor master)
   └─ initd-supervisor-worker (unprivileged logic)
       ├─ Parses unit files
       ├─ Resolves dependencies
       ├─ Monitors services
       └─ Control socket: /run/initd/supervisor.sock
 
-initd-timer (independent master)
+initd-timer (timer master)
   └─ initd-timer-worker (unprivileged worker)
       ├─ Manages .timer units
       ├─ Cron replacement functionality
       └─ Control socket: /run/initd/timer.sock
 
-initd-socket (independent master)
+initd-socket (socket master)
   └─ initd-socket-worker (unprivileged worker)
       ├─ Manages .socket units
       ├─ On-demand service activation
       └─ Control socket: /run/initd/socket-activator.sock
 
-initctl (user/administrator contol untility)
+initctl (user/administrator control utility)
   └─ Routes commands to appropriate daemon based on unit type
 ```
 
@@ -142,10 +142,10 @@ All of the reference units were adapted from the [Linux From Scratch bootscripts
   - Use existing syslog (syslogd, rsyslog, syslog-ng)
   - Plain text logs, standard tools
   - Each utility is a standalone daemon and works independent of the others:
-    - init - reaps processes, handles shutdown singals, and manages your service manager or runlevel control
+    - init - reaps processes, handles shutdown signals, and manages your service manager or runlevel control
     - supervisor - provides use of .service units to start managed services
-    - timer - provides use of .timer files for cron repacement (or supplemnt)
-    - socket - provies use of .socket files for super-daemon features
+    - timer - provides use of .timer files for cron replacement (or supplement)
+    - socket - provides use of .socket files for super-daemon features
 
 - **Reuses Existing Infrastructure**
   - Doesn't replace working solutions
@@ -180,7 +180,7 @@ Unit types **not supported** (use traditional alternatives):
 - ❌ `.device`    - Use eudev or udev directly
 - ❌ `.path`      - Path-based activation not implemented
 - ❌ `.scope`     - Runtime-created units (systemd internal)
-- ❌ `.slice`     - cgroup hierarchy management - elogoind has user slices
+- ❌ `.slice`     - cgroup hierarchy management - elogind has user slices
 
 ### Supported Service Directives
 
@@ -228,7 +228,7 @@ sudo ninja -C build install
 ### Init Flexibility
 
 The init binary is service-manager agnostic. It launches initd-supervisor by
-default, but you can use any service manager or runlevl control utility of your
+default, but you can use any service manager or runlevel control utility of your
 choice via the kernel command line:
 
 ```bash
@@ -282,11 +282,11 @@ sudo ninja -C build install-reference
 - Enabled symlinks for automatic boot
 
 You can use the reference implementation as-is, modify it, or ignore it
-completely and build your own. If you use the rerference implementation, it will
+completely and build your own. If you use the reference implementation, it will
 enable critical services for boot - while network scripts are installed, they
 are not activated by default.
 
-Also included are optional services (taken alomst entirely from BLFS):
+Also included are optional services (taken almost entirely from BLFS):
 
 **Optional services:**
 ```bash
@@ -327,7 +327,7 @@ initctl status nginx
 # View logs with grep (traditional)
 grep nginx /var/log/messages | tail -20
 
-# View logs with the journalctl conveninence script
+# View logs with the journalctl convenience script
 journalctl -u nginx -f
 
 # System shutdown commands
@@ -363,7 +363,7 @@ These tests require root privileges because they:
 - Create symlinks for unit dependencies
 - Validate real-world privilege separation scenarios
 
-When run without root, the priveleged test properly skips with exit code 77 (meson skip).
+When run without root, the privileged test properly skips with exit code 77 (meson skip).
 
 **Static & Dynamic Analysis:**
 - **cppcheck** - Static code analysis
@@ -371,7 +371,7 @@ When run without root, the priveleged test properly skips with exit code 77 (mes
 - **Clang scan-build** - Static analyzer with deeper checks
 - **AddressSanitizer/UndefinedBehaviorSanitizer** - Runtime memory error detection
 - **Valgrind** - Memory leak and error detection
-- **Calendar fuzz harness** - libFuzzer run (requires clang) for calendar parser
+- **Fuzzing suite** - libFuzzer run (requires clang) for calendar, parser, control, and IPC protocols
 - **shellcheck** - Shell script static analysis
 
 Run complete analysis suite:
@@ -386,7 +386,7 @@ ninja -C build analyze-flawfinder
 ninja -C build analyze-scan
 ninja -C build analyze-sanitizers
 ninja -C build analyze-valgrind
-ninja -C build analyze-fuzz-calendar
+ninja -C build analyze-fuzz
 ninja -C build analyze-shellcheck
 ```
 

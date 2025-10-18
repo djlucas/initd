@@ -9,8 +9,8 @@ install_man('man/man5/initd.unit.5')
 
 # Section 8 - System administration
 install_man('man/man8/init.8')
-install_man('man/man8/supervisor-master.8')
-install_man('man/man8/supervisor-slave.8')
+install_man('man/man8/initd-supervisor.8')
+install_man('man/man8/initd-supervisor-worker.8')
 install_man('man/man8/timer-daemon.8')
 install_man('man/man8/socket-activator.8')
 install_man('man/man8/ifup.8')
