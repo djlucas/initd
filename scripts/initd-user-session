@@ -1,0 +1,127 @@
+#!/bin/sh
+# initd-user-session - manage per-user initd daemons
+#
+# Usage:
+#   initd-user-session start   # launch supervisor/timer/socket in user mode
+#   initd-user-session stop    # terminate per-user daemons
+#   initd-user-session status  # show running state
+#
+# The script prepares a runtime directory under $XDG_RUNTIME_DIR/initd or
+# /run/user/<uid>/initd, exports INITD_RUNTIME_DIR, and launches the daemons
+# with --user-mode so they bind sockets inside that directory.
+
+set -eu
+
+cmd="${1:-}"
+
+if [ -z "$cmd" ]; then
+    echo "Usage: $0 {start|stop|status}" >&2
+    exit 1
+fi
+
+uid="$(id -u)"
+runtime_dir="${INITD_RUNTIME_DIR:-}"
+if [ -z "$runtime_dir" ]; then
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        runtime_dir="${XDG_RUNTIME_DIR%/}/initd"
+    else
+        runtime_dir="/run/user/${uid}/initd"
+    fi
+fi
+
+export INITD_RUNTIME_DIR="${runtime_dir}"
+mkdir -p "${INITD_RUNTIME_DIR}"
+chmod 700 "${INITD_RUNTIME_DIR}" 2>/dev/null || true
+
+pid_file() {
+    echo "${INITD_RUNTIME_DIR}/$1.pid"
+}
+
+start_daemon() {
+    daemon="$1"
+    shift
+    pidfile="$(pid_file "${daemon}")"
+    if [ -f "${pidfile}" ]; then
+        pid="$(cat "${pidfile}")"
+        if kill -0 "${pid}" 2>/dev/null; then
+            echo "${daemon} already running (pid ${pid})"
+            return 0
+        fi
+        rm -f "${pidfile}"
+    fi
+
+    nohup "${daemon}" --user-mode --runtime-dir "${INITD_RUNTIME_DIR}" >/dev/null 2>&1 &
+    daemon_pid=$!
+    # Give the daemon a moment to create sockets before we continue.
+    sleep 0.2
+    if kill -0 "${daemon_pid}" 2>/dev/null; then
+        echo "${daemon} started (pid ${daemon_pid})"
+        echo "${daemon_pid}" > "${pidfile}"
+    else
+        echo "Failed to start ${daemon}" >&2
+        return 1
+    fi
+}
+
+stop_daemon() {
+    name="$1"
+    pidfile="$(pid_file "${name}")"
+    if [ ! -f "${pidfile}" ]; then
+        return 0
+    fi
+
+    pid="$(cat "${pidfile}")"
+    if kill -0 "${pid}" 2>/dev/null; then
+        kill "${pid}" 2>/dev/null || true
+        # Wait briefly for graceful shutdown, then force if needed.
+        for _ in 1 2 3; do
+            if kill -0 "${pid}" 2>/dev/null; then
+                sleep 0.2
+            else
+                break
+            fi
+        done
+        if kill -0 "${pid}" 2>/dev/null; then
+            kill -9 "${pid}" 2>/dev/null || true
+        fi
+        echo "${name} stopped"
+    fi
+    rm -f "${pidfile}"
+}
+
+status_daemon() {
+    name="$1"
+    pidfile="$(pid_file "${name}")"
+    if [ -f "${pidfile}" ]; then
+        pid="$(cat "${pidfile}")"
+        if kill -0 "${pid}" 2>/dev/null; then
+            echo "${name}: running (pid ${pid})"
+            return
+        fi
+    fi
+    echo "${name}: not running"
+}
+
+case "${cmd}" in
+    start)
+        start_daemon initd-supervisor
+        start_daemon initd-timer
+        start_daemon initd-socket
+        ;;
+    stop)
+        stop_daemon initd-socket
+        stop_daemon initd-timer
+        stop_daemon initd-supervisor
+        ;;
+    status)
+        status_daemon initd-supervisor
+        status_daemon initd-timer
+        status_daemon initd-socket
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

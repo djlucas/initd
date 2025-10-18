@@ -8,15 +8,26 @@
 #define CONTROL_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <sys/types.h>
 
-/* Control socket paths */
-#define CONTROL_SOCKET_PATH "/run/initd/control.sock"
-#define CONTROL_STATUS_SOCKET_PATH "/run/initd/control.status.sock"
-#define TIMER_SOCKET_PATH "/run/initd/timer.sock"
-#define TIMER_STATUS_SOCKET_PATH "/run/initd/timer.status.sock"
-#define SOCKET_ACTIVATOR_SOCKET_PATH "/run/initd/socket-activator.sock"
-#define SOCKET_ACTIVATOR_STATUS_SOCKET_PATH "/run/initd/socket-activator.status.sock"
+#define INITD_RUNTIME_DIR_ENV "INITD_RUNTIME_DIR"
+#define INITD_RUNTIME_DEFAULT "/run/initd"
+
+#define CONTROL_SOCKET_NAME "control.sock"
+#define CONTROL_STATUS_SOCKET_NAME "control.status.sock"
+#define TIMER_SOCKET_NAME "timer.sock"
+#define TIMER_STATUS_SOCKET_NAME "timer.status.sock"
+#define SOCKET_ACTIVATOR_SOCKET_NAME "socket-activator.sock"
+#define SOCKET_ACTIVATOR_STATUS_SOCKET_NAME "socket-activator.status.sock"
+
+/* Control socket default paths (system scope) */
+#define CONTROL_SOCKET_PATH INITD_RUNTIME_DEFAULT "/" CONTROL_SOCKET_NAME
+#define CONTROL_STATUS_SOCKET_PATH INITD_RUNTIME_DEFAULT "/" CONTROL_STATUS_SOCKET_NAME
+#define TIMER_SOCKET_PATH INITD_RUNTIME_DEFAULT "/" TIMER_SOCKET_NAME
+#define TIMER_STATUS_SOCKET_PATH INITD_RUNTIME_DEFAULT "/" TIMER_STATUS_SOCKET_NAME
+#define SOCKET_ACTIVATOR_SOCKET_PATH INITD_RUNTIME_DEFAULT "/" SOCKET_ACTIVATOR_SOCKET_NAME
+#define SOCKET_ACTIVATOR_STATUS_SOCKET_PATH INITD_RUNTIME_DEFAULT "/" SOCKET_ACTIVATOR_STATUS_SOCKET_NAME
 
 /* Command codes */
 enum control_command {
@@ -133,6 +144,14 @@ int send_socket_list(int fd, const struct socket_list_entry *entries, size_t cou
 int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count);
 
 /* Helper functions */
+const char *initd_runtime_dir(void);
+int initd_set_runtime_dir(const char *path);
+int initd_ensure_runtime_dir(void);
+int initd_default_user_runtime_dir(char *buf, size_t len);
+const char *control_socket_path(bool status);
+const char *timer_socket_path(bool status);
+const char *socket_activator_socket_path(bool status);
+
 int connect_to_supervisor(void);
 int connect_to_supervisor_status(void);
 int connect_to_timer_daemon(void);

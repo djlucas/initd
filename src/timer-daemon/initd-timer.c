@@ -22,9 +22,12 @@
 #include <string.h>
 #include <pwd.h>
 #include <grp.h>
+#include <stdbool.h>
+#include <limits.h>
 #include "../common/timer-ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
+#include "../common/control.h"
 
 #ifndef WORKER_PATH
 #define WORKER_PATH "/usr/libexecdir/initd/initd-timer-worker"
@@ -36,6 +39,7 @@
 
 static volatile sig_atomic_t shutdown_requested = 0;
 static pid_t worker_pid = 0;
+static bool user_mode = false;
 
 static int fallback_to_nobody_allowed(void) {
     const char *env = getenv("INITD_ALLOW_USER_FALLBACK");
@@ -58,6 +62,12 @@ static void warn_user_fallback(const char *component, const char *missing_user) 
 }
 
 static int lookup_timer_user(uid_t *uid, gid_t *gid) {
+    if (user_mode) {
+        *uid = getuid();
+        *gid = getgid();
+        return 0;
+    }
+
     struct passwd *pw = getpwnam(TIMER_USER);
     if (!pw) {
         if (!fallback_to_nobody_allowed()) {
@@ -232,7 +242,7 @@ static int spawn_worker(void) {
         snprintf(fd_str, sizeof(fd_str), "%d", sockets[1]);
 
         /* Drop privileges before exec */
-        if (worker_gid != 0) {
+        if (!user_mode && worker_gid != 0) {
             if (setgroups(1, &worker_gid) < 0) {
                 perror("initd-timer: setgroups");
                 _exit(1);
@@ -244,7 +254,7 @@ static int spawn_worker(void) {
             }
         }
 
-        if (worker_uid != 0) {
+        if (!user_mode && worker_uid != 0) {
             if (setuid(worker_uid) < 0) {
                 perror("initd-timer: setuid");
                 _exit(1);
@@ -252,7 +262,7 @@ static int spawn_worker(void) {
         }
 
         /* Verify we dropped privileges */
-        if (getuid() == 0 || geteuid() == 0) {
+        if (!user_mode && (getuid() == 0 || geteuid() == 0)) {
             fprintf(stderr, "initd-timer: failed to drop privileges!\n");
             _exit(1);
         }
@@ -274,11 +284,59 @@ static int spawn_worker(void) {
     return sockets[0]; /* Return parent end for IPC */
 }
 
-int main(void) {
-    fprintf(stderr, "initd-timer: starting (privileged daemon)\n");
+int main(int argc, char *argv[]) {
+    const char *runtime_dir_arg = NULL;
+    for (int i = 1; i < argc; i++) {
+        const char *arg = argv[i];
+        if (strcmp(arg, "--user-mode") == 0) {
+            user_mode = true;
+        } else if (strncmp(arg, "--runtime-dir=", 14) == 0) {
+            runtime_dir_arg = arg + 14;
+        } else if (strcmp(arg, "--runtime-dir") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "initd-timer: --runtime-dir requires a value\n");
+                return 1;
+            }
+            runtime_dir_arg = argv[++i];
+        } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+            fprintf(stderr, "Usage: %s [--user-mode] [--runtime-dir PATH]\n", argv[0]);
+            return 0;
+        } else {
+            fprintf(stderr, "initd-timer: unknown option '%s'\n", arg);
+            fprintf(stderr, "Usage: %s [--user-mode] [--runtime-dir PATH]\n", argv[0]);
+            return 1;
+        }
+    }
 
-    /* Must run as root */
-    if (getuid() != 0) {
+    if (runtime_dir_arg) {
+        if (setenv(INITD_RUNTIME_DIR_ENV, runtime_dir_arg, 1) < 0) {
+            perror("setenv");
+            return 1;
+        }
+    } else if (user_mode) {
+        const char *current = getenv(INITD_RUNTIME_DIR_ENV);
+        if (!current || current[0] == '\0') {
+            char user_dir[PATH_MAX];
+            if (initd_default_user_runtime_dir(user_dir, sizeof(user_dir)) < 0) {
+                perror("initd_default_user_runtime_dir");
+                return 1;
+            }
+            if (setenv(INITD_RUNTIME_DIR_ENV, user_dir, 1) < 0) {
+                perror("setenv");
+                return 1;
+            }
+        }
+    }
+
+    if (initd_set_runtime_dir(NULL) < 0) {
+        perror("initd_set_runtime_dir");
+        return 1;
+    }
+
+    fprintf(stderr, "initd-timer: starting%s\n", user_mode ? " (user mode)" : "");
+
+    /* Must run as root unless user mode */
+    if (!user_mode && getuid() != 0) {
         fprintf(stderr, "initd-timer: must run as root\n");
         return 1;
     }

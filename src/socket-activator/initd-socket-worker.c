@@ -177,24 +177,29 @@ static int setup_signals(void) {
 
 /* Create control socket */
 static int create_control_socket(void) {
-    int fd;
-    struct sockaddr_un addr;
+    const char *path = socket_activator_socket_path(false);
+    if (!path) {
+        return -1;
+    }
 
-    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
+        perror("socket-activator: mkdir runtime dir");
+        return -1;
+    }
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("socket-activator: socket");
         return -1;
     }
 
     /* Remove old socket if exists */
-    unlink(SOCKET_ACTIVATOR_SOCKET_PATH);
+    unlink(path);
 
-    /* Ensure directory exists */
-    mkdir("/run/initd", 0755);
-
+    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_ACTIVATOR_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("socket-activator: bind");
@@ -212,26 +217,33 @@ static int create_control_socket(void) {
     fchmod(fd, 0666);
 
     fprintf(stderr, "socket-activator: control socket created at %s\n",
-            SOCKET_ACTIVATOR_SOCKET_PATH);
+            path);
     return fd;
 }
 
 static int create_status_socket(void) {
-    int fd;
-    struct sockaddr_un addr;
+    const char *path = socket_activator_socket_path(true);
+    if (!path) {
+        return -1;
+    }
 
-    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
+        perror("socket-activator: mkdir runtime dir");
+        return -1;
+    }
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("socket-activator: status socket");
         return -1;
     }
 
-    mkdir("/run/initd", 0755);
-    unlink(SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
+    unlink(path);
 
+    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_ACTIVATOR_STATUS_SOCKET_PATH,
+    strncpy(addr.sun_path, path,
             sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
@@ -253,7 +265,7 @@ static int create_status_socket(void) {
     }
 
     fprintf(stderr, "socket-activator: status socket created at %s\n",
-            SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
+            path);
     return fd;
 }
 
@@ -1153,7 +1165,10 @@ int main(int argc, char *argv[]) {
     status_socket = create_status_socket();
     if (status_socket < 0) {
         close(control_socket);
-        unlink(SOCKET_ACTIVATOR_SOCKET_PATH);
+        const char *ctrl_path = socket_activator_socket_path(false);
+        if (ctrl_path) {
+            unlink(ctrl_path);
+        }
         return 1;
     }
 
@@ -1162,8 +1177,14 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "socket-activator: failed to load sockets\n");
         close(control_socket);
         close(status_socket);
-        unlink(SOCKET_ACTIVATOR_SOCKET_PATH);
-        unlink(SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
+        const char *ctrl_path = socket_activator_socket_path(false);
+        if (ctrl_path) {
+            unlink(ctrl_path);
+        }
+        const char *status_path = socket_activator_socket_path(true);
+        if (status_path) {
+            unlink(status_path);
+        }
         return 1;
     }
 
@@ -1174,10 +1195,16 @@ int main(int argc, char *argv[]) {
     /* Cleanup */
     fprintf(stderr, "socket-activator: shutting down\n");
     close(control_socket);
-    unlink(SOCKET_ACTIVATOR_SOCKET_PATH);
+    const char *ctrl_path = socket_activator_socket_path(false);
+    if (ctrl_path) {
+        unlink(ctrl_path);
+    }
     if (status_socket >= 0) {
         close(status_socket);
-        unlink(SOCKET_ACTIVATOR_STATUS_SOCKET_PATH);
+        const char *status_path = socket_activator_socket_path(true);
+        if (status_path) {
+            unlink(status_path);
+        }
     }
 
     return 0;

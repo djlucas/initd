@@ -615,24 +615,27 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 
 /* Create and bind control socket */
 static int create_control_socket(void) {
+    const char *path = control_socket_path(false);
+    if (!path) {
+        return -1;
+    }
+
+    if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
+        perror("slave: mkdir runtime dir");
+        return -1;
+    }
+
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("slave: socket");
         return -1;
     }
 
-    if (mkdir("/run/initd", 0755) < 0 && errno != EEXIST) {
-        perror("slave: mkdir /run/initd");
-        close(fd);
-        return -1;
-    }
-
-    /* Remove old socket if exists */
-    unlink(CONTROL_SOCKET_PATH);
+    unlink(path);
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, CONTROL_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("slave: bind");
@@ -652,28 +655,32 @@ static int create_control_socket(void) {
         return -1;
     }
 
-    fprintf(stderr, "slave: control socket listening on %s\n", CONTROL_SOCKET_PATH);
+    fprintf(stderr, "slave: control socket listening on %s\n", path);
     return fd;
 }
 
 static int create_status_socket(void) {
+    const char *path = control_socket_path(true);
+    if (!path) {
+        return -1;
+    }
+
+    if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
+        perror("slave: mkdir runtime dir");
+        return -1;
+    }
+
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("slave: status socket");
         return -1;
     }
 
-    if (mkdir("/run/initd", 0755) < 0 && errno != EEXIST) {
-        perror("slave: mkdir /run/initd");
-        close(fd);
-        return -1;
-    }
-
-    unlink(CONTROL_STATUS_SOCKET_PATH);
+    unlink(path);
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, CONTROL_STATUS_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("slave: bind status");
@@ -693,7 +700,7 @@ static int create_status_socket(void) {
         return -1;
     }
 
-    fprintf(stderr, "slave: status socket listening on %s\n", CONTROL_STATUS_SOCKET_PATH);
+    fprintf(stderr, "slave: status socket listening on %s\n", path);
     return fd;
 }
 
@@ -1458,7 +1465,10 @@ int main(int argc, char *argv[]) {
     if (status_socket < 0) {
         fprintf(stderr, "supervisor-slave: failed to create status socket\n");
         close(control_socket);
-        unlink(CONTROL_SOCKET_PATH);
+        const char *ctrl_path = control_socket_path(false);
+        if (ctrl_path) {
+            unlink(ctrl_path);
+        }
         return 1;
     }
 
@@ -1467,10 +1477,16 @@ int main(int argc, char *argv[]) {
     if (scan_unit_directories(&units, &unit_count) < 0) {
         fprintf(stderr, "supervisor-slave: failed to scan unit directories\n");
         close(control_socket);
-        unlink(CONTROL_SOCKET_PATH);
+        const char *ctrl_path = control_socket_path(false);
+        if (ctrl_path) {
+            unlink(ctrl_path);
+        }
         if (status_socket >= 0) {
             close(status_socket);
-            unlink(CONTROL_STATUS_SOCKET_PATH);
+            const char *status_path = control_socket_path(true);
+            if (status_path) {
+                unlink(status_path);
+            }
         }
         return 1;
     }
@@ -1498,12 +1514,18 @@ int main(int argc, char *argv[]) {
     free_units(units, unit_count);
 
     if (control_socket >= 0) {
+        const char *path = control_socket_path(false);
         close(control_socket);
-        unlink(CONTROL_SOCKET_PATH);
+        if (path) {
+            unlink(path);
+        }
     }
     if (status_socket >= 0) {
+        const char *path = control_socket_path(true);
         close(status_socket);
-        unlink(CONTROL_STATUS_SOCKET_PATH);
+        if (path) {
+            unlink(path);
+        }
     }
 
     log_msg(LOG_INFO, NULL, "exiting");

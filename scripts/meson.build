@@ -11,6 +11,13 @@ install_data(
   install_tag: 'reference',
 )
 
+install_data(
+  'initd-user-session',
+  install_dir: get_option('libexecdir') / 'initd',
+  install_mode: 'rwxr-xr-x',
+  install_tag: 'reference',
+)
+
 # Install service scripts
 install_data(
   'service-scripts/checkfs',

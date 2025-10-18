@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <limits.h>
+#include <sys/stat.h>
 #include "../common/control.h"
 
 /* Print usage */
@@ -56,6 +58,58 @@ static void print_usage(const char *progname) {
     fprintf(stderr, "  list-timers         List all timers\n");
     fprintf(stderr, "  list-sockets        List all sockets\n");
     fprintf(stderr, "  daemon-reload       Reload unit files\n");
+}
+
+enum runtime_scope {
+    SCOPE_AUTO = 0,
+    SCOPE_SYSTEM,
+    SCOPE_USER
+};
+
+static int configure_runtime_dir(enum runtime_scope scope) {
+    const char *target = INITD_RUNTIME_DEFAULT;
+    char user_dir[PATH_MAX];
+
+    if (scope != SCOPE_SYSTEM) {
+        if (initd_default_user_runtime_dir(user_dir, sizeof(user_dir)) < 0) {
+            if (scope == SCOPE_USER) {
+                fprintf(stderr, "Error: unable to determine per-user runtime directory\n");
+                return -1;
+            }
+        } else {
+            struct stat st;
+            if (scope == SCOPE_USER) {
+                if (stat(user_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+                    fprintf(stderr,
+                            "Error: per-user runtime directory %s not available.\n",
+                            user_dir);
+                    return -1;
+                }
+                target = user_dir;
+            } else { /* AUTO */
+                char socket_path[PATH_MAX];
+                int written = snprintf(socket_path, sizeof(socket_path),
+                                       "%s/%s", user_dir,
+                                       CONTROL_STATUS_SOCKET_NAME);
+                if (written >= 0 && (size_t)written < sizeof(socket_path) &&
+                    access(socket_path, F_OK) == 0) {
+                    target = user_dir;
+                }
+            }
+        }
+    }
+
+    if (setenv(INITD_RUNTIME_DIR_ENV, target, 1) < 0) {
+        perror("setenv");
+        return -1;
+    }
+
+    if (initd_set_runtime_dir(target) < 0) {
+        perror("initd_set_runtime_dir");
+        return -1;
+    }
+
+    return 0;
 }
 
 /* Parse command string to enum */
@@ -163,12 +217,34 @@ int main(int argc, char *argv[]) {
         progname = base + 1;
     }
 
-    if (argc < 2) {
+    enum runtime_scope scope = SCOPE_AUTO;
+    int cmd_index = 1;
+    while (cmd_index < argc) {
+        const char *arg = argv[cmd_index];
+        if (strcmp(arg, "--user") == 0) {
+            scope = SCOPE_USER;
+            cmd_index++;
+        } else if (strcmp(arg, "--system") == 0) {
+            scope = SCOPE_SYSTEM;
+            cmd_index++;
+        } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+            print_usage(progname);
+            return 0;
+        } else {
+            break;
+        }
+    }
+
+    if (cmd_index >= argc) {
         print_usage(progname);
         return 1;
     }
 
-    const char *cmd_str = argv[1];
+    if (configure_runtime_dir(scope) < 0) {
+        return 1;
+    }
+
+    const char *cmd_str = argv[cmd_index];
     enum control_command cmd;
 
     /* Parse command */
@@ -179,13 +255,15 @@ int main(int argc, char *argv[]) {
     }
 
     bool read_only_cmd = command_is_read_only(cmd);
+    int cmd_argc = argc - cmd_index;
+    int args_offset = cmd_index + 1;
 
     /* Handle list-units command */
     if (cmd == CMD_LIST_UNITS) {
         uint16_t flags = 0;
 
         /* Check for --all flag */
-        if (argc >= 3 && strcmp(argv[2], "--all") == 0) {
+        if (cmd_argc >= 2 && strcmp(argv[args_offset], "--all") == 0) {
             flags |= REQ_FLAG_ALL;
         }
 
@@ -569,13 +647,13 @@ int main(int argc, char *argv[]) {
     }
 
     /* Commands that require a unit name */
-    if (argc < 3) {
+    if (cmd_argc < 2) {
         fprintf(stderr, "Error: Missing unit name\n");
         print_usage(progname);
         return 1;
     }
 
-    const char *unit_name_arg = argv[2];
+    const char *unit_name_arg = argv[args_offset];
     char unit_name[256];
     normalize_unit_name(unit_name, unit_name_arg, sizeof(unit_name));
 

@@ -10,9 +10,191 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 #include "control.h"
+
+static char runtime_dir_buf[PATH_MAX];
+static bool runtime_dir_initialized = false;
+
+static char control_path_buf[PATH_MAX];
+static bool control_path_initialized = false;
+static char control_status_path_buf[PATH_MAX];
+static bool control_status_path_initialized = false;
+
+static char timer_path_buf[PATH_MAX];
+static bool timer_path_initialized = false;
+static char timer_status_path_buf[PATH_MAX];
+static bool timer_status_path_initialized = false;
+
+static char socket_path_buf[PATH_MAX];
+static bool socket_path_initialized = false;
+static char socket_status_path_buf[PATH_MAX];
+static bool socket_status_path_initialized = false;
+
+static void invalidate_path_caches(void) {
+    control_path_initialized = false;
+    control_status_path_initialized = false;
+    timer_path_initialized = false;
+    timer_status_path_initialized = false;
+    socket_path_initialized = false;
+    socket_status_path_initialized = false;
+}
+
+static int set_runtime_dir_internal(const char *path) {
+    if (!path || path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    size_t len = strnlen(path, PATH_MAX);
+    if (len == PATH_MAX) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    memcpy(runtime_dir_buf, path, len);
+    runtime_dir_buf[len] = '\0';
+
+    /* Strip trailing slashes while keeping root intact */
+    while (len > 1 && runtime_dir_buf[len - 1] == '/') {
+        runtime_dir_buf[--len] = '\0';
+    }
+
+    runtime_dir_initialized = true;
+    invalidate_path_caches();
+    return 0;
+}
+
+const char *initd_runtime_dir(void) {
+    if (!runtime_dir_initialized) {
+        const char *env = getenv(INITD_RUNTIME_DIR_ENV);
+        if (!env || env[0] == '\0') {
+            env = INITD_RUNTIME_DEFAULT;
+        }
+        if (set_runtime_dir_internal(env) < 0) {
+            /* Fallback to default if env is invalid */
+            set_runtime_dir_internal(INITD_RUNTIME_DEFAULT);
+        }
+    }
+    return runtime_dir_buf;
+}
+
+int initd_set_runtime_dir(const char *path) {
+    const char *target = path;
+    if (!target || target[0] == '\0') {
+        const char *env = getenv(INITD_RUNTIME_DIR_ENV);
+        target = (env && env[0] != '\0') ? env : INITD_RUNTIME_DEFAULT;
+    }
+    return set_runtime_dir_internal(target);
+}
+
+int initd_ensure_runtime_dir(void) {
+    const char *dir = initd_runtime_dir();
+    if (!dir) {
+        return -1;
+    }
+
+    if (mkdir(dir, 0755) < 0) {
+        if (errno == EEXIST) {
+            return 0;
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int initd_default_user_runtime_dir(char *buf, size_t len) {
+    if (!buf || len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    const char *xdg = getenv("XDG_RUNTIME_DIR");
+    int written;
+    if (xdg && xdg[0] != '\0') {
+        written = snprintf(buf, len, "%s/initd", xdg);
+    } else {
+        unsigned int uid = (unsigned int)getuid();
+        written = snprintf(buf, len, "/run/user/%u/initd", uid);
+    }
+
+    if (written < 0 || (size_t)written >= len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    return 0;
+}
+
+static int build_socket_path(char *buffer, size_t buflen, const char *filename) {
+    if (!buffer || buflen == 0 || !filename) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    const char *dir = initd_runtime_dir();
+    if (!dir) {
+        return -1;
+    }
+
+    int written = snprintf(buffer, buflen, "%s/%s", dir, filename);
+    if (written < 0 || (size_t)written >= buflen) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    return 0;
+}
+
+const char *control_socket_path(bool status) {
+    char *buf = status ? control_status_path_buf : control_path_buf;
+    size_t len = status ? sizeof(control_status_path_buf) : sizeof(control_path_buf);
+    bool *initialized = status ? &control_status_path_initialized : &control_path_initialized;
+
+    if (!*initialized) {
+        if (build_socket_path(buf, len,
+                              status ? CONTROL_STATUS_SOCKET_NAME : CONTROL_SOCKET_NAME) < 0) {
+            return NULL;
+        }
+        *initialized = true;
+    }
+
+    return buf;
+}
+
+const char *timer_socket_path(bool status) {
+    char *buf = status ? timer_status_path_buf : timer_path_buf;
+    size_t len = status ? sizeof(timer_status_path_buf) : sizeof(timer_path_buf);
+    bool *initialized = status ? &timer_status_path_initialized : &timer_path_initialized;
+
+    if (!*initialized) {
+        if (build_socket_path(buf, len,
+                              status ? TIMER_STATUS_SOCKET_NAME : TIMER_SOCKET_NAME) < 0) {
+            return NULL;
+        }
+        *initialized = true;
+    }
+
+    return buf;
+}
+
+const char *socket_activator_socket_path(bool status) {
+    char *buf = status ? socket_status_path_buf : socket_path_buf;
+    size_t len = status ? sizeof(socket_status_path_buf) : sizeof(socket_path_buf);
+    bool *initialized = status ? &socket_status_path_initialized : &socket_path_initialized;
+
+    if (!*initialized) {
+        if (build_socket_path(buf, len,
+                              status ? SOCKET_ACTIVATOR_STATUS_SOCKET_NAME : SOCKET_ACTIVATOR_SOCKET_NAME) < 0) {
+            return NULL;
+        }
+        *initialized = true;
+    }
+
+    return buf;
+}
 
 /* Send a control request */
 int send_control_request(int fd, const struct control_request *req) {
@@ -66,7 +248,12 @@ int connect_to_supervisor(void) {
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, CONTROL_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    const char *path = control_socket_path(false);
+    if (!path) {
+        close(fd);
+        return -1;
+    }
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");
@@ -86,7 +273,12 @@ int connect_to_supervisor_status(void) {
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, CONTROL_STATUS_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    const char *path = control_socket_path(true);
+    if (!path) {
+        close(fd);
+        return -1;
+    }
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");
@@ -107,7 +299,12 @@ int connect_to_timer_daemon(void) {
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, TIMER_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    const char *path = timer_socket_path(false);
+    if (!path) {
+        close(fd);
+        return -1;
+    }
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");
@@ -127,7 +324,12 @@ int connect_to_timer_status(void) {
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, TIMER_STATUS_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    const char *path = timer_socket_path(true);
+    if (!path) {
+        close(fd);
+        return -1;
+    }
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");
@@ -148,7 +350,12 @@ int connect_to_socket_activator(void) {
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_ACTIVATOR_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    const char *path = socket_activator_socket_path(false);
+    if (!path) {
+        close(fd);
+        return -1;
+    }
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");
@@ -168,7 +375,12 @@ int connect_to_socket_status(void) {
 
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_ACTIVATOR_STATUS_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    const char *path = socket_activator_socket_path(true);
+    if (!path) {
+        close(fd);
+        return -1;
+    }
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");

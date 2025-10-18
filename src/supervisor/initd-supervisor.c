@@ -24,10 +24,12 @@
 #include <string.h>
 #include <pwd.h>
 #include <grp.h>
+#include <limits.h>
 #include "../common/ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
 #include "../common/path-security.h"
+#include "../common/control.h"
 #include "service-registry.h"
 #include "process-tracking.h"
 
@@ -42,6 +44,7 @@
 static volatile sig_atomic_t shutdown_requested = 0;
 static pid_t slave_pid = 0;
 static int ipc_socket = -1;
+static bool user_mode = false;
 
 static int build_exec_argv(const char *command, char ***argv_out) {
     if (!command || command[0] == '\0' || !argv_out) {
@@ -296,6 +299,12 @@ static int create_ipc_socket(int *master_fd, int *slave_fd) {
 
 /* Lookup unprivileged user for slave */
 static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
+    if (user_mode) {
+        *uid = getuid();
+        *gid = getgid();
+        return 0;
+    }
+
     struct passwd *pw = getpwnam(SUPERVISOR_USER);
     if (!pw) {
         if (!fallback_to_nobody_allowed()) {
@@ -348,7 +357,7 @@ static pid_t start_slave(int slave_fd) {
         snprintf(fd_str, sizeof(fd_str), "%d", slave_fd);
 
         /* Drop privileges before exec */
-        if (slave_gid != 0) {
+        if (!user_mode && slave_gid != 0) {
             /* Set supplementary groups */
             if (setgroups(1, &slave_gid) < 0) {
                 perror("supervisor-master: setgroups");
@@ -362,7 +371,7 @@ static pid_t start_slave(int slave_fd) {
             }
         }
 
-        if (slave_uid != 0) {
+        if (!user_mode && slave_uid != 0) {
             /* Set UID (must be last) */
             if (setuid(slave_uid) < 0) {
                 perror("supervisor-master: setuid");
@@ -371,7 +380,7 @@ static pid_t start_slave(int slave_fd) {
         }
 
         /* Verify we dropped privileges */
-        if (getuid() == 0 || geteuid() == 0) {
+        if (!user_mode && (getuid() == 0 || geteuid() == 0)) {
             fprintf(stderr, "supervisor-master: failed to drop privileges!\n");
             _exit(1);
         }
@@ -1133,10 +1142,55 @@ static int main_loop(void) {
 
 #ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
-    (void)argc;
-    (void)argv;
+    const char *runtime_dir_arg = NULL;
+    for (int i = 1; i < argc; i++) {
+        const char *arg = argv[i];
+        if (strcmp(arg, "--user-mode") == 0) {
+            user_mode = true;
+        } else if (strncmp(arg, "--runtime-dir=", 14) == 0) {
+            runtime_dir_arg = arg + 14;
+        } else if (strcmp(arg, "--runtime-dir") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "supervisor-master: --runtime-dir requires a value\n");
+                return 1;
+            }
+            runtime_dir_arg = argv[++i];
+        } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+            fprintf(stderr, "Usage: %s [--user-mode] [--runtime-dir PATH]\n", argv[0]);
+            return 0;
+        } else {
+            fprintf(stderr, "supervisor-master: unknown option '%s'\n", arg);
+            fprintf(stderr, "Usage: %s [--user-mode] [--runtime-dir PATH]\n", argv[0]);
+            return 1;
+        }
+    }
 
-    fprintf(stderr, "supervisor-master: starting\n");
+    if (runtime_dir_arg) {
+        if (setenv(INITD_RUNTIME_DIR_ENV, runtime_dir_arg, 1) < 0) {
+            perror("setenv");
+            return 1;
+        }
+    } else if (user_mode) {
+        const char *current = getenv(INITD_RUNTIME_DIR_ENV);
+        if (!current || current[0] == '\0') {
+            char user_dir[PATH_MAX];
+            if (initd_default_user_runtime_dir(user_dir, sizeof(user_dir)) < 0) {
+                perror("initd_default_user_runtime_dir");
+                return 1;
+            }
+            if (setenv(INITD_RUNTIME_DIR_ENV, user_dir, 1) < 0) {
+                perror("setenv");
+                return 1;
+            }
+        }
+    }
+
+    if (initd_set_runtime_dir(NULL) < 0) {
+        perror("initd_set_runtime_dir");
+        return 1;
+    }
+
+    fprintf(stderr, "supervisor-master: starting%s\n", user_mode ? " (user mode)" : "");
 
     /* Initialize service registry */
     service_registry_init();

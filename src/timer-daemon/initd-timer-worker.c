@@ -190,24 +190,29 @@ static int setup_signals(void) {
 
 /* Create control socket */
 static int create_control_socket(void) {
-    int fd;
-    struct sockaddr_un addr;
+    const char *path = timer_socket_path(false);
+    if (!path) {
+        return -1;
+    }
 
-    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
+        perror("timer-daemon: mkdir runtime dir");
+        return -1;
+    }
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("timer-daemon: socket");
         return -1;
     }
 
     /* Remove old socket if exists */
-    unlink(TIMER_SOCKET_PATH);
+    unlink(path);
 
-    /* Ensure directory exists */
-    mkdir("/run/initd", 0755);
-
+    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, TIMER_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("timer-daemon: bind");
@@ -224,26 +229,33 @@ static int create_control_socket(void) {
     /* Set permissions - use fchmod to avoid race condition */
     fchmod(fd, 0666);
 
-    fprintf(stderr, "timer-daemon: control socket created at %s\n", TIMER_SOCKET_PATH);
+    fprintf(stderr, "timer-daemon: control socket created at %s\n", path);
     return fd;
 }
 
 static int create_status_socket(void) {
-    int fd;
-    struct sockaddr_un addr;
+    const char *path = timer_socket_path(true);
+    if (!path) {
+        return -1;
+    }
 
-    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
+        perror("timer-daemon: mkdir runtime dir");
+        return -1;
+    }
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         perror("timer-daemon: status socket");
         return -1;
     }
 
-    mkdir("/run/initd", 0755);
-    unlink(TIMER_STATUS_SOCKET_PATH);
+    unlink(path);
 
+    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, TIMER_STATUS_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("timer-daemon: bind status");
@@ -263,7 +275,7 @@ static int create_status_socket(void) {
         return -1;
     }
 
-    fprintf(stderr, "timer-daemon: status socket created at %s\n", TIMER_STATUS_SOCKET_PATH);
+    fprintf(stderr, "timer-daemon: status socket created at %s\n", path);
     return fd;
 }
 
@@ -1144,7 +1156,10 @@ int main(int argc, char *argv[]) {
     status_socket = create_status_socket();
     if (status_socket < 0) {
         close(control_socket);
-        unlink(TIMER_SOCKET_PATH);
+        const char *ctrl_path = timer_socket_path(false);
+        if (ctrl_path) {
+            unlink(ctrl_path);
+        }
         return 1;
     }
 
@@ -1153,8 +1168,14 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "timer-daemon: failed to load timers\n");
         close(control_socket);
         close(status_socket);
-        unlink(TIMER_SOCKET_PATH);
-        unlink(TIMER_STATUS_SOCKET_PATH);
+        const char *ctrl_path = timer_socket_path(false);
+        if (ctrl_path) {
+            unlink(ctrl_path);
+        }
+        const char *status_path = timer_socket_path(true);
+        if (status_path) {
+            unlink(status_path);
+        }
         return 1;
     }
 
@@ -1165,10 +1186,16 @@ int main(int argc, char *argv[]) {
     /* Cleanup */
     fprintf(stderr, "timer-daemon: shutting down\n");
     close(control_socket);
-    unlink(TIMER_SOCKET_PATH);
+    const char *ctrl_path = timer_socket_path(false);
+    if (ctrl_path) {
+        unlink(ctrl_path);
+    }
     if (status_socket >= 0) {
         close(status_socket);
-        unlink(TIMER_STATUS_SOCKET_PATH);
+        const char *status_path = timer_socket_path(true);
+        if (status_path) {
+            unlink(status_path);
+        }
     }
     free_timer_instances();
 
