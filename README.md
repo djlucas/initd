@@ -414,12 +414,11 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 ### Phase 3 – Independent Daemons (100%)
 - Timer daemon: cron-style scheduling, OnUnitInactiveSec persistence
 - Socket activator: listeners, IdleTimeout/RuntimeMaxSec, supervisor adopt
-- User session daemons and reboot persistence
+- Per-User daemons and reboot persistence, independent of elogind's linger
 
 ### Phase 4 – Linux Enhancements (0%)
 - Cgroup v2 integration: tracking, resource limits, OOM handling
 - Additional namespace hardening and optional seccomp filters
-- Platform detection/feature flags for shared code paths
 
 ## Requirements
 
@@ -435,8 +434,9 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 
 ### Testing
 - cppcheck
-- valgrind
+- flawfinder
 - clang (with libFuzzer)
+- valgrind
 - shellcheck
 
 ## Contributing
