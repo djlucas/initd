@@ -32,7 +32,7 @@ systemd files or code are reused here.
 3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
 4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
 5. **initctl / systemctl** – CLI front-end that routes requests to the appropriate daemon over their control sockets; includes `--user` routing and root-only `initctl user` helpers to seed per-user configs.
-6. **journalctl wrapper** – Convenience shim over syslog for journalctl-like log viewing.
+6. **journalctl convenience script** – Convenience shim over syslog for journalctl-like log viewing.
 7. **initd-user-manager** – Boot-time helper script and unit that start the user-mode daemons according to `/etc/initd/users-enabled/` and `~/.config/initd/user-daemons.conf`.
 
 ### Architecture
@@ -407,7 +407,7 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 
 ### Phase 2 – Core Features & Security (100%)
 - Dependency graph with cycle detection and recursion limits
-- Systemctl-compatible CLI, logging, journalctl wrapper
+- Systemctl-compatible CLI, logging, journalctl convenience script
 - Service registry + restart limiter prevent privilege/DoS abuse
 - Hardened IPC/path handling, KillMode, PrivateTmp, signal safety
 
