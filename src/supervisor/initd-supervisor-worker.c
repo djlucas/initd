@@ -1318,6 +1318,10 @@ void supervisor_test_mark_isolate(struct unit_file *target) {
 void supervisor_test_handle_control_fd(int fd) {
     handle_control_command(fd, false);
 }
+
+void supervisor_test_handle_status_fd(int fd) {
+    handle_control_command(fd, true);
+}
 #endif
 
 /* Public wrapper without depth parameter */

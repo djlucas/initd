@@ -10,6 +10,9 @@
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include "../src/common/control.h"
 #include "../src/common/unit.h"
 
 /* Test helpers exposed under UNIT_TEST */
@@ -22,6 +25,8 @@ void timer_daemon_test_set_time_base(time_t boot, time_t start);
 int timer_daemon_test_notify_inactive(const char *service_name, time_t now);
 time_t timer_daemon_test_get_next_run(const char *timer_name);
 time_t timer_daemon_test_get_last_inactive(const char *timer_name);
+void timer_daemon_test_handle_control_fd(int fd);
+void timer_daemon_test_handle_status_fd(int fd);
 
 #define TEST(name) \
     printf("Testing: %s ... ", name); \
@@ -95,8 +100,75 @@ static void test_notify_ignores_unrelated_services(void) {
     PASS();
 }
 
+static void test_status_socket_allows_read_only(void) {
+    TEST("timer status socket allows read-only commands");
+
+    timer_daemon_test_reset();
+    timer_daemon_test_set_time_base(0, 0);
+
+    struct unit_file *unit = make_timer_unit("status.timer", 0);
+    unit->enabled = true;
+    assert(timer_daemon_test_add_instance(unit, time(NULL), time(NULL), true) == 0);
+
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    struct control_request req = {0};
+    req.header.length = sizeof(req);
+    req.header.command = CMD_STATUS;
+    strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
+
+    assert(send_control_request(sv[0], &req) == 0);
+
+    timer_daemon_test_handle_status_fd(sv[1]);
+
+    struct control_response resp = {0};
+    assert(recv_control_response(sv[0], &resp) == 0);
+    assert(resp.code == RESP_SUCCESS);
+
+    close(sv[0]);
+    close(sv[1]);
+    timer_daemon_test_reset();
+    free(unit);
+    PASS();
+}
+
+static void test_status_socket_blocks_mutating(void) {
+    TEST("timer status socket blocks mutating commands");
+
+    timer_daemon_test_reset();
+    timer_daemon_test_set_time_base(0, 0);
+
+    struct unit_file *unit = make_timer_unit("block.timer", 0);
+    assert(timer_daemon_test_add_instance(unit, time(NULL), time(NULL), true) == 0);
+
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    struct control_request req = {0};
+    req.header.length = sizeof(req);
+    req.header.command = CMD_START;
+    strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
+
+    assert(send_control_request(sv[0], &req) == 0);
+
+    timer_daemon_test_handle_status_fd(sv[1]);
+
+    struct control_response resp = {0};
+    assert(recv_control_response(sv[0], &resp) == 0);
+    assert(resp.code == RESP_PERMISSION_DENIED);
+
+    close(sv[0]);
+    close(sv[1]);
+    timer_daemon_test_reset();
+    free(unit);
+    PASS();
+}
+
 int main(void) {
     test_notify_updates_next_run();
     test_notify_ignores_unrelated_services();
+    test_status_socket_allows_read_only();
+    test_status_socket_blocks_mutating();
     return 0;
 }

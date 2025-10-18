@@ -1080,6 +1080,14 @@ time_t timer_daemon_test_get_last_inactive(const char *timer_name) {
     }
     return timer->last_inactive;
 }
+
+void timer_daemon_test_handle_control_fd(int fd) {
+    handle_control_command(fd, false);
+}
+
+void timer_daemon_test_handle_status_fd(int fd) {
+    handle_control_command(fd, true);
+}
 #endif
 
 /* Get system boot time */

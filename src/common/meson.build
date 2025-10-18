@@ -24,7 +24,6 @@ configure_file(
 
 common_includes = [
   include_directories('.'),
-  include_directories(meson.current_build_dir()),
 ]
 
 common_sources = files(

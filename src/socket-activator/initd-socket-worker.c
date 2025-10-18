@@ -1117,6 +1117,14 @@ void socket_worker_test_destroy(struct socket_instance *inst) {
     }
     free(inst);
 }
+
+void socket_worker_test_handle_control_fd(int fd) {
+    handle_control_command(fd, false);
+}
+
+void socket_worker_test_handle_status_fd(int fd) {
+    handle_control_command(fd, true);
+}
 #endif
 
 #ifndef UNIT_TEST

@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include "../src/common/control.h"
 #include "../src/common/unit.h"
 #include "../src/common/parser.h"
 
@@ -32,6 +34,8 @@ int socket_worker_test_idle_kills(void);
 int socket_worker_test_runtime_kills(void);
 void socket_worker_test_reset_counters(void);
 void socket_worker_test_destroy(struct socket_instance *inst);
+void socket_worker_test_handle_control_fd(int fd);
+void socket_worker_test_handle_status_fd(int fd);
 
 #define TEST(name) \
     printf("Testing: %s ... ", name); \
@@ -140,9 +144,58 @@ static void test_runtime_limit_enforcement(void) {
     PASS();
 }
 
+static void test_status_socket_allows_read_only(void) {
+    TEST("socket status socket allows read-only commands");
+
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    struct control_request req = {0};
+    req.header.length = sizeof(req);
+    req.header.command = CMD_LIST_SOCKETS;
+
+    assert(send_control_request(sv[0], &req) == 0);
+
+    socket_worker_test_handle_status_fd(sv[1]);
+
+    struct control_response resp = {0};
+    assert(recv_control_response(sv[0], &resp) == 0);
+    assert(resp.code == RESP_SUCCESS);
+
+    close(sv[0]);
+    close(sv[1]);
+    PASS();
+}
+
+static void test_status_socket_blocks_mutating(void) {
+    TEST("socket status socket blocks mutating commands");
+
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    struct control_request req = {0};
+    req.header.length = sizeof(req);
+    req.header.command = CMD_START;
+    strncpy(req.unit_name, "foo.socket", sizeof(req.unit_name) - 1);
+
+    assert(send_control_request(sv[0], &req) == 0);
+
+    socket_worker_test_handle_status_fd(sv[1]);
+
+    struct control_response resp = {0};
+    assert(recv_control_response(sv[0], &resp) == 0);
+    assert(resp.code == RESP_PERMISSION_DENIED);
+
+    close(sv[0]);
+    close(sv[1]);
+    PASS();
+}
+
 int main(void) {
     test_unix_stream_listener();
     test_idle_timeout_enforcement();
     test_runtime_limit_enforcement();
+    test_status_socket_allows_read_only();
+    test_status_socket_blocks_mutating();
     return 0;
 }
