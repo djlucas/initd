@@ -8,7 +8,7 @@ Conflicts=shutdown.target
 
 [Service]
 Type=simple
-ExecStart=@LIBEXECDIR@/initd/initd-timer
+ExecStart=@SBINDIR@/initd-timer
 Restart=on-failure
 StandardOutput=null
 

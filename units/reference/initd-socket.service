@@ -8,7 +8,7 @@ Conflicts=shutdown.target
 
 [Service]
 Type=simple
-ExecStart=@LIBEXECDIR@/initd/initd-socket
+ExecStart=@SBINDIR@/initd-socket
 Restart=on-failure
 StandardOutput=null
 

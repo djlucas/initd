@@ -1,138 +1,50 @@
 # Default installation: completely minimal - no targets, no services
-# All targets and services are installed via install-reference or optional install targets
+# All targets and services are installed via meson install --tags=reference
 
-# Reference installation: LFS-derived complete system
-# This is a custom target, not installed by default
-# Install with: meson install --tags reference
+# Configuration data for template substitution
+conf_data = configuration_data()
+prefix = get_option('prefix')
+conf_data.set('PREFIX', prefix)
 
-# Target files for reference installation
-reference_targets = files(
-  'default.target',
-  'multi-user.target',
-  'basic.target',
-  'sysinit.target',
-  'graphical.target',
-  'local-fs.target',
-  'network.target',
-  'network-online.target',
-  'network-pre.target',
-  'nfs-server.target',
-  'nss-lookup.target',
-  'remote-fs.target',
-  'rpcbind.target',
-  'shutdown.target',
-  'sockets.target',
-  'time-sync.target',
-  'umount.target',
-)
+# Handle absolute vs relative paths
+sysconfdir = get_option('sysconfdir')
+if not sysconfdir.startswith('/')
+  sysconfdir = prefix / sysconfdir
+endif
 
-# Service files for reference installation
-# Core system services that are installed and enabled by default
-reference_services = files(
-  'reference/checkfs.service',
-  'reference/console.service',
-  'reference/createfiles.service',
-  'reference/getty@.service',
-  'reference/initd-socket.service',
-  'reference/initd-timer.service',
-  'reference/klogd.service',
-  'reference/localnet.service',
-  'reference/modules-load.service',
-  'reference/mountfs.service',
-  'reference/mountvirtfs.service',
-  'reference/netfs.service',
-  'reference/network@.service',
-  'reference/network-wait-online.service',
-  'reference/remount-root.service',
-  'reference/swap.service',
-  'reference/sysctl.service',
-  'reference/syslogd.service',
-  'reference/udev-retry.service',
-  'reference/udev-settle.service',
-  'reference/udev-trigger.service',
-  'reference/udevd.service',
-)
+libdir = get_option('libdir')
+if not libdir.startswith('/')
+  libdir = prefix / libdir
+endif
 
-# Configuration files
-reference_configs = files(
-  '../sysconfig/reference/console.conf',
-  '../sysconfig/reference/createfiles.conf',
-  '../sysconfig/reference/modules.conf',
-  '../sysconfig/reference/network-eth0.conf.example',
-  '../sysconfig/reference/udev_retry.conf',
-)
+sbindir = get_option('sbindir')
+if not sbindir.startswith('/')
+  sbindir = prefix / sbindir
+endif
 
-# Reference installation is done via run_target below, not install_data
-# This ensures reference files are ONLY installed when explicitly requested
+bindir = get_option('bindir')
+if not bindir.startswith('/')
+  bindir = prefix / bindir
+endif
 
-# Enable reference services (create symlinks)
-# All services enabled except network@.service
-# Services to enable in multi-user.target.wants
-multi_user_wants = [
-  'getty@tty1.service',
-  'getty@tty2.service',
-  'getty@tty3.service',
-  'getty@tty4.service',
-  'getty@tty5.service',
-  'getty@tty6.service',
-  'klogd.service',
-  'syslogd.service',
-]
+libexecdir = get_option('libexecdir')
+if not libexecdir.startswith('/')
+  libexecdir = prefix / libexecdir
+endif
 
-# Services to enable in sysinit.target.wants
-sysinit_wants = [
-  'checkfs.service',
-  'console.service',
-  'createfiles.service',
-  'localnet.service',
-  'modules-load.service',
-  'mountfs.service',
-  'mountvirtfs.service',
-  'random-seed.service',
-  'remount-root.service',
-  'swap.service',
-  'sysctl.service',
-  'udev-retry.service',
-  'udev-settle.service',
-  'udev-trigger.service',
-  'udevd.service',
-]
+conf_data.set('SYSCONFDIR', sysconfdir)
+conf_data.set('SYSCONFIG_DIR', sysconfdir / 'sysconfig')
+conf_data.set('INITD_SYSCONFIG_DIR', sysconfdir / 'sysconfig' / 'initd')
+conf_data.set('UDEV_RULES_DIR', sysconfdir / 'udev' / 'rules.d')
+conf_data.set('PPP_DIR', sysconfdir / 'ppp')
+conf_data.set('HOSTNAME_FILE', sysconfdir / 'hostname')
+conf_data.set('LIBDIR', libdir)
+conf_data.set('SBINDIR', sbindir)
+conf_data.set('BINDIR', bindir)
+conf_data.set('LIBEXECDIR', libexecdir / 'initd')
 
-# Services to enable in basic.target.wants
-basic_wants = [
-  'initd-socket.service',
-  'initd-timer.service',
-]
-
-# Helper scripts installed as part of the reference profile
-reference_script_helpers = [
-  'ifup',
-  'ifdown',
-  'journalctl',
-]
-
-reference_service_scripts = [
-  'checkfs',
-  'console',
-  'createfiles',
-  'localnet',
-  'modules-load',
-  'mountvirtfs',
-  'netfs',
-  'network-configure',
-  'network-wait-online',
-  'udev-retry',
-  'udev-trigger',
-]
-
-reference_network_scripts = [
-  'static',
-]
-
-# Symlink creation handled inside the install-reference run target below
-
-# Create basename lists for passing to bash script
-reference_targets_basenames = [
+# Target files (no templating needed)
+reference_targets = [
   'default.target',
   'multi-user.target',
   'basic.target',
@@ -152,7 +64,8 @@ reference_targets_basenames = [
   'umount.target',
 ]
 
-reference_services_basenames = [
+# Service files (need templating)
+reference_services = [
   'checkfs.service',
   'console.service',
   'createfiles.service',
@@ -177,122 +90,218 @@ reference_services_basenames = [
   'udevd.service',
 ]
 
-reference_configs_relative = [
-  'reference/console.conf',
-  'reference/createfiles.conf',
-  'reference/modules.conf',
-  'reference/network-eth0.conf.example',
-  'reference/udev_retry.conf',
+# Helper scripts (need templating)
+reference_script_helpers = [
+  'ifup',
+  'ifdown',
+  'journalctl',
 ]
 
-# Create ninja target for reference installation
-bash = find_program('bash')
-install_cmd = find_program('install')
+reference_service_scripts = [
+  'checkfs',
+  'console',
+  'createfiles',
+  'localnet',
+  'modules-load',
+  'mountvirtfs',
+  'netfs',
+  'network-configure',
+  'network-wait-online',
+  'udev-retry',
+  'udev-trigger',
+]
 
-run_target('install-reference',
-  command: [bash, '-c', '''
-set -e
+reference_network_scripts = [
+  'bridge',
+  'dhclient',
+  'dhcpcd',
+  'iwd',
+  'pppoe',
+  'static',
+  'wpa_supplicant',
+]
 
-resolve_path() {
-  base="$1"
-  rel="$2"
-  case "$rel" in
-    /*) echo "$rel" ;;
-    *) echo "$base/$rel" ;;
-  esac
-}
+# Configuration files (no templating)
+reference_configs = [
+  'console.conf',
+  'createfiles.conf',
+  'modules.conf',
+  'network-eth0.conf.example',
+  'udev_retry.conf',
+]
 
-DESTDIR="${DESTDIR:-}"
-SRCDIR="$1"
-SCRIPTDIR="$2"
-PREFIX="$3"
-SYSCONFDIR_REAL=$(resolve_path "$PREFIX" "$4")
-LIBDIR_REAL=$(resolve_path "$PREFIX" "$5")
-SBINDIR_REAL=$(resolve_path "$PREFIX" "$6")
-BINDIR_REAL=$(resolve_path "$PREFIX" "$7")
-LIBEXECDIR_BASE_REAL=$(resolve_path "$PREFIX" "$8")
-LIBEXECDIR_REAL="$LIBEXECDIR_BASE_REAL/initd"
+# Optional service files (need templating)
+optional_services = [
+  'accounts-daemon.service',
+  'acpid.service',
+  'alsa.service',
+  'atd.service',
+  'autofs.service',
+  'avahi-daemon.service',
+  'avahi-dnsconfd.service',
+  'bluetooth.service',
+  'cups.service',
+  'dbus.service',
+  'dhcpcdat.service',
+  'dovecot.service',
+  'exim.service',
+  'fcron.service',
+  'firewalld.service',
+  'git-daemon.service',
+  'gpm.service',
+  'haveged.service',
+  'httpd.service',
+  'iptables.service',
+  'kea-ctrl-agent.service',
+  'kea-ddns-server.service',
+  'kea-dhcp4-server.service',
+  'kea-dhcp6-server.service',
+  'krb5-kadmind.service',
+  'krb5-kdc.service',
+  'krb5-kpropd.service',
+  'lightdm.service',
+  'mariadb.service',
+  'named.service',
+  'networkmanager.service',
+  'nfs-client.service',
+  'nfs-server.service',
+  'nfsd.service',
+  'nftables.service',
+  'nmbd.service',
+  'ntpd.service',
+  'php-fpm.service',
+  'postfix.service',
+  'postgresql.service',
+  'power-profiles-daemon.service',
+  'proftpd.service',
+  'random-seed.service',
+  'rpc-idmapd.service',
+  'rpc-mountd.service',
+  'rpc-statd-notify.service',
+  'rpc-statd.service',
+  'rpcbind.service',
+  'rsyncd.service',
+  'rsyncdat.service',
+  'rsyslog.service',
+  'samba.service',
+  'saslauthd.service',
+  'sendmail.service',
+  'slapd.service',
+  'sm-client.service',
+  'smartd.service',
+  'smbd.service',
+  'smbdat.service',
+  'sshd.service',
+  'sshdat.service',
+  'stunnel.service',
+  'svnserve.service',
+  'syslog-ng.service',
+  'sysmond.service',
+  'sysstat.service',
+  'unbound.service',
+  'vsftpd.service',
+  'winbindd.service',
+  'xdm.service',
+]
 
-SYSCONFDIR="$DESTDIR$SYSCONFDIR_REAL"
-LIBDIR="$DESTDIR$LIBDIR_REAL"
-SBINDIR="$DESTDIR$SBINDIR_REAL"
-BINDIR="$DESTDIR$BINDIR_REAL"
-LIBEXECDIR="$DESTDIR$LIBEXECDIR_REAL"
+# Process and install targets
+foreach target : reference_targets
+  install_data(target,
+    install_dir: get_option('libdir') / 'initd' / 'system',
+    install_tag: 'reference'
+  )
+endforeach
 
-TARGETS="$9"
-SERVICES="${10}"
-CONFIGS="${11}"
-SCRIPT_HELPERS="${12}"
-SERVICE_SCRIPTS="${13}"
-NETWORK_SCRIPTS="${14}"
-MULTI_WANTS="${15}"
-SYSINIT_WANTS="${16}"
-BASIC_WANTS="${17}"
-SYSCONFIG_ROOT="${18}"
+# Process and install services
+foreach service : reference_services
+  configure_file(
+    input: 'reference' / service,
+    output: service,
+    configuration: conf_data,
+    install: true,
+    install_dir: get_option('libdir') / 'initd' / 'system',
+    install_tag: 'reference'
+  )
+endforeach
 
-SYSCONFIG_DIR_REAL="$SYSCONFDIR_REAL/sysconfig"
-INITD_SYSCONFIG_DIR_REAL="$SYSCONFIG_DIR_REAL/initd"
-UDEV_RULES_DIR_REAL="$SYSCONFDIR_REAL/udev/rules.d"
-PPP_DIR_REAL="$SYSCONFDIR_REAL/ppp"
-HOSTNAME_FILE_REAL="$SYSCONFDIR_REAL/hostname"
+# Process and install helper scripts
+scriptdir = meson.project_source_root() / 'scripts'
+foreach script : reference_script_helpers
+  configure_file(
+    input: scriptdir / script,
+    output: script,
+    configuration: conf_data,
+    install: true,
+    install_mode: 'rwxr-xr-x',
+    install_dir: get_option('sbindir'),
+    install_tag: 'reference'
+  )
+endforeach
 
-render_template() {
-  src="$1"
-  dest="$2"
-  mode="$3"
-  mkdir -p "$(dirname "$dest")"
-  sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@SYSCONFDIR@|$SYSCONFDIR_REAL|g" -e "s|@SYSCONFIG_DIR@|$SYSCONFIG_DIR_REAL|g" -e "s|@INITD_SYSCONFIG_DIR@|$INITD_SYSCONFIG_DIR_REAL|g" -e "s|@UDEV_RULES_DIR@|$UDEV_RULES_DIR_REAL|g" -e "s|@PPP_DIR@|$PPP_DIR_REAL|g" -e "s|@HOSTNAME_FILE@|$HOSTNAME_FILE_REAL|g" -e "s|@LIBDIR@|$LIBDIR_REAL|g" -e "s|@SBINDIR@|$SBINDIR_REAL|g" -e "s|@BINDIR@|$BINDIR_REAL|g" -e "s|@LIBEXECDIR@|$LIBEXECDIR_REAL|g" "$src" > "$dest"
-  chmod "$mode" "$dest"
-}
-
-# Install targets
-for target in $TARGETS; do
-  render_template "$SRCDIR/$target" "$LIBDIR/initd/system/$target" 644
-done
-
-# Install services
-for service in $SERVICES; do
-  render_template "$SRCDIR/reference/$service" "$LIBDIR/initd/system/$service" 644
-done
-
-# Install helper scripts
-for script in $SCRIPT_HELPERS; do
-  render_template "$SCRIPTDIR/$script" "$SBINDIR/$script" 755
-done
-
-render_template "$SCRIPTDIR/initd-user-manager" "$LIBEXECDIR/initd-user-manager" 755
-
-for script in $SERVICE_SCRIPTS; do
-  render_template "$SCRIPTDIR/service-scripts/$script" "$LIBEXECDIR/service-scripts/$script" 755
-done
-
-for script in $NETWORK_SCRIPTS; do
-  render_template "$SCRIPTDIR/network-services/$script" "$LIBEXECDIR/network-services/$script" 755
-done
-
-# Install configs
-for config in $CONFIGS; do
-  install -D -m 644 "$SYSCONFIG_ROOT/$config" -t "$SYSCONFDIR/sysconfig"
-done
-''',
-    'install-reference',
-    meson.current_source_dir(),
-    meson.project_source_root() / 'scripts',
-    get_option('prefix'),
-    get_option('sysconfdir'),
-    get_option('libdir'),
-    get_option('sbindir'),
-    get_option('bindir'),
-    get_option('libexecdir'),
-    ' '.join(reference_targets_basenames),
-    ' '.join(reference_services_basenames),
-    ' '.join(reference_configs_relative),
-    ' '.join(reference_script_helpers),
-    ' '.join(reference_service_scripts),
-    ' '.join(reference_network_scripts),
-    ' '.join(multi_user_wants),
-    ' '.join(sysinit_wants),
-    ' '.join(basic_wants),
-    meson.project_source_root() / 'sysconfig',
-  ]
+# Install initd-user-manager
+configure_file(
+  input: scriptdir / 'initd-user-manager',
+  output: 'initd-user-manager',
+  configuration: conf_data,
+  install: true,
+  install_mode: 'rwxr-xr-x',
+  install_dir: get_option('libexecdir') / 'initd',
+  install_tag: 'reference'
 )
+
+# Process and install service scripts
+foreach script : reference_service_scripts
+  configure_file(
+    input: scriptdir / 'service-scripts' / script,
+    output: script,
+    configuration: conf_data,
+    install: true,
+    install_mode: 'rwxr-xr-x',
+    install_dir: get_option('libexecdir') / 'initd' / 'service-scripts',
+    install_tag: 'reference'
+  )
+endforeach
+
+# Process and install network scripts
+foreach script : reference_network_scripts
+  configure_file(
+    input: scriptdir / 'network-services' / script,
+    output: script,
+    configuration: conf_data,
+    install: true,
+    install_mode: 'rwxr-xr-x',
+    install_dir: get_option('libexecdir') / 'initd' / 'network-services',
+    install_tag: 'reference'
+  )
+endforeach
+
+# Install configuration files
+foreach config : reference_configs
+  install_data(
+    meson.project_source_root() / 'sysconfig' / 'reference' / config,
+    install_dir: get_option('sysconfdir') / 'sysconfig',
+    install_tag: 'reference'
+  )
+endforeach
+
+# Optional services - install individually with tags
+foreach service : optional_services
+  service_name = service.replace('.service', '')
+  configure_file(
+    input: 'optional' / service,
+    output: service,
+    configuration: conf_data,
+    install: true,
+    install_dir: get_option('libdir') / 'initd' / 'system',
+    install_tag: service_name
+  )
+endforeach
+
+# Convenience run target for reference installation
+# Use: ninja -C build install-reference (or DESTDIR=... ninja -C build install-reference)
+# This will show each file being installed
+run_target('install-reference',
+  command: ['meson', 'install', '-C', meson.project_build_root(), '--tags', 'reference', '--no-rebuild']
+)
+
+# For optional services, use: meson install --tags=sshd (or --tags=networkmanager, etc.)

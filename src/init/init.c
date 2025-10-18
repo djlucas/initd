@@ -24,7 +24,7 @@
 #include <stdbool.h>
 
 #ifndef SUPERVISOR_PATH
-#define SUPERVISOR_PATH "/usr/libexec/initd/initd-supervisor"
+#define SUPERVISOR_PATH "/usr/sbin/initd-supervisor"
 #endif
 
 #define DEFAULT_TIMEOUT 30
