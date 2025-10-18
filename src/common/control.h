@@ -14,8 +14,8 @@
 #define INITD_RUNTIME_DIR_ENV "INITD_RUNTIME_DIR"
 #define INITD_RUNTIME_DEFAULT "/run/initd"
 
-#define CONTROL_SOCKET_NAME "control.sock"
-#define CONTROL_STATUS_SOCKET_NAME "control.status.sock"
+#define CONTROL_SOCKET_NAME "supervisor.sock"
+#define CONTROL_STATUS_SOCKET_NAME "supervisor.status.sock"
 #define TIMER_SOCKET_NAME "timer.sock"
 #define TIMER_STATUS_SOCKET_NAME "timer.status.sock"
 #define SOCKET_ACTIVATOR_SOCKET_NAME "socket-activator.sock"
