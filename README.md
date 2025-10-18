@@ -8,7 +8,9 @@ A lightweight, portable init system with systemd unit file compatibility.
 
 **DO NOT USE THIS SOFTWARE IN PRODUCTION OR ON ANY SYSTEM YOU CARE ABOUT.**
 
-This is actively developed, incomplete, and untested code. It is not ready for any use beyond experimentation and development. Expect bugs, missing features, and breaking changes.
+This is actively developed, incomplete, and untested code. It is not ready for
+any use beyond experimentation and development. Expect bugs, missing features,
+and breaking changes.
 
 **You have been warned.**
 
@@ -25,7 +27,7 @@ systemd files or code are reused here.
 
 ## Key Components
 
-1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts a service manager. The service manager is configurable via the kernel command line `supervisor=PATH` parameter, allowing you to use the initd supervisor, traditional BSD rc, runit, s6, or even a custom shell script. This makes init truly agnostic about service management philosophy.
+1. **init** – Optional PID 1 wrapper that reaps zombies and, when acting as system init, starts initd-supervisor by default (optionaly any binary via the kernel command line `supervisor=PATH` parameter).
 2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
 3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
 4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
@@ -65,7 +67,7 @@ initd-socket (independent master)
       ├─ On-demand service activation
       └─ Control socket: /run/initd/socket-activator.sock
 
-initctl/systemctl
+initctl (user/administrator contol untility)
   └─ Routes commands to appropriate daemon based on unit type
 ```
 
@@ -76,7 +78,7 @@ initctl/systemctl
 - **Systemd Compatible** - Use existing unit files where beneficial
 - **Truly Portable** - Multi-platform Unix-like support
 - **Unix Philosophy** - Each component does one thing well
-- **No Lock-in** - Zero defaults, complete freedom to design your own target system
+- **No Lock-in** - Zero defaults, design your own targets 
 
 ## Key Features
 
@@ -95,8 +97,7 @@ initctl/systemctl
   - Service registry prevents arbitrary kill() attacks
 
 - **Platform Support**
-  - Linux: Full feature set with cgroups v2
-  - Other Unix-like systems: Process group-based supervision (active work to ensure parity before layering cgroup-specific features)
+  - Process group-based supervision (cgroups to be added for Linux in phase 4)
   - Two deployment modes:
     - **PID 1 mode**: Full init replacement (primary use case)
     - **Standalone mode**: Run under existing init (testing, containers, BSD rc, sysvinit)
@@ -107,20 +108,18 @@ initctl/systemctl
 - **initctl** - Service control interface compatible with systemd's systemctl (a symlink provided)
 - **journalctl** - Log query wrapper for traditional syslog that mimics some of systemd's journalctl
 - Standard targets (rescue, multi-user, graphical)
-- Drop-in compatibility with existing systemd unit files (will convert on the fly if a systemd service is enabled)
+- Drop-in compatibility with existing systemd unit files (converts on the fly if a systemd service is enabled)
 
 ### Per-User Daemons
 
-1. Root seeds per-user settings: `initctl user enable alice supervisor timer`
-2. Enable the boot helper: `systemctl enable --now initd-user-manager.service`
-3. Users manage their units under `~/.config/initd/user/`; `initctl --user …` targets the user instance
-4. Optional (Linux + elogind): `loginctl enable-linger alice` provides session manager persistence, independent of the initd reboot-persistence helpers above.
+- Root seeds per-user settings: `initctl user enable alice supervisor timer`
+- Enable the boot helper: `systemctl enable --now initd-user-manager.service`
+- Users manage their units under `~/.config/initd/user/`; `initctl --user …` targets the user instance
+- `loginctl enable-linger` is not necessary (but can be used if elogind is present) - independent for portability
 
 ## Credits
 
-Many of the service scripts for sysinit.target (checkfs, console, createfiles, localnet, modules-load, mountvirtfs, udev-retry, udev-trigger) were adapted from the [Linux From Scratch bootscripts](https://github.com/lfs-book/lfs/tree/trunk/bootscripts) project.
-
-## Architecture
+All of the reference units were adapted from the [Linux From Scratch bootscripts](https://github.com/lfs-book/lfs/tree/trunk/bootscripts) project.
 
 ## Differentiating Features
 
@@ -142,6 +141,11 @@ Many of the service scripts for sysinit.target (checkfs, console, createfiles, l
 - **No Ecosystem Lock-in**
   - Use existing syslog (syslogd, rsyslog, syslog-ng)
   - Plain text logs, standard tools
+  - Each utility is a standalone daemon and works independent of the others:
+    - init - reaps processes, handles shutdown singals, and manages your service manager or runlevel control
+    - supervisor - provides use of .service units to start managed services
+    - timer - provides use of .timer files for cron repacement (or supplemnt)
+    - socket - provies use of .socket files for super-daemon features
 
 - **Reuses Existing Infrastructure**
   - Doesn't replace working solutions
@@ -176,7 +180,7 @@ Unit types **not supported** (use traditional alternatives):
 - ❌ `.device`    - Use eudev or udev directly
 - ❌ `.path`      - Path-based activation not implemented
 - ❌ `.scope`     - Runtime-created units (systemd internal)
-- ❌ `.slice`     - cgroup hierarchy management (not implemented)
+- ❌ `.slice`     - cgroup hierarchy management - elogoind has user slices
 
 ### Supported Service Directives
 
@@ -194,13 +198,6 @@ Unit types **not supported** (use traditional alternatives):
 - `PrivateTmp=` - Private /tmp namespace (Linux only)
 - `LimitNOFILE=` - File descriptor limit (portable)
 - `KillMode=` - process, control-group, mixed, none (portable)
-
-**Security & Resource Control:**
-- ✅ **PrivateTmp** – Isolated `/tmp` per service (Linux mount namespaces)
-- ✅ **LimitNOFILE** – Portable file descriptor limits via `setrlimit`
-- ✅ **KillMode** – Process/control-group/mixed/none using process groups
-- ✅ **RuntimeMaxSec / IdleTimeout** – Service-runtime and socket-idle enforcement
-- ❌ **Other resource limits / capabilities** – Planned for future phases
 
 ## Quick Start
 
@@ -230,23 +227,19 @@ sudo ninja -C build install
 
 ### Init Flexibility
 
-The init binary is service-manager agnostic. By default it launches the initd supervisor, but you can use any service manager via the kernel command line:
+The init binary is service-manager agnostic. It launches initd-supervisor by
+default, but you can use any service manager or runlevl control utility of your
+choice via the kernel command line:
 
 ```bash
 # Default: use initd supervisor
-linux /vmlinuz root=/dev/sda1 init=/sbin/init
+linux /vmlinuz root=/dev/sda1
 
-# Use traditional BSD rc
-linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/etc/rc
-
-# Use runit
-linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/sbin/runit
+# Use traditional BSD or Linux sysvinit style rc
+linux /vmlinuz root=/dev/sda1 supervisor=/etc/init.d/rc
 
 # Use s6
-linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/bin/s6-svscan /service
-
-# Use your own custom shell script
-linux /vmlinuz root=/dev/sda1 init=/sbin/init supervisor=/usr/local/bin/my-init
+linux /vmlinuz root=/dev/sda1 supervisor=/bin/s6-svscan /service
 ```
 
 The init process simply:
@@ -254,7 +247,8 @@ The init process simply:
 - Starts and monitors the specified service manager
 - Handles shutdown signals (SIGTERM=poweroff, SIGINT=reboot, SIGUSR1=halt)
 
-This design provides complete freedom to choose your service management approach while still benefiting from a clean, minimal PID 1 implementation.
+This design provides complete freedom to choose your service management approach
+while still benefiting from a clean, minimal PID 1 implementation.
 
 
 ### Configuration
@@ -265,20 +259,6 @@ Unit files go in:
 
 Or use existing systemd unit directories for compatibility.
 
-### Directory Structure
-
-The project follows a consistent organization:
-
-**Unit Files:**
-- `units/reference/` - Core system units
-- `units/optional/` - Optional service units (installed on demand)
-
-**Configuration Files:**
-- `sysconfig/reference/` - Configuration files for reference units
-- `sysconfig/optional/` - Configuration files for optional services
-
-### Installation
-
 **Important: Zero Default Policy**
 
 The default installation (`ninja install`) installs **only the core binaries**—no targets, services, or configuration. This is intentional:
@@ -287,12 +267,10 @@ The default installation (`ninja install`) installs **only the core binaries**�
 - ✅ **No forced policy** – Choose your own boot sequence and dependencies
 - ✅ **No lock-in** – Not tied to any particular init philosophy
 
-**Main installation:**
-```bash
-# Install ONLY core binaries (init, supervisor, timer, socket, initctl)
-# NO targets or services are installed by default
-sudo ninja -C build install
+That said, a sample reference implementation is provided:
 
+**Reference installation:**
+```bash
 # Install reference implementation (17 targets + 19 core services)
 # This gives you a working system as a starting point
 sudo ninja -C build install-reference
@@ -303,7 +281,12 @@ sudo ninja -C build install-reference
 - Core system services (getty, udev, syslog, network, etc.)
 - Enabled symlinks for automatic boot
 
-You can use the reference implementation as-is, modify it, or ignore it completely and build your own.
+You can use the reference implementation as-is, modify it, or ignore it
+completely and build your own. If you use the rerference implementation, it will
+enable critical services for boot - while network scripts are installed, they
+are not activated by default.
+
+Also included are optional services (taken alomst entirely from BLFS):
 
 **Optional services:**
 ```bash
@@ -315,11 +298,13 @@ sudo ninja -C build install-httpd
 
 # Or install all optional services at once
 sudo ninja -C build install-everything
+
+# Installing any service file does not activate it:
+sudo initctl enable acpid && sudo initctl start acpid
 ```
 
-**Configuration file protection:**
-
-When reinstalling services, existing configuration files in `/etc/sysconfig/` are preserved:
+Note: When reinstalling services, existing configuration files in
+`/etc/sysconfig/` are preserved:
 - First reinstall: `config.new`
 - Second reinstall: `config.new-1`
 - Third reinstall: `config.new-2`
@@ -342,7 +327,7 @@ initctl status nginx
 # View logs with grep (traditional)
 grep nginx /var/log/messages | tail -20
 
-# View logs with journalctl wrapper
+# View logs with the journalctl conveninence script
 journalctl -u nginx -f
 
 # System shutdown commands
@@ -358,9 +343,6 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Build all tests
-ninja -C build
-
 # Run all tests (18 non-privileged suites)
 ninja -C build test
 
@@ -381,7 +363,7 @@ These tests require root privileges because they:
 - Create symlinks for unit dependencies
 - Validate real-world privilege separation scenarios
 
-When run without root, the test properly skips with exit code 77 (meson skip).
+When run without root, the priveleged test properly skips with exit code 77 (meson skip).
 
 **Static & Dynamic Analysis:**
 - **cppcheck** - Static code analysis
@@ -412,9 +394,8 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 
 **Code Quality:**
 - Zero compiler warnings (clean build with `-Wall -Wextra`)
-- All format truncation warnings resolved
 - Comprehensive test coverage for privilege-separated architecture
-
+- Ships with reasonably comprehensive analyzer suite
 
 ## Development Status
 
@@ -430,37 +411,21 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 - Service registry + restart limiter prevent privilege/DoS abuse
 - Hardened IPC/path handling, KillMode, PrivateTmp, signal safety
 
-### Phase 3 – Independent Daemons (80%)
+### Phase 3 – Independent Daemons (100%)
 - Timer daemon: cron-style scheduling, OnUnitInactiveSec persistence
 - Socket activator: listeners, IdleTimeout/RuntimeMaxSec, supervisor adopt
-- Read-only status sockets exposed by each daemon; initctl routes queries to
-  the appropriate status endpoint and supports `--user`
-- Added `initctl user` commands plus `initd-user-manager` helper to seed and start per-user daemons
-- Added end-to-end integration tests across daemons and documented
-  reboot persistence for per-user instances
-- Maintain daemon independence (optional control sockets, standalone modes)
+- User session daemons and reboot persistence
 
 ### Phase 4 – Linux Enhancements (0%)
 - Cgroup v2 integration: tracking, resource limits, OOM handling
 - Additional namespace hardening and optional seccomp filters
 - Platform detection/feature flags for shared code paths
 
-### Phase 5 – Multi-Platform & Standalone (0%)
-- Standalone supervisor workflows (non-PID 1) and packaging
-- Cross-platform testing (BSD, Hurd) with process-group parity
-- Documentation and installer guidance for diverse environments
-
-### Phase 6 – Production Hardening (0%)
-- Service script QA, performance tuning, external security review
-- Comprehensive documentation polish and release readiness
-
-
 ## Requirements
 
 ### Runtime
 - libc
 - syslog daemon (rsyslog, syslog-ng, etc.)
-- elogind (for session management)
 
 ### Build
 - C23-capable compiler (GCC 14+, Clang 18+)
@@ -468,9 +433,11 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 - Ninja (build tool)
 - pkg-config
 
-### Optional
-- Linux kernel with cgroup v2 (for full feature set)
-- p11-kit (if using trust anchors)
+### Testing
+- cppcheck
+- valgrind
+- clang (with libFuzzer)
+- shellcheck
 
 ## Contributing
 
