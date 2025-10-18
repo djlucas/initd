@@ -1,0 +1,238 @@
+#!/bin/sh
+# initd-user-manager - bootstrap per-user initd daemons
+#
+# This helper is invoked at boot (Type=oneshot) to start or stop the
+# per-user supervisor/timer/socket daemons for accounts listed in
+# /etc/initd/users-enabled/. It reads each user's configuration from
+# ~/.config/initd/user-daemons.conf to determine which daemons to launch.
+
+set -eu
+
+MARKER_DIR="/etc/initd/users-enabled"
+RUNTIME_BASE="/run/user"
+CONFIG_SUBDIR=".config/initd"
+CONFIG_FILE="user-daemons.conf"
+
+log() {
+    echo "initd-user-manager: $*" >&2
+}
+
+list_enabled_users() {
+    if [ ! -d "${MARKER_DIR}" ]; then
+        return
+    fi
+    for marker in "${MARKER_DIR}"/*; do
+        [ -f "${marker}" ] || continue
+        basename "${marker}"
+    done
+}
+
+is_enabled() {
+    key_lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    cfg="$2"
+    awk -F= -v key="${key_lc}" '
+        /^[[:space:]]*#/ { next }
+        NF < 2 { next }
+        {
+            k=$1
+            v=$2
+            sub(/^[[:space:]]+/, "", k)
+            sub(/[[:space:]]+$/, "", k)
+            sub(/^[[:space:]]+/, "", v)
+            sub(/[[:space:]]+$/, "", v)
+            tolower_k=tolower(k)
+            tolower_v=tolower(v)
+            if (tolower_k == key &&
+                (tolower_v == "enabled" ||
+                 tolower_v == "yes" ||
+                 tolower_v == "true" ||
+                 tolower_v == "1")) {
+                exit 0
+            }
+        }
+        END { exit 1 }
+    ' "${cfg}"
+}
+
+ensure_runtime_dirs() {
+    uid="$1"
+    gid="$2"
+    runtime_parent="${RUNTIME_BASE}/${uid}"
+    runtime_dir="${runtime_parent}/initd"
+
+    if [ ! -d "${runtime_parent}" ]; then
+        mkdir -p "${runtime_parent}"
+    fi
+    chown "${uid}:${gid}" "${runtime_parent}"
+    chmod 0755 "${runtime_parent}"
+
+    if [ ! -d "${runtime_dir}" ]; then
+        mkdir -p "${runtime_dir}"
+    fi
+    chown "${uid}:${gid}" "${runtime_dir}"
+    chmod 0700 "${runtime_dir}"
+}
+
+start_component() {
+    user="$1"
+    uid="$2"
+    runtime_dir="$3"
+    binary="$4"
+    label="$5"
+    pattern="$6"
+
+    if ! command -v "${binary}" >/dev/null 2>&1; then
+        log "${binary} not found; skipping ${label} for ${user}"
+        return
+    fi
+
+    if pgrep -u "${uid}" -f "${pattern}" >/dev/null 2>&1; then
+        log "${label} already running for ${user}"
+        return
+    fi
+
+    su -s /bin/sh "${user}" -c "
+        export INITD_RUNTIME_DIR='${runtime_dir}';
+        nohup ${binary} --user-mode --runtime-dir '${runtime_dir}' >/dev/null 2>&1 &
+    " >/dev/null 2>&1
+
+    if pgrep -u "${uid}" -f "${pattern}" >/dev/null 2>&1; then
+        log "started ${label} for ${user}"
+    else
+        log "failed to start ${label} for ${user}"
+    fi
+}
+
+stop_component() {
+    uid="$1"
+    pattern="$2"
+    label="$3"
+    user="$4"
+
+    if ! pgrep -u "${uid}" -f "${pattern}" >/dev/null 2>&1; then
+        return
+    fi
+
+    pkill -u "${uid}" -f "${pattern}" >/dev/null 2>&1 || true
+    sleep 1
+    if pgrep -u "${uid}" -f "${pattern}" >/dev/null 2>&1; then
+        pkill -9 -u "${uid}" -f "${pattern}" >/dev/null 2>&1 || true
+    fi
+    log "stopped ${label} for ${user}"
+}
+
+status_component() {
+    uid="$1"
+    pattern="$2"
+    label="$3"
+
+    if pgrep -u "${uid}" -f "${pattern}" >/dev/null 2>&1; then
+        printf "    %s: running\n" "${label}"
+    else
+        printf "    %s: stopped\n" "${label}"
+    fi
+}
+
+manage_user_start() {
+    user="$1"
+    pw_entry=$(getent passwd "${user}") || {
+        log "user ${user} not found; skipping"
+        return
+    }
+    IFS=':' read -r _ _ uid gid _ home _ <<EOF
+${pw_entry}
+EOF
+
+    config_dir="${home}/${CONFIG_SUBDIR}"
+    config_path="${config_dir}/${CONFIG_FILE}"
+    if [ ! -f "${config_path}" ]; then
+        log "config ${config_path} missing; skipping ${user}"
+        return
+    fi
+
+    uid_num="${uid}"
+    gid_num="${gid}"
+
+    ensure_runtime_dirs "${uid_num}" "${gid_num}"
+    runtime_dir="${RUNTIME_BASE}/${uid_num}/initd"
+
+    if is_enabled supervisor "${config_path}"; then
+        start_component "${user}" "${uid_num}" "${runtime_dir}" "initd-supervisor" "supervisor" "initd-supervisor --user-mode"
+    fi
+    if is_enabled timer "${config_path}"; then
+        start_component "${user}" "${uid_num}" "${runtime_dir}" "initd-timer" "timer" "initd-timer --user-mode"
+    fi
+    if is_enabled socket "${config_path}" || is_enabled "socket-activator" "${config_path}"; then
+        start_component "${user}" "${uid_num}" "${runtime_dir}" "initd-socket" "socket" "initd-socket --user-mode"
+    fi
+}
+
+manage_user_stop() {
+    user="$1"
+    pw_entry=$(getent passwd "${user}") || return
+    IFS=':' read -r _ _ uid _ _ _ _ <<EOF
+${pw_entry}
+EOF
+    uid_num="${uid}"
+
+    stop_component "${uid_num}" "initd-socket --user-mode" "socket" "${user}"
+    stop_component "${uid_num}" "initd-timer --user-mode" "timer" "${user}"
+    stop_component "${uid_num}" "initd-supervisor --user-mode" "supervisor" "${user}"
+}
+
+show_user_status() {
+    user="$1"
+    pw_entry=$(getent passwd "${user}") || {
+        log "user ${user} not found"
+        return
+    }
+    IFS=':' read -r _ _ uid _ _ home _ <<EOF
+${pw_entry}
+EOF
+    uid_num="${uid}"
+    config_path="${home}/${CONFIG_SUBDIR}/${CONFIG_FILE}"
+    printf "%s:\n" "${user}"
+    if [ -f "${config_path}" ]; then
+        printf "  config: %s\n" "${config_path}"
+    else
+        printf "  config: missing\n"
+    fi
+    status_component "${uid_num}" "initd-supervisor --user-mode" "supervisor"
+    status_component "${uid_num}" "initd-timer --user-mode" "timer"
+    status_component "${uid_num}" "initd-socket --user-mode" "socket"
+}
+
+usage() {
+    echo "Usage: $0 {start|stop|reload|status}" >&2
+    exit 1
+}
+
+cmd="${1:-}"
+case "${cmd}" in
+    start)
+        for user in $(list_enabled_users); do
+            manage_user_start "${user}"
+        done
+        ;;
+    stop)
+        for user in $(list_enabled_users); do
+            manage_user_stop "${user}"
+        done
+        ;;
+    reload)
+        for user in $(list_enabled_users); do
+            manage_user_stop "${user}"
+            manage_user_start "${user}"
+        done
+        ;;
+    status)
+        for user in $(list_enabled_users); do
+            show_user_status "${user}"
+        done
+        ;;
+    *)
+        usage
+        ;;
+esac
+
+exit 0

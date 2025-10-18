@@ -14,6 +14,10 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <pwd.h>
+#include <fcntl.h>
+#include <strings.h>
+#include <ctype.h>
 #include "../common/control.h"
 
 /* Print usage */
@@ -58,6 +62,11 @@ static void print_usage(const char *progname) {
     fprintf(stderr, "  list-timers         List all timers\n");
     fprintf(stderr, "  list-sockets        List all sockets\n");
     fprintf(stderr, "  daemon-reload       Reload unit files\n");
+    fprintf(stderr, "  user enable USER [DAEMON...]\n");
+    fprintf(stderr, "                     Enable per-user daemons (requires root)\n");
+    fprintf(stderr, "  user disable USER [DAEMON...]\n");
+    fprintf(stderr, "                     Disable per-user daemons (requires root)\n");
+    fprintf(stderr, "  user status USER   Show per-user daemon settings\n");
 }
 
 enum runtime_scope {
@@ -162,6 +171,419 @@ static bool command_is_read_only(enum control_command cmd) {
     }
 }
 
+struct user_daemon_config {
+    bool supervisor;
+    bool timer;
+    bool socket_act;
+};
+
+#define USER_MARKER_DIR "/etc/initd/users-enabled"
+#define USER_CONFIG_FILENAME "user-daemons.conf"
+
+static void daemon_config_init(struct user_daemon_config *cfg) {
+    cfg->supervisor = false;
+    cfg->timer = false;
+    cfg->socket_act = false;
+}
+
+static int ensure_directory_owned(const char *path, mode_t mode, uid_t uid, gid_t gid) {
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        if (!S_ISDIR(st.st_mode)) {
+            fprintf(stderr, "Error: %s exists and is not a directory\n", path);
+            return -1;
+        }
+        return 0;
+    }
+
+    if (errno != ENOENT) {
+        perror("stat");
+        return -1;
+    }
+
+    if (mkdir(path, mode) < 0) {
+        perror("mkdir");
+        return -1;
+    }
+
+    if (chown(path, uid, gid) < 0) {
+        perror("chown");
+        return -1;
+    }
+
+    if (chmod(path, mode) < 0) {
+        perror("chmod");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int ensure_root_marker_dir(void) {
+    struct stat st;
+    if (stat(USER_MARKER_DIR, &st) == 0) {
+        if (!S_ISDIR(st.st_mode)) {
+            fprintf(stderr, "Error: %s exists and is not a directory\n", USER_MARKER_DIR);
+            return -1;
+        }
+        return 0;
+    }
+
+    if (errno != ENOENT) {
+        perror("stat");
+        return -1;
+    }
+
+    if (mkdir(USER_MARKER_DIR, 0755) < 0) {
+        perror("mkdir");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int validate_username(const char *user) {
+    if (!user || user[0] == '\0') {
+        return -1;
+    }
+
+    for (const char *p = user; *p; ++p) {
+        if (!(isalnum((unsigned char)*p) || *p == '_' || *p == '-' || *p == '.')) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int load_daemon_config(const char *path,
+                              struct user_daemon_config *cfg,
+                              bool *exists) {
+    daemon_config_init(cfg);
+    *exists = false;
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        perror("fopen");
+        return -1;
+    }
+
+    *exists = true;
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        if (*p == '#' || *p == '\0' || *p == '\n') {
+            continue;
+        }
+
+        char *equals = strchr(p, '=');
+        if (!equals) {
+            continue;
+        }
+        *equals = '\0';
+        char *value = equals + 1;
+
+        char *newline = strchr(value, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+
+        if (strcasecmp(value, "enabled") != 0 &&
+            strcasecmp(value, "true") != 0 &&
+            strcmp(value, "1") != 0) {
+            continue;
+        }
+
+        if (strcasecmp(p, "supervisor") == 0) {
+            cfg->supervisor = true;
+        } else if (strcasecmp(p, "timer") == 0) {
+            cfg->timer = true;
+        } else if (strcasecmp(p, "socket") == 0 ||
+                   strcasecmp(p, "socket-activator") == 0) {
+            cfg->socket_act = true;
+        }
+    }
+
+    fclose(f);
+    return 0;
+}
+
+static int write_daemon_config(const char *dir,
+                               const char *path,
+                               const struct user_daemon_config *cfg,
+                               uid_t uid,
+                               gid_t gid) {
+    char tmp_path[PATH_MAX];
+    int written = snprintf(tmp_path, sizeof(tmp_path),
+                           "%s/.user-daemons.conf.tmpXXXXXX", dir);
+    if (written < 0 || (size_t)written >= sizeof(tmp_path)) {
+        fprintf(stderr, "Error: temp path too long\n");
+        return -1;
+    }
+
+    int fd = mkstemp(tmp_path);
+    if (fd < 0) {
+        perror("mkstemp");
+        return -1;
+    }
+
+    FILE *out = fdopen(fd, "w");
+    if (!out) {
+        perror("fdopen");
+        close(fd);
+        unlink(tmp_path);
+        return -1;
+    }
+
+    fprintf(out, "# initd per-user daemon settings\n");
+    fprintf(out, "supervisor=%s\n", cfg->supervisor ? "enabled" : "disabled");
+    fprintf(out, "timer=%s\n", cfg->timer ? "enabled" : "disabled");
+    fprintf(out, "socket=%s\n", cfg->socket_act ? "enabled" : "disabled");
+
+    if (fflush(out) != 0) {
+        perror("fflush");
+        fclose(out);
+        unlink(tmp_path);
+        return -1;
+    }
+
+    if (fchmod(fd, 0640) < 0) {
+        perror("fchmod");
+        fclose(out);
+        unlink(tmp_path);
+        return -1;
+    }
+
+    if (fchown(fd, uid, gid) < 0) {
+        perror("fchown");
+        fclose(out);
+        unlink(tmp_path);
+        return -1;
+    }
+
+    if (fsync(fd) < 0) {
+        perror("fsync");
+        fclose(out);
+        unlink(tmp_path);
+        return -1;
+    }
+
+    if (fclose(out) != 0) {
+        perror("fclose");
+        unlink(tmp_path);
+        return -1;
+    }
+
+    if (rename(tmp_path, path) < 0) {
+        perror("rename");
+        unlink(tmp_path);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int apply_daemon_token(const char *token,
+                              bool enable,
+                              struct user_daemon_config *cfg) {
+    if (strcasecmp(token, "supervisor") == 0) {
+        cfg->supervisor = enable;
+    } else if (strcasecmp(token, "timer") == 0) {
+        cfg->timer = enable;
+    } else if (strcasecmp(token, "socket") == 0 ||
+               strcasecmp(token, "socket-activator") == 0) {
+        cfg->socket_act = enable;
+    } else if (strcasecmp(token, "all") == 0) {
+        cfg->supervisor = enable;
+        cfg->timer = enable;
+        cfg->socket_act = enable;
+    } else {
+        return -1;
+    }
+    return 0;
+}
+
+static int update_marker_file(const char *user, bool any_enabled) {
+    char marker_path[PATH_MAX];
+    int written = snprintf(marker_path, sizeof(marker_path),
+                           USER_MARKER_DIR "/%s", user);
+    if (written < 0 || (size_t)written >= sizeof(marker_path)) {
+        fprintf(stderr, "Error: user name too long\n");
+        return -1;
+    }
+
+    if (any_enabled) {
+        int fd = open(marker_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+        if (fd < 0) {
+            perror("open");
+            return -1;
+        }
+        if (close(fd) < 0) {
+            perror("close");
+            return -1;
+        }
+    } else {
+        if (unlink(marker_path) < 0) {
+            if (errno != ENOENT) {
+                perror("unlink");
+                return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static void print_daemon_status(const char *user,
+                                const struct user_daemon_config *cfg,
+                                bool marker_exists) {
+    printf("User: %s\n", user);
+    printf("  supervisor: %s\n", cfg->supervisor ? "enabled" : "disabled");
+    printf("  timer: %s\n", cfg->timer ? "enabled" : "disabled");
+    printf("  socket: %s\n", cfg->socket_act ? "enabled" : "disabled");
+    printf("  linger marker: %s\n", marker_exists ? "present" : "absent");
+}
+
+static bool daemon_any_enabled(const struct user_daemon_config *cfg) {
+    return cfg->supervisor || cfg->timer || cfg->socket_act;
+}
+
+static int handle_user_command(int argc, char *argv[], int index) {
+    if (geteuid() != 0) {
+        fprintf(stderr, "Error: user management commands require root privileges\n");
+        return 1;
+    }
+
+    if (index + 1 >= argc) {
+        fprintf(stderr, "Error: missing user subcommand\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    const char *subcmd = argv[index + 1];
+    if (strcmp(subcmd, "enable") != 0 &&
+        strcmp(subcmd, "disable") != 0 &&
+        strcmp(subcmd, "status") != 0) {
+        fprintf(stderr, "Error: unknown user subcommand '%s'\n", subcmd);
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    if (index + 2 >= argc) {
+        fprintf(stderr, "Error: missing user name\n");
+        return 1;
+    }
+
+    const char *user = argv[index + 2];
+    if (validate_username(user) < 0) {
+        fprintf(stderr, "Error: invalid user name '%s'\n", user);
+        return 1;
+    }
+
+    struct passwd *pw = getpwnam(user);
+    if (!pw) {
+        fprintf(stderr, "Error: user '%s' not found\n", user);
+        return 1;
+    }
+
+    if (ensure_root_marker_dir() < 0) {
+        return 1;
+    }
+
+    if (strcmp(subcmd, "status") == 0) {
+        char config_dir[PATH_MAX];
+        char config_path[PATH_MAX];
+        snprintf(config_dir, sizeof(config_dir), "%s/.config/initd", pw->pw_dir);
+        snprintf(config_path, sizeof(config_path), "%s/%s",
+                 config_dir, USER_CONFIG_FILENAME);
+
+        struct user_daemon_config cfg;
+        bool exists;
+        if (load_daemon_config(config_path, &cfg, &exists) < 0) {
+            return 1;
+        }
+
+        char marker_path[PATH_MAX];
+        snprintf(marker_path, sizeof(marker_path),
+                 USER_MARKER_DIR "/%s", user);
+        bool marker_exists = (access(marker_path, F_OK) == 0);
+
+        print_daemon_status(user, &cfg, marker_exists);
+        return 0;
+    }
+
+    int daemon_argc = argc - (index + 3);
+    char **daemon_argv = argv + index + 3;
+    bool enable = (strcmp(subcmd, "enable") == 0);
+
+    char config_dir[PATH_MAX];
+    char config_path[PATH_MAX];
+    int written = snprintf(config_dir, sizeof(config_dir),
+                           "%s/.config/initd", pw->pw_dir);
+    if (written < 0 || (size_t)written >= sizeof(config_dir)) {
+        fprintf(stderr, "Error: path too long\n");
+        return 1;
+    }
+    written = snprintf(config_path, sizeof(config_path),
+                       "%s/%s", config_dir, USER_CONFIG_FILENAME);
+    if (written < 0 || (size_t)written >= sizeof(config_path)) {
+        fprintf(stderr, "Error: path too long\n");
+        return 1;
+    }
+
+    char config_parent[PATH_MAX];
+    written = snprintf(config_parent, sizeof(config_parent),
+                       "%s/.config", pw->pw_dir);
+    if (written < 0 || (size_t)written >= sizeof(config_parent)) {
+        fprintf(stderr, "Error: path too long\n");
+        return 1;
+    }
+    if (ensure_directory_owned(config_parent, 0750, pw->pw_uid, pw->pw_gid) < 0) {
+        return 1;
+    }
+    if (ensure_directory_owned(config_dir, 0750, pw->pw_uid, pw->pw_gid) < 0) {
+        return 1;
+    }
+
+    struct user_daemon_config cfg;
+    bool config_exists;
+    if (load_daemon_config(config_path, &cfg, &config_exists) < 0) {
+        return 1;
+    }
+
+    if (daemon_argc == 0) {
+        cfg.supervisor = enable;
+        cfg.timer = enable;
+        cfg.socket_act = enable;
+    } else {
+        for (int i = 0; i < daemon_argc; i++) {
+            if (apply_daemon_token(daemon_argv[i], enable, &cfg) < 0) {
+                fprintf(stderr, "Error: unknown daemon '%s'\n", daemon_argv[i]);
+                return 1;
+            }
+        }
+    }
+
+    bool any_enabled = daemon_any_enabled(&cfg);
+
+    if (write_daemon_config(config_dir, config_path, &cfg, pw->pw_uid, pw->pw_gid) < 0) {
+        return 1;
+    }
+
+    if (update_marker_file(user, any_enabled) < 0) {
+        return 1;
+    }
+
+    printf("Updated daemon settings for %s\n", user);
+    return 0;
+}
+
 /* Normalize unit name - add .service extension if missing */
 static void normalize_unit_name(char *dest, const char *src, size_t dest_size) {
     strncpy(dest, src, dest_size - 1);
@@ -238,6 +660,10 @@ int main(int argc, char *argv[]) {
     if (cmd_index >= argc) {
         print_usage(progname);
         return 1;
+    }
+
+    if (strcmp(argv[cmd_index], "user") == 0) {
+        return handle_user_command(argc, argv, cmd_index);
     }
 
     if (configure_runtime_dir(scope) < 0) {

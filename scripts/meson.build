@@ -12,7 +12,7 @@ install_data(
 )
 
 install_data(
-  'initd-user-session',
+  'initd-user-manager',
   install_dir: get_option('libexecdir') / 'initd',
   install_mode: 'rwxr-xr-x',
   install_tag: 'reference',

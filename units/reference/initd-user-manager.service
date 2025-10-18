@@ -1,0 +1,13 @@
+[Unit]
+Description=initd Per-User Daemon Manager
+After=initd-supervisor.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/initd/initd-user-manager start
+ExecStop=/usr/libexec/initd/initd-user-manager stop
+ExecReload=/usr/libexec/initd/initd-user-manager reload
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
