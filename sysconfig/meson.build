@@ -13,13 +13,17 @@ config_to_services = {
   'optional/svnserve': ['svnserve'],
 }
 
-# Install each config file with all services that need it
+bash = find_program('bash')
+
+# Install each config file via a helper run target (not part of default install)
 foreach config_file, service_list : config_to_services
+  src_path = meson.current_source_dir() / config_file
+  dest_file = config_file.split('/')[-1]
+  dest_path = get_option('prefix') / get_option('sysconfdir') / 'sysconfig' / dest_file
+  install_command = 'set -e; DESTDIR="${DESTDIR:-}"; install -D -m 644 "{0}" "$DESTDIR{1}"'.format(src_path, dest_path)
   foreach service_name : service_list
-    install_data(
-      config_file,
-      install_dir: get_option('sysconfdir') / 'sysconfig',
-      install_tag: 'install-' + service_name,
+    run_target('install-' + service_name + '-config',
+      command: [bash, '-c', install_command]
     )
   endforeach
 endforeach
