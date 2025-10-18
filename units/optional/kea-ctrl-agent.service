@@ -5,7 +5,7 @@ Wants=network-online.target
 After=network-online.target time-sync.target
 
 [Service]
-ExecStart=/usr/sbin/kea-ctrl-agent -c /etc/kea/kea-ctrl-agent.conf
+ExecStart=@SBINDIR@/kea-ctrl-agent -c @SYSCONFDIR@/kea/kea-ctrl-agent.conf
 RuntimeDirectory=kea
 
 [Install]

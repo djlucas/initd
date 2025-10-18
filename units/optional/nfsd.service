@@ -8,12 +8,12 @@ PartOf=nfs-server.target
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/sysconfig/nfs-utils
-ExecStart=/usr/sbin/rpc.nfsd $NFSD_OPTS $NFSD_COUNT
-ExecStartPost=/usr/sbin/exportfs -a
-ExecReload=/usr/sbin/exportfs -a -r
-ExecStop=/usr/sbin/rpc.nfsd 0
-ExecStopPost=/usr/sbin/exportfs -a -u
+EnvironmentFile=@SYSCONFIG_DIR@/nfs-utils
+ExecStart=@SBINDIR@/rpc.nfsd $NFSD_OPTS $NFSD_COUNT
+ExecStartPost=@SBINDIR@/exportfs -a
+ExecReload=@SBINDIR@/exportfs -a -r
+ExecStop=@SBINDIR@/rpc.nfsd 0
+ExecStopPost=@SBINDIR@/exportfs -a -u
 RemainAfterExit=yes
 
 [Install]

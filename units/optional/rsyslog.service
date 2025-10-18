@@ -9,7 +9,7 @@ Provides=$syslog
 
 [Service]
 Type=notify
-ExecStart=/usr/sbin/rsyslogd -n -iNONE
+ExecStart=@SBINDIR@/rsyslogd -n -iNONE
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 StandardOutput=null

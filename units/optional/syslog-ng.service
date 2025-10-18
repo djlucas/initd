@@ -9,7 +9,7 @@ Provides=$syslog
 
 [Service]
 Type=notify
-ExecStart=/usr/sbin/syslog-ng -F
+ExecStart=@SBINDIR@/syslog-ng -F
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 StandardOutput=null

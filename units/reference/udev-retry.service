@@ -3,12 +3,12 @@ Description=Retry Failed udev Events
 DefaultDependencies=no
 After=mountfs.service
 Before=sysinit.target
-ConditionPathExists=/etc/initd/sysconfig/udev_retry.conf
+ConditionPathExists=@INITD_SYSCONFIG_DIR@/udev_retry.conf
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/lib/initd/service-scripts/udev-retry
+ExecStart=@LIBEXECDIR@/service-scripts/udev-retry
 
 [Install]
 # Not installed by default - only needed for systems without initramfs

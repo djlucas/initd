@@ -4,7 +4,7 @@ Documentation=man:atd(8)
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/atd
+ExecStart=@SBINDIR@/atd
 
 [Install]
 WantedBy=multi-user.target

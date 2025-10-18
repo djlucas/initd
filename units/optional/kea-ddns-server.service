@@ -5,7 +5,7 @@ Wants=network-online.target
 After=network-online.target time-sync.target
 
 [Service]
-ExecStart=/usr/sbin/kea-dhcp-ddns -c /etc/kea/kea-dhcp-ddns.conf
+ExecStart=@SBINDIR@/kea-dhcp-ddns -c @SYSCONFDIR@/kea/kea-dhcp-ddns.conf
 RuntimeDirectory=kea
 
 [Install]

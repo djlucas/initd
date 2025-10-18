@@ -2,7 +2,7 @@
 Description=Kerberos 5 Administration Server
 
 [Service]
-ExecStart=/usr/sbin/kadmind -nofork
+ExecStart=@SBINDIR@/kadmind -nofork
 
 [Install]
 WantedBy=multi-user.target

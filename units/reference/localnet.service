@@ -7,7 +7,7 @@ Before=sysinit.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/lib/initd/service-scripts/localnet
+ExecStart=@LIBEXECDIR@/service-scripts/localnet
 
 [Install]
 WantedBy=sysinit.target

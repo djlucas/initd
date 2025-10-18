@@ -6,9 +6,9 @@ Conflicts=sendmail.service exim.service
 [Service]
 Type=forking
 PIDFile=/var/spool/postfix/pid/master.pid
-ExecStart=/usr/sbin/postfix start
-ExecStop=/usr/sbin/postfix stop
-ExecReload=/usr/sbin/postfix reload
+ExecStart=@SBINDIR@/postfix start
+ExecStop=@SBINDIR@/postfix stop
+ExecReload=@SBINDIR@/postfix reload
 Restart=always
 
 [Install]

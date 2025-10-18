@@ -6,7 +6,7 @@ Before=multi-user.target
 
 [Service]
 Type=simple
-ExecStart=/sbin/agetty --noclear %I 38400 linux
+ExecStart=@SBINDIR@/agetty --noclear %I 38400 linux
 Restart=always
 RestartSec=0
 

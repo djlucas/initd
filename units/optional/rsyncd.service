@@ -1,9 +1,9 @@
 [Unit]
 Description=A file transfer program to keep remote files in sync
-ConditionPathExists=/etc/rsyncd.conf
+ConditionPathExists=@SYSCONFDIR@/rsyncd.conf
 
 [Service]
-ExecStart=/usr/bin/rsync --daemon --no-detach
+ExecStart=@BINDIR@/rsync --daemon --no-detach
 RestartSec=1
 
 [Install]

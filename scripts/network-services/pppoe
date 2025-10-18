@@ -1,6 +1,6 @@
 #!/bin/bash
 ########################################################################
-# Begin /lib/initd/network-services/pppoe
+# Begin @LIBEXECDIR@/network-services/pppoe
 #
 # Description : PPPoE configuration using pppd
 #
@@ -16,7 +16,8 @@ ACTION=$2
 # Config already sourced by network-configure and exported
 
 PIDFILE="/var/run/pppoe-${IFACE}.pid"
-PPPD_OPTIONS="/etc/ppp/options.${IFACE}"
+PPP_DIR="@PPP_DIR@"
+PPPD_OPTIONS="${PPP_DIR}/options.${IFACE}"
 
 case "${ACTION}" in
    up)
@@ -28,7 +29,7 @@ case "${ACTION}" in
 
       # Check if pppoe plugin is available
       PLUGIN_FOUND=0
-      for plugin in /usr/lib/pppd/*/rp-pppoe.so /usr/lib64/pppd/*/rp-pppoe.so; do
+      for plugin in @LIBDIR@/pppd/*/rp-pppoe.so; do
          if [ -f "${plugin}" ]; then
             PLUGIN_FOUND=1
             break
@@ -60,7 +61,7 @@ case "${ACTION}" in
       fi
 
       # Create PPP options file if it doesn't exist
-      mkdir -p /etc/ppp
+      mkdir -p "${PPP_DIR}"
       cat > ${PPPD_OPTIONS} <<EOF
 # PPPoE options for ${IFACE}
 plugin rp-pppoe.so

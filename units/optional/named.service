@@ -4,9 +4,9 @@ After=network.target
 Provides=$named
 
 [Service]
-ExecStart=/usr/sbin/named -f -u named -t /srv/named -c /etc/named.conf
-ExecReload=/usr/sbin/rndc reload
-ExecStop=/usr/sbin/rndc stop
+ExecStart=@SBINDIR@/named -f -u named -t /srv/named -c @SYSCONFDIR@/named.conf
+ExecReload=@SBINDIR@/rndc reload
+ExecStop=@SBINDIR@/rndc stop
 
 [Install]
 WantedBy=multi-user.target

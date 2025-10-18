@@ -9,7 +9,7 @@ Provides=network-online
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/lib/initd/service-scripts/network-wait-online
+ExecStart=@LIBEXECDIR@/service-scripts/network-wait-online
 TimeoutStartSec=30
 
 [Install]

@@ -7,7 +7,7 @@ Before=sysinit.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/lib/initd/service-scripts/checkfs
+ExecStart=@LIBEXECDIR@/service-scripts/checkfs
 
 [Install]
 WantedBy=sysinit.target

@@ -7,7 +7,7 @@ Requires=dbus.service
 [Service]
 Type=dbus
 BusName=net.hadess.PowerProfiles
-ExecStart=/usr/libexec/power-profiles-daemon
+ExecStart=@LIBEXECDIR@/power-profiles-daemon
 
 [Install]
 WantedBy=multi-user.target

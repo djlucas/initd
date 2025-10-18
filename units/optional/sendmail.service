@@ -7,8 +7,8 @@ Wants=sm-client.service
 [Service]
 Type=forking
 PIDFile=/run/sendmail.pid
-EnvironmentFile=/etc/sysconfig/sendmail
-ExecStart=/usr/sbin/sendmail -bd $SENDMAIL_OPTS $SENDMAIL_OPTARG
+EnvironmentFile=@SYSCONFIG_DIR@/sendmail
+ExecStart=@SBINDIR@/sendmail -bd $SENDMAIL_OPTS $SENDMAIL_OPTARG
 
 [Install]
 WantedBy=multi-user.target

@@ -7,7 +7,7 @@ Provides=rpcbind $portmap
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/rpcbind
+ExecStart=@SBINDIR@/rpcbind
 
 [Install]
 WantedBy=multi-user.target

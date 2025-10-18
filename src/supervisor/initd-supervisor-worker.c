@@ -161,6 +161,9 @@ static void sigterm_handler(int sig) {
 }
 
 /* Setup signal handlers */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int setup_signals(void) {
     struct sigaction sa;
 
@@ -614,6 +617,9 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 }
 
 /* Create and bind control socket */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int create_control_socket(void) {
     const char *path = control_socket_path(false);
     if (!path) {
@@ -659,6 +665,9 @@ static int create_control_socket(void) {
     return fd;
 }
 
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int create_status_socket(void) {
     const char *path = control_socket_path(true);
     if (!path) {
@@ -1338,6 +1347,9 @@ static int start_unit_recursive(struct unit_file *unit) {
 }
 
 /* Main loop: manage services */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int main_loop(void) {
     fprintf(stderr, "supervisor-slave: entering main loop\n");
 

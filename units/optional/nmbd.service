@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/samba
+EnvironmentFile=@SYSCONFIG_DIR@/samba
 PIDFile=/run/samba/nmbd.pid
-ExecStart=/usr/sbin/nmbd -D $NMBD_OPTS
+ExecStart=@SBINDIR@/nmbd -D $NMBD_OPTS
 ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]

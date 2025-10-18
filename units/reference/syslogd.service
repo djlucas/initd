@@ -9,7 +9,7 @@ Provides=$syslog
 
 [Service]
 Type=forking
-ExecStart=/sbin/syslogd -m 0
+ExecStart=@SBINDIR@/syslogd -m 0
 Restart=on-failure
 StandardOutput=null
 

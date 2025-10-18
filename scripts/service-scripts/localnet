@@ -10,8 +10,8 @@
 #
 ########################################################################
 
-# Read hostname from /etc/hostname
-[ -r /etc/hostname ] && HOSTNAME=$(cat /etc/hostname)
+# Read hostname from configured file
+[ -r @HOSTNAME_FILE@ ] && HOSTNAME=$(cat @HOSTNAME_FILE@)
 
 echo "Bringing up the loopback interface"
 ip addr add 127.0.0.1/8 label lo dev lo

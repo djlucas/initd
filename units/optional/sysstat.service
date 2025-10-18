@@ -4,7 +4,7 @@ Documentation=man:sa1(8) man:sadc(8)
 
 [Service]
 Type=oneshot
-ExecStart=/usr/lib/sa/sadc -F -L -
+ExecStart=@LIBDIR@/sa/sadc -F -L -
 RemainAfterExit=yes
 
 [Install]

@@ -169,6 +169,9 @@ static void sigterm_handler(int sig) {
 }
 
 /* Setup signal handlers */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int setup_signals(void) {
     struct sigaction sa;
 
@@ -189,6 +192,9 @@ static int setup_signals(void) {
 }
 
 /* Create control socket */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int create_control_socket(void) {
     const char *path = timer_socket_path(false);
     if (!path) {
@@ -233,6 +239,9 @@ static int create_control_socket(void) {
     return fd;
 }
 
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int create_status_socket(void) {
     const char *path = timer_socket_path(true);
     if (!path) {
@@ -996,6 +1005,9 @@ static void handle_control_command(int client_fd, bool read_only) {
 }
 
 /* Main event loop */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int event_loop(void) {
     struct pollfd fds[2];
     nfds_t nfds = 0;
@@ -1103,6 +1115,9 @@ void timer_daemon_test_handle_status_fd(int fd) {
 #endif
 
 /* Get system boot time */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static time_t get_boot_time(void) {
     FILE *f = fopen("/proc/uptime", "r");
     if (f) {

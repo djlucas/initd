@@ -5,8 +5,8 @@ After=sysinit.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/alsactl restore
-ExecStop=/usr/sbin/alsactl store
+ExecStart=@SBINDIR@/alsactl restore
+ExecStop=@SBINDIR@/alsactl store
 
 [Install]
 WantedBy=multi-user.target

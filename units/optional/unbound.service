@@ -5,7 +5,7 @@ Provides=$named
 
 [Service]
 PIDFile=/run/unbound.pid
-ExecStart=/usr/sbin/unbound -d
+ExecStart=@SBINDIR@/unbound -d
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 

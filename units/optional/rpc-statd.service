@@ -8,6 +8,6 @@ PartOf=nfs-client.service
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/nfs-utils
+EnvironmentFile=@SYSCONFIG_DIR@/nfs-utils
 PIDFile=/run/rpc.statd.pid
-ExecStart=/sbin/rpc.statd --no-notify $STATD_OPTS
+ExecStart=@SBINDIR@/rpc.statd --no-notify $STATD_OPTS

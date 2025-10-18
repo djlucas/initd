@@ -149,6 +149,9 @@ static void sigchld_handler(int sig) {
 }
 
 /* Setup signal handlers */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int setup_signals(void) {
     struct sigaction sa;
 
@@ -176,6 +179,9 @@ static int setup_signals(void) {
 }
 
 /* Create control socket */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int create_control_socket(void) {
     const char *path = socket_activator_socket_path(false);
     if (!path) {
@@ -221,6 +227,9 @@ static int create_control_socket(void) {
     return fd;
 }
 
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int create_status_socket(void) {
     const char *path = socket_activator_socket_path(true);
     if (!path) {
@@ -617,6 +626,9 @@ static void check_runtime_limits(void) {
 }
 
 /* Load all socket units */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int load_sockets(void) {
     struct unit_file **units = NULL;
     int count = 0;
@@ -961,6 +973,9 @@ static void handle_control_command(int client_fd, bool read_only) {
 }
 
 /* Main event loop */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int event_loop(void) {
     struct pollfd pfds[MAX_SOCKETS + 2];
     int nfds;

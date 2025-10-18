@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/vsftpd
+ExecStart=@SBINDIR@/vsftpd
 ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]

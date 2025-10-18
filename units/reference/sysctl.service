@@ -3,12 +3,12 @@ Description=Apply Kernel Parameters
 DefaultDependencies=no
 After=mountfs.service
 Before=sysinit.target
-ConditionPathExists=/etc/sysctl.conf
+ConditionPathExists=@SYSCONFDIR@/sysctl.conf
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/sbin/sysctl -q -p
+ExecStart=@SBINDIR@/sysctl -q -p
 
 [Install]
 WantedBy=sysinit.target

@@ -261,6 +261,9 @@ static void sigchld_handler(int sig) {
 }
 
 /* Setup signal handlers */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int setup_signals(void) {
     struct sigaction sa;
 
@@ -284,6 +287,9 @@ static int setup_signals(void) {
 }
 
 /* Create IPC socketpair for master/slave communication */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int create_ipc_socket(int *master_fd, int *slave_fd) {
     int sv[2];
 
@@ -334,6 +340,9 @@ static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
 }
 
 /* Fork and exec slave process */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static pid_t start_slave(int slave_fd) {
     uid_t slave_uid;
     gid_t slave_gid;
@@ -1090,6 +1099,9 @@ static void reap_zombies(void) {
 }
 
 /* Main loop: handle IPC from slave */
+#ifdef UNIT_TEST
+__attribute__((unused))
+#endif
 static int main_loop(void) {
     fd_set readfds;
     struct timeval tv;

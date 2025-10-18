@@ -4,9 +4,9 @@ After=network.target nmbd.service winbindd.service
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/samba
+EnvironmentFile=@SYSCONFIG_DIR@/samba
 PIDFile=/run/samba/smbd.pid
-ExecStart=/usr/sbin/smbd -D $SMBD_OPTS
+ExecStart=@SBINDIR@/smbd -D $SMBD_OPTS
 ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]

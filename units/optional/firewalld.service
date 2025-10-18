@@ -8,9 +8,9 @@ Wants=network-pre.target
 [Service]
 Type=dbus
 BusName=org.fedoraproject.FirewallD1
-EnvironmentFile=-/etc/sysconfig/firewalld
-ExecStart=/usr/sbin/firewalld --nofork --nopid $FIREWALLD_ARGS
-ExecReload=/usr/bin/firewall-cmd --reload
+EnvironmentFile=-@SYSCONFIG_DIR@/firewalld
+ExecStart=@SBINDIR@/firewalld --nofork --nopid $FIREWALLD_ARGS
+ExecReload=@BINDIR@/firewall-cmd --reload
 
 [Install]
 WantedBy=multi-user.target

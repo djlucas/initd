@@ -5,8 +5,8 @@ Before=remote-fs.target
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/autofs
-ExecStart=/usr/sbin/automount --timeout 60
+EnvironmentFile=@SYSCONFIG_DIR@/autofs
+ExecStart=@SBINDIR@/automount --timeout 60
 ExecReload=/bin/kill -HUP $MAINPID
 TimeoutStopSec=30
 

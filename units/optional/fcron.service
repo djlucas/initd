@@ -5,7 +5,7 @@ After=local-fs.target
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/fcron
+ExecStart=@SBINDIR@/fcron
 
 [Install]
 WantedBy=multi-user.target

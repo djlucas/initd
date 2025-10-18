@@ -4,10 +4,10 @@ After=network.target
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/samba
+EnvironmentFile=@SYSCONFIG_DIR@/samba
 PIDFile=/run/samba.pid
-ExecStart=/usr/sbin/samba $SAMBA_OPTS
-ExecReload=/usr/bin/kill -HUP $MAINPID
+ExecStart=@SBINDIR@/samba $SAMBA_OPTS
+ExecReload=@BINDIR@/kill -HUP $MAINPID
 
 [Install]
 WantedBy=multi-user.target

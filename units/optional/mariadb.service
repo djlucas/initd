@@ -6,7 +6,7 @@ Conflicts=mysqld.service
 [Service]
 User=mariadb
 Group=mariadb
-ExecStart=/usr/sbin/mariadbd --pid-file=/run/mariadb/mariadb.pid
+ExecStart=@SBINDIR@/mariadbd --pid-file=/run/mariadb/mariadb.pid
 Restart=always
 PrivateTmp=true
 

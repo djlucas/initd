@@ -131,6 +131,60 @@ reference_network_scripts = [
 
 # Symlink creation handled inside the install-reference run target below
 
+# Create basename lists for passing to bash script
+reference_targets_basenames = [
+  'default.target',
+  'multi-user.target',
+  'basic.target',
+  'sysinit.target',
+  'graphical.target',
+  'local-fs.target',
+  'network.target',
+  'network-online.target',
+  'network-pre.target',
+  'nfs-server.target',
+  'nss-lookup.target',
+  'remote-fs.target',
+  'rpcbind.target',
+  'shutdown.target',
+  'sockets.target',
+  'time-sync.target',
+  'umount.target',
+]
+
+reference_services_basenames = [
+  'checkfs.service',
+  'console.service',
+  'createfiles.service',
+  'getty@.service',
+  'initd-socket.service',
+  'initd-timer.service',
+  'klogd.service',
+  'localnet.service',
+  'modules-load.service',
+  'mountfs.service',
+  'mountvirtfs.service',
+  'netfs.service',
+  'network@.service',
+  'network-wait-online.service',
+  'remount-root.service',
+  'swap.service',
+  'sysctl.service',
+  'syslogd.service',
+  'udev-retry.service',
+  'udev-settle.service',
+  'udev-trigger.service',
+  'udevd.service',
+]
+
+reference_configs_relative = [
+  'reference/console.conf',
+  'reference/createfiles.conf',
+  'reference/modules.conf',
+  'reference/network-eth0.conf.example',
+  'reference/udev_retry.conf',
+]
+
 # Create ninja target for reference installation
 bash = find_program('bash')
 install_cmd = find_program('install')
@@ -138,106 +192,87 @@ install_cmd = find_program('install')
 run_target('install-reference',
   command: [bash, '-c', '''
 set -e
+
+resolve_path() {
+  base="$1"
+  rel="$2"
+  case "$rel" in
+    /*) echo "$rel" ;;
+    *) echo "$base/$rel" ;;
+  esac
+}
+
 DESTDIR="${DESTDIR:-}"
 SRCDIR="$1"
 SCRIPTDIR="$2"
 PREFIX="$3"
-SYSCONFDIR="$DESTDIR$4"
-LIBDIR="$DESTDIR$PREFIX/$5"
-SBINDIR="$DESTDIR$PREFIX/$6"
-LIBEXECDIR="$DESTDIR$PREFIX/$7/initd"
-SCRIPT_HELPERS="$8"
-SERVICE_SCRIPTS="$9"
-NETWORK_SCRIPTS="${10}"
-MULTI_WANTS="${11}"
-SYSINIT_WANTS="${12}"
-BASIC_WANTS="${13}"
-SYSCONFIG="${14}"
+SYSCONFDIR_REAL=$(resolve_path "$PREFIX" "$4")
+LIBDIR_REAL=$(resolve_path "$PREFIX" "$5")
+SBINDIR_REAL=$(resolve_path "$PREFIX" "$6")
+BINDIR_REAL=$(resolve_path "$PREFIX" "$7")
+LIBEXECDIR_BASE_REAL=$(resolve_path "$PREFIX" "$8")
+LIBEXECDIR_REAL="$LIBEXECDIR_BASE_REAL/initd"
+
+SYSCONFDIR="$DESTDIR$SYSCONFDIR_REAL"
+LIBDIR="$DESTDIR$LIBDIR_REAL"
+SBINDIR="$DESTDIR$SBINDIR_REAL"
+BINDIR="$DESTDIR$BINDIR_REAL"
+LIBEXECDIR="$DESTDIR$LIBEXECDIR_REAL"
+
+TARGETS="$9"
+SERVICES="${10}"
+CONFIGS="${11}"
+SCRIPT_HELPERS="${12}"
+SERVICE_SCRIPTS="${13}"
+NETWORK_SCRIPTS="${14}"
+MULTI_WANTS="${15}"
+SYSINIT_WANTS="${16}"
+BASIC_WANTS="${17}"
+SYSCONFIG_ROOT="${18}"
+
+SYSCONFIG_DIR_REAL="$SYSCONFDIR_REAL/sysconfig"
+INITD_SYSCONFIG_DIR_REAL="$SYSCONFIG_DIR_REAL/initd"
+UDEV_RULES_DIR_REAL="$SYSCONFDIR_REAL/udev/rules.d"
+PPP_DIR_REAL="$SYSCONFDIR_REAL/ppp"
+HOSTNAME_FILE_REAL="$SYSCONFDIR_REAL/hostname"
+
+render_template() {
+  src="$1"
+  dest="$2"
+  mode="$3"
+  mkdir -p "$(dirname "$dest")"
+  sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@SYSCONFDIR@|$SYSCONFDIR_REAL|g" -e "s|@SYSCONFIG_DIR@|$SYSCONFIG_DIR_REAL|g" -e "s|@INITD_SYSCONFIG_DIR@|$INITD_SYSCONFIG_DIR_REAL|g" -e "s|@UDEV_RULES_DIR@|$UDEV_RULES_DIR_REAL|g" -e "s|@PPP_DIR@|$PPP_DIR_REAL|g" -e "s|@HOSTNAME_FILE@|$HOSTNAME_FILE_REAL|g" -e "s|@LIBDIR@|$LIBDIR_REAL|g" -e "s|@SBINDIR@|$SBINDIR_REAL|g" -e "s|@BINDIR@|$BINDIR_REAL|g" -e "s|@LIBEXECDIR@|$LIBEXECDIR_REAL|g" "$src" > "$dest"
+  chmod "$mode" "$dest"
+}
 
 # Install targets
-install -D -m 644 "$SRCDIR/default.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/multi-user.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/basic.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/sysinit.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/graphical.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/local-fs.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/network.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/network-online.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/network-pre.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/nfs-server.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/nss-lookup.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/remote-fs.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/rpcbind.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/shutdown.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/sockets.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/time-sync.target" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/umount.target" -t "$LIBDIR/initd/system"
+for target in $TARGETS; do
+  render_template "$SRCDIR/$target" "$LIBDIR/initd/system/$target" 644
+done
 
 # Install services
-install -D -m 644 "$SRCDIR/reference/checkfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/console.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/createfiles.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/getty@.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/initd-socket.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/initd-timer.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/klogd.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/localnet.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/modules-load.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/mountfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/mountvirtfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/netfs.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/network@.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/network-wait-online.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/remount-root.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/swap.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/sysctl.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/syslogd.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/udev-retry.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/udev-settle.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/udev-trigger.service" -t "$LIBDIR/initd/system"
-install -D -m 644 "$SRCDIR/reference/udevd.service" -t "$LIBDIR/initd/system"
+for service in $SERVICES; do
+  render_template "$SRCDIR/reference/$service" "$LIBDIR/initd/system/$service" 644
+done
 
 # Install helper scripts
 for script in $SCRIPT_HELPERS; do
-  install -D -m 755 "$SCRIPTDIR/$script" "$SBINDIR/$script"
+  render_template "$SCRIPTDIR/$script" "$SBINDIR/$script" 755
 done
 
-install -D -m 755 "$SCRIPTDIR/initd-user-manager" "$LIBEXECDIR/initd-user-manager"
+render_template "$SCRIPTDIR/initd-user-manager" "$LIBEXECDIR/initd-user-manager" 755
 
 for script in $SERVICE_SCRIPTS; do
-  install -D -m 755 "$SCRIPTDIR/service-scripts/$script" "$LIBEXECDIR/service-scripts/$script"
+  render_template "$SCRIPTDIR/service-scripts/$script" "$LIBEXECDIR/service-scripts/$script" 755
 done
 
 for script in $NETWORK_SCRIPTS; do
-  install -D -m 755 "$SCRIPTDIR/network-services/$script" "$LIBEXECDIR/network-services/$script"
+  render_template "$SCRIPTDIR/network-services/$script" "$LIBEXECDIR/network-services/$script" 755
 done
 
 # Install configs
-SYSCONFIGSRCDIR="$SYSCONFIG"
-install -D -m 644 "$SYSCONFIGSRCDIR/reference/console.conf" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SYSCONFIGSRCDIR/reference/createfiles.conf" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SYSCONFIGSRCDIR/reference/modules.conf" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SYSCONFIGSRCDIR/reference/network-eth0.conf.example" -t "$SYSCONFDIR/sysconfig"
-install -D -m 644 "$SYSCONFIGSRCDIR/reference/udev_retry.conf" -t "$SYSCONFDIR/sysconfig"
-
-# Create wants directories
-mkdir -p "$SYSCONFDIR/initd/system/multi-user.target.wants"
-mkdir -p "$SYSCONFDIR/initd/system/sysinit.target.wants"
-mkdir -p "$SYSCONFDIR/initd/system/basic.target.wants"
-
-# Enable multi-user.target services
-for service in $MULTI_WANTS; do
-  ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/multi-user.target.wants/$service"
-done
-
-# Enable sysinit.target services
-for service in $SYSINIT_WANTS; do
-  ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/sysinit.target.wants/$service"
-done
-
-# Enable basic.target services
-for service in $BASIC_WANTS; do
-  ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/basic.target.wants/$service"
+for config in $CONFIGS; do
+  install -D -m 644 "$SYSCONFIG_ROOT/$config" -t "$SYSCONFDIR/sysconfig"
 done
 ''',
     'install-reference',
@@ -247,7 +282,11 @@ done
     get_option('sysconfdir'),
     get_option('libdir'),
     get_option('sbindir'),
+    get_option('bindir'),
     get_option('libexecdir'),
+    ' '.join(reference_targets_basenames),
+    ' '.join(reference_services_basenames),
+    ' '.join(reference_configs_relative),
     ' '.join(reference_script_helpers),
     ' '.join(reference_service_scripts),
     ' '.join(reference_network_scripts),

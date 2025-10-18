@@ -3,8 +3,8 @@ Description=Cyrus SASL authentication daemon
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/saslauthd
-ExecStart=/usr/sbin/saslauthd -a $MECHANISMS -n $THREADS $MECH_OPTIONS $SASLAUTHD_OPTS
+EnvironmentFile=@SYSCONFIG_DIR@/saslauthd
+ExecStart=@SBINDIR@/saslauthd -a $MECHANISMS -n $THREADS $MECH_OPTIONS $SASLAUTHD_OPTS
 PIDFile=/run/saslauthd/saslauthd.pid
 
 [Install]

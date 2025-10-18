@@ -14,8 +14,8 @@
 [ -e /proc/modules ] || exit 0
 
 # Exit if there's no modules file or there are no valid entries
-[ -r /etc/initd/sysconfig/modules.conf ] || exit 0
-grep -E -qv '^($|#)' /etc/initd/sysconfig/modules.conf || exit 0
+[ -r @INITD_SYSCONFIG_DIR@/modules.conf ] || exit 0
+grep -E -qv '^($|#)' @INITD_SYSCONFIG_DIR@/modules.conf || exit 0
 
 echo "Loading modules"
 
@@ -37,7 +37,7 @@ while read module args; do
       echo "ERROR: Failed to load module: ${module}"
       failed=1
    fi
-done < /etc/initd/sysconfig/modules.conf
+done < @INITD_SYSCONFIG_DIR@/modules.conf
 
 exit ${failed}
 

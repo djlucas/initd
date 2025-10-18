@@ -6,7 +6,7 @@ Requires=kea-ctrl-agent.service
 After=network-online.target mariadb.service mysql.service
 
 [Service]
-ExecStart=/usr/sbin/kea-dhcp6 -c /etc/kea/kea-dhcp6.conf
+ExecStart=@SBINDIR@/kea-dhcp6 -c @SYSCONFDIR@/kea/kea-dhcp6.conf
 RuntimeDirectory=kea
 
 [Install]

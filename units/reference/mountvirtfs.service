@@ -7,7 +7,7 @@ Before=sysinit.target shutdown.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/lib/initd/service-scripts/mountvirtfs
+ExecStart=@LIBEXECDIR@/service-scripts/mountvirtfs
 
 [Install]
 WantedBy=sysinit.target

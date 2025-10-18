@@ -22,13 +22,13 @@ for file in ${rundir}/tmp-rules--*; do
    dest=${file##*tmp-rules--}
    [ "$dest" = '*' ] && break
    echo "Copying temporary udev rule: ${dest}"
-   cat $file >> /etc/udev/rules.d/$dest
+   cat $file >> @UDEV_RULES_DIR@/$dest
    rm -f $file
 done
 
 # Re-trigger failed uevents if retry config exists
-if [ -f /etc/initd/sysconfig/udev_retry.conf ]; then
-   sed -e 's/#.*$//' /etc/initd/sysconfig/udev_retry.conf | grep -v '^$' | \
+if [ -f @INITD_SYSCONFIG_DIR@/udev_retry.conf ]; then
+   sed -e 's/#.*$//' @INITD_SYSCONFIG_DIR@/udev_retry.conf | grep -v '^$' | \
    while read line ; do
       for subsystem in $line ; do
          echo "Re-triggering subsystem: ${subsystem}"

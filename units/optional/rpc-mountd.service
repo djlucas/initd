@@ -6,5 +6,5 @@ BindsTo=nfs-server.service
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/nfs-utils
-ExecStart=/sbin/rpc.mountd $MOUNTD_OPTS
+EnvironmentFile=@SYSCONFIG_DIR@/nfs-utils
+ExecStart=@SBINDIR@/rpc.mountd $MOUNTD_OPTS

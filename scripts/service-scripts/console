@@ -11,7 +11,7 @@
 ########################################################################
 
 # Source console configuration
-[ -r /etc/initd/sysconfig/console.conf ] && . /etc/initd/sysconfig/console.conf
+[ -r @INITD_SYSCONFIG_DIR@/console.conf ] && . @INITD_SYSCONFIG_DIR@/console.conf
 
 failed=0
 

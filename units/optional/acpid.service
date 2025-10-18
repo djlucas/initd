@@ -4,7 +4,7 @@ Documentation=man:acpid(8)
 
 [Service]
 StandardInput=socket
-ExecStart=/usr/sbin/acpid
+ExecStart=@SBINDIR@/acpid
 
 [Install]
 WantedBy=multi-user.target

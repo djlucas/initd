@@ -5,7 +5,7 @@ Conflicts=sendmail.service postfix.service
 
 [Service]
 PIDFile=/run/exim.pid
-ExecStart=/usr/sbin/exim -bdf -q30m
+ExecStart=@SBINDIR@/exim -bdf -q30m
 ExecReload=/bin/kill -HUP $MAINPID
 PrivateTmp=true
 

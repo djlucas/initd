@@ -5,7 +5,7 @@ Conflicts=getty@tty1.service gdm.service lxdm.service
 After=getty@tty1.service systemd-user-sessions.service acpid.service
 
 [Service]
-ExecStart=/usr/bin/lightdm
+ExecStart=@BINDIR@/lightdm
 Restart=always
 IgnoreSIGPIPE=no
 BusName=org.freedesktop.DisplayManager

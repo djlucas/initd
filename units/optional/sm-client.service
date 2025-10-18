@@ -7,9 +7,9 @@ BindTo=sendmail.service
 [Service]
 Type=forking
 PIDFile=/var/spool/clientmqueue/sm-client.pid
-EnvironmentFile=/etc/sysconfig/sendmail
+EnvironmentFile=@SYSCONFIG_DIR@/sendmail
 ExecStartPre=/bin/rm -f /var/spool/mqueue/xf*
-ExecStart=/usr/sbin/sendmail -L sm-msp-queue -Ac $SENDMAIL_OPTS $SENDMAIL_OPTARG
+ExecStart=@SBINDIR@/sendmail -L sm-msp-queue -Ac $SENDMAIL_OPTS $SENDMAIL_OPTARG
 
 [Install]
 WantedBy=multi-user.target

@@ -7,7 +7,7 @@ Provides=udev
 
 [Service]
 Type=simple
-ExecStart=/sbin/udevd --daemon
+ExecStart=@SBINDIR@/udevd --daemon
 Environment=SYSTEMD_LOG_TARGET=kmsg
 
 [Install]

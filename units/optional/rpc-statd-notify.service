@@ -6,5 +6,5 @@ PartOf=nfs-client.service
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/nfs-utils
-ExecStart=/sbin/sm-notify $SM_NOTIFY_OPTS
+EnvironmentFile=@SYSCONFIG_DIR@/nfs-utils
+ExecStart=@SBINDIR@/sm-notify $SM_NOTIFY_OPTS

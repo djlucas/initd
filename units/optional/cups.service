@@ -5,7 +5,7 @@ After=network.target
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/cupsd
+ExecStart=@SBINDIR@/cupsd
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 

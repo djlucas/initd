@@ -7,8 +7,8 @@ Before=sysinit.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/sbin/swapon -a
-ExecStop=/sbin/swapoff -a
+ExecStart=@SBINDIR@/swapon -a
+ExecStop=@SBINDIR@/swapoff -a
 
 [Install]
 WantedBy=sysinit.target

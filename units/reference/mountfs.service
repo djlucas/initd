@@ -9,7 +9,7 @@ Provides=$local_fs
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/mount --all --test-opts no_netdev
-ExecStop=/sbin/losetup -D
+ExecStop=@SBINDIR@/losetup -D
 ExecStop=/bin/umount --all --detach-loop --read-only --types notmpfs,nosysfs,nodevtmpfs,noproc,nodevpts
 ExecStop=/bin/mount --options remount,ro /
 

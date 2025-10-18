@@ -3,12 +3,12 @@ Description=Load Kernel Modules
 DefaultDependencies=no
 After=mountvirtfs.service
 Before=sysinit.target
-ConditionPathExists=/etc/initd/sysconfig/modules.conf
+ConditionPathExists=@INITD_SYSCONFIG_DIR@/modules.conf
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/lib/initd/service-scripts/modules-load
+ExecStart=@LIBEXECDIR@/service-scripts/modules-load
 
 [Install]
 WantedBy=sysinit.target

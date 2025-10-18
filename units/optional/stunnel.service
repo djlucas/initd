@@ -5,7 +5,7 @@ After=network.target
 
 [Service]
 Type=forking
-ExecStart=/usr/bin/stunnel
+ExecStart=@BINDIR@/stunnel
 
 [Install]
 WantedBy=multi-user.target

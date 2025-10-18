@@ -8,7 +8,7 @@ ConditionPathIsDirectory=/sys/class/bluetooth
 [Service]
 Type=dbus
 BusName=org.bluez
-ExecStart=/usr/sbin/bluetoothd
+ExecStart=@SBINDIR@/bluetoothd
 NotifyAccess=main
 
 [Install]

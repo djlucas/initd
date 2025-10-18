@@ -7,7 +7,7 @@ After=dbus.service
 [Service]
 Type=dbus
 BusName=org.freedesktop.Accounts
-ExecStart=/usr/libexec/accounts-daemon
+ExecStart=@LIBEXECDIR@/accounts-daemon
 
 [Install]
 WantedBy=multi-user.target

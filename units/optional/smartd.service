@@ -5,8 +5,8 @@ After=sysinit.target
 
 [Service]
 Type=forking
-EnvironmentFile=-/etc/sysconfig/smartmontools
-ExecStart=/usr/sbin/smartd $smartd_opts
+EnvironmentFile=-@SYSCONFIG_DIR@/smartmontools
+ExecStart=@SBINDIR@/smartd $smartd_opts
 ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]

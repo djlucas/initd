@@ -6,5 +6,5 @@ BindsTo=nfs-server.service
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/nfs-utils
-ExecStart=/sbin/rpc.idmapd $IDMAPD_OPTS
+EnvironmentFile=@SYSCONFIG_DIR@/nfs-utils
+ExecStart=@SBINDIR@/rpc.idmapd $IDMAPD_OPTS

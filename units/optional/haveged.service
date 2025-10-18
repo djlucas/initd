@@ -4,7 +4,7 @@ Documentation=man:haveged(8)
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/haveged -w 1024 -v 1
+ExecStart=@SBINDIR@/haveged -w 1024 -v 1
 PIDFile=/run/haveged.pid
 
 [Install]

@@ -9,7 +9,7 @@ Conflicts=shutdown.target syslog-ng.service rsyslog.service
 
 [Service]
 Type=forking
-ExecStart=/sbin/klogd
+ExecStart=@SBINDIR@/klogd
 Restart=on-failure
 StandardOutput=null
 

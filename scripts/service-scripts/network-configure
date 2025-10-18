@@ -21,7 +21,7 @@ if [ -z "${INTERFACE}" ] || [ -z "${ACTION}" ]; then
 fi
 
 # Source the interface configuration
-CONFIG="/etc/initd/sysconfig/network-${INTERFACE}.conf"
+CONFIG="@INITD_SYSCONFIG_DIR@/network-${INTERFACE}.conf"
 
 if [ ! -r "${CONFIG}" ]; then
    echo "ERROR: Cannot read configuration file: ${CONFIG}"

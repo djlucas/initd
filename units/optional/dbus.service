@@ -6,9 +6,9 @@ Provides=dbus messagebus
 
 [Service]
 Type=forking
-ExecStartPre=/usr/bin/dbus-uuidgen --ensure
-ExecStart=/usr/bin/dbus-daemon --system --fork
-ExecReload=/usr/bin/dbus-send --print-reply --system --type=method_call --dest=org.freedesktop.DBus / org.freedesktop.DBus.ReloadConfig
+ExecStartPre=@BINDIR@/dbus-uuidgen --ensure
+ExecStart=@BINDIR@/dbus-daemon --system --fork
+ExecReload=@BINDIR@/dbus-send --print-reply --system --type=method_call --dest=org.freedesktop.DBus / org.freedesktop.DBus.ReloadConfig
 Restart=on-failure
 
 [Install]

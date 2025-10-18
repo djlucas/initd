@@ -7,7 +7,7 @@ Provides=$time
 [Service]
 Type=forking
 PrivateTmp=true
-ExecStart=/usr/sbin/ntpd -g -u ntp:ntp
+ExecStart=@SBINDIR@/ntpd -g -u ntp:ntp
 
 [Install]
 WantedBy=multi-user.target

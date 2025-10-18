@@ -4,9 +4,9 @@ After=initd-supervisor.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/libexec/initd/initd-user-manager start
-ExecStop=/usr/libexec/initd/initd-user-manager stop
-ExecReload=/usr/libexec/initd/initd-user-manager reload
+ExecStart=@LIBEXECDIR@/initd/initd-user-manager start
+ExecStop=@LIBEXECDIR@/initd/initd-user-manager stop
+ExecReload=@LIBEXECDIR@/initd/initd-user-manager reload
 RemainAfterExit=yes
 
 [Install]

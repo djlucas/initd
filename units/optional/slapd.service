@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=forking
-EnvironmentFile=/etc/sysconfig/slapd
-ExecStart=/usr/sbin/slapd -u ldap -g ldap $SLAPD_OPTS
+EnvironmentFile=@SYSCONFIG_DIR@/slapd
+ExecStart=@SBINDIR@/slapd -u ldap -g ldap $SLAPD_OPTS
 
 [Install]
 WantedBy=multi-user.target

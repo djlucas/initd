@@ -7,7 +7,7 @@ Before=sysinit.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/lib/initd/service-scripts/udev-trigger
+ExecStart=@LIBEXECDIR@/service-scripts/udev-trigger
 
 [Install]
 WantedBy=sysinit.target
