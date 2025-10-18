@@ -177,13 +177,38 @@ struct user_daemon_config {
     bool socket_act;
 };
 
+#ifndef USER_MARKER_DIR
 #define USER_MARKER_DIR "/etc/initd/users-enabled"
+#endif
 #define USER_CONFIG_FILENAME "user-daemons.conf"
 
 static void daemon_config_init(struct user_daemon_config *cfg) {
     cfg->supervisor = false;
     cfg->timer = false;
     cfg->socket_act = false;
+}
+
+/* Copy at most dest_size-1 bytes, appending ellipsis if truncated. */
+static void copy_truncated(char *dest, size_t dest_size, const char *src) {
+    if (!dest || dest_size == 0) {
+        return;
+    }
+
+    if (!src) {
+        dest[0] = '\0';
+        return;
+    }
+
+    size_t len = strnlen(src, dest_size - 1);
+    memcpy(dest, src, len);
+    dest[len] = '\0';
+
+    if (src[len] != '\0' && dest_size > 4) {
+        dest[dest_size - 1] = '\0';
+        dest[dest_size - 2] = '.';
+        dest[dest_size - 3] = '.';
+        dest[dest_size - 4] = '.';
+    }
 }
 
 static int ensure_directory_owned(const char *path, mode_t mode, uid_t uid, gid_t gid) {
@@ -499,9 +524,18 @@ static int handle_user_command(int argc, char *argv[], int index) {
     if (strcmp(subcmd, "status") == 0) {
         char config_dir[PATH_MAX];
         char config_path[PATH_MAX];
-        snprintf(config_dir, sizeof(config_dir), "%s/.config/initd", pw->pw_dir);
-        snprintf(config_path, sizeof(config_path), "%s/%s",
-                 config_dir, USER_CONFIG_FILENAME);
+        int written = snprintf(config_dir, sizeof(config_dir),
+                               "%s/.config/initd", pw->pw_dir);
+        if (written < 0 || (size_t)written >= sizeof(config_dir)) {
+            fprintf(stderr, "Error: path too long\n");
+            return 1;
+        }
+        written = snprintf(config_path, sizeof(config_path), "%s/%s",
+                           config_dir, USER_CONFIG_FILENAME);
+        if (written < 0 || (size_t)written >= sizeof(config_path)) {
+            fprintf(stderr, "Error: path too long\n");
+            return 1;
+        }
 
         struct user_daemon_config cfg;
         bool exists;
@@ -791,19 +825,29 @@ int main(int argc, char *argv[]) {
                 format_time_iso(timer_entries[i].next_run, next_buf, sizeof(next_buf));
                 format_time_iso(timer_entries[i].last_run, last_buf, sizeof(last_buf));
 
-                if (timer_entries[i].description[0] != '\0') {
-                    snprintf(slot->description, sizeof(slot->description),
-                             "%s (timer for %s; next %s; last %s)",
-                             timer_entries[i].description,
-                             timer_entries[i].unit,
-                             next_buf,
-                             last_buf);
+                char desc_buf[96];
+                char unit_buf[96];
+                copy_truncated(desc_buf, sizeof(desc_buf), timer_entries[i].description);
+                copy_truncated(unit_buf, sizeof(unit_buf), timer_entries[i].unit);
+
+                int written;
+                if (desc_buf[0] != '\0') {
+                    written = snprintf(slot->description, sizeof(slot->description),
+                                       "%s (timer for %s; next %s; last %s)",
+                                       desc_buf,
+                                       unit_buf,
+                                       next_buf,
+                                       last_buf);
                 } else {
-                    snprintf(slot->description, sizeof(slot->description),
-                             "Timer for %s (next %s; last %s)",
-                             timer_entries[i].unit,
-                             next_buf,
-                             last_buf);
+                    written = snprintf(slot->description, sizeof(slot->description),
+                                       "Timer for %s (next %s; last %s)",
+                                       unit_buf,
+                                       next_buf,
+                                       last_buf);
+                }
+
+                if (written < 0 || (size_t)written >= sizeof(slot->description)) {
+                    slot->description[sizeof(slot->description) - 1] = '\0';
                 }
             }
         } else {

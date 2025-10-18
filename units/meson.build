@@ -104,40 +104,32 @@ basic_wants = [
   'initd-timer.service',
 ]
 
-# Create symlinks for enabled services
-meson.add_install_script('sh', '-c', '''
-  SYSCONFDIR="$DESTDIR@0@"
-  LIBDIR="$DESTDIR@1@"
+# Helper scripts installed as part of the reference profile
+reference_script_helpers = [
+  'ifup',
+  'ifdown',
+  'journalctl',
+]
 
-  # Create wants directories
-  mkdir -p "$SYSCONFDIR/initd/system/multi-user.target.wants"
-  mkdir -p "$SYSCONFDIR/initd/system/sysinit.target.wants"
-  mkdir -p "$SYSCONFDIR/initd/system/basic.target.wants"
+reference_service_scripts = [
+  'checkfs',
+  'console',
+  'createfiles',
+  'localnet',
+  'modules-load',
+  'mountvirtfs',
+  'netfs',
+  'network-configure',
+  'network-wait-online',
+  'udev-retry',
+  'udev-trigger',
+]
 
-  # Enable multi-user.target services
-  for service in @2@; do
-    ln -sf "$LIBDIR/initd/system/$service" \
-           "$SYSCONFDIR/initd/system/multi-user.target.wants/$service"
-  done
+reference_network_scripts = [
+  'static',
+]
 
-  # Enable sysinit.target services
-  for service in @3@; do
-    ln -sf "$LIBDIR/initd/system/$service" \
-           "$SYSCONFDIR/initd/system/sysinit.target.wants/$service"
-  done
-
-  # Enable basic.target services
-  for service in @4@; do
-    ln -sf "$LIBDIR/initd/system/$service" \
-           "$SYSCONFDIR/initd/system/basic.target.wants/$service"
-  done
-'''.format(
-  get_option('sysconfdir'),
-  '/' + get_option('prefix') / get_option('libdir'),
-  ' '.join(multi_user_wants),
-  ' '.join(sysinit_wants),
-  ' '.join(basic_wants)
-), install_tag: 'reference')
+# Symlink creation handled inside the install-reference run target below
 
 # Create ninja target for reference installation
 bash = find_program('bash')
@@ -147,9 +139,20 @@ run_target('install-reference',
   command: [bash, '-c', '''
 set -e
 DESTDIR="${DESTDIR:-}"
-SRCDIR="@0@"
-LIBDIR="$DESTDIR@1@"
-SYSCONFDIR="$DESTDIR@2@"
+SRCDIR="$1"
+SCRIPTDIR="$2"
+PREFIX="$3"
+SYSCONFDIR="$DESTDIR$4"
+LIBDIR="$DESTDIR$PREFIX/$5"
+SBINDIR="$DESTDIR$PREFIX/$6"
+LIBEXECDIR="$DESTDIR$PREFIX/$7/initd"
+SCRIPT_HELPERS="$8"
+SERVICE_SCRIPTS="$9"
+NETWORK_SCRIPTS="${10}"
+MULTI_WANTS="${11}"
+SYSINIT_WANTS="${12}"
+BASIC_WANTS="${13}"
+SYSCONFIG="${14}"
 
 # Install targets
 install -D -m 644 "$SRCDIR/default.target" -t "$LIBDIR/initd/system"
@@ -194,8 +197,23 @@ install -D -m 644 "$SRCDIR/reference/udev-settle.service" -t "$LIBDIR/initd/syst
 install -D -m 644 "$SRCDIR/reference/udev-trigger.service" -t "$LIBDIR/initd/system"
 install -D -m 644 "$SRCDIR/reference/udevd.service" -t "$LIBDIR/initd/system"
 
+# Install helper scripts
+for script in $SCRIPT_HELPERS; do
+  install -D -m 755 "$SCRIPTDIR/$script" "$SBINDIR/$script"
+done
+
+install -D -m 755 "$SCRIPTDIR/initd-user-manager" "$LIBEXECDIR/initd-user-manager"
+
+for script in $SERVICE_SCRIPTS; do
+  install -D -m 755 "$SCRIPTDIR/service-scripts/$script" "$LIBEXECDIR/service-scripts/$script"
+done
+
+for script in $NETWORK_SCRIPTS; do
+  install -D -m 755 "$SCRIPTDIR/network-services/$script" "$LIBEXECDIR/network-services/$script"
+done
+
 # Install configs
-SYSCONFIGSRCDIR="@3@"
+SYSCONFIGSRCDIR="$SYSCONFIG"
 install -D -m 644 "$SYSCONFIGSRCDIR/reference/console.conf" -t "$SYSCONFDIR/sysconfig"
 install -D -m 644 "$SYSCONFIGSRCDIR/reference/createfiles.conf" -t "$SYSCONFDIR/sysconfig"
 install -D -m 644 "$SYSCONFIGSRCDIR/reference/modules.conf" -t "$SYSCONFDIR/sysconfig"
@@ -208,18 +226,34 @@ mkdir -p "$SYSCONFDIR/initd/system/sysinit.target.wants"
 mkdir -p "$SYSCONFDIR/initd/system/basic.target.wants"
 
 # Enable multi-user.target services
-for service in getty@tty1.service getty@tty2.service getty@tty3.service getty@tty4.service getty@tty5.service getty@tty6.service klogd.service syslogd.service; do
+for service in $MULTI_WANTS; do
   ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/multi-user.target.wants/$service"
 done
 
 # Enable sysinit.target services
-for service in checkfs.service console.service createfiles.service localnet.service modules-load.service mountfs.service mountvirtfs.service random-seed.service remount-root.service swap.service sysctl.service udev-retry.service udev-settle.service udev-trigger.service udevd.service; do
+for service in $SYSINIT_WANTS; do
   ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/sysinit.target.wants/$service"
 done
 
 # Enable basic.target services
-for service in initd-socket.service initd-timer.service; do
+for service in $BASIC_WANTS; do
   ln -sf "$LIBDIR/initd/system/$service" "$SYSCONFDIR/initd/system/basic.target.wants/$service"
 done
-'''.format(meson.current_source_dir(), '/' + get_option('prefix') / get_option('libdir'), get_option('sysconfdir'), meson.project_source_root() / 'sysconfig')]
+''',
+    'install-reference',
+    meson.current_source_dir(),
+    meson.project_source_root() / 'scripts',
+    get_option('prefix'),
+    get_option('sysconfdir'),
+    get_option('libdir'),
+    get_option('sbindir'),
+    get_option('libexecdir'),
+    ' '.join(reference_script_helpers),
+    ' '.join(reference_service_scripts),
+    ' '.join(reference_network_scripts),
+    ' '.join(multi_user_wants),
+    ' '.join(sysinit_wants),
+    ' '.join(basic_wants),
+    meson.project_source_root() / 'sysconfig',
+  ]
 )

@@ -29,8 +29,9 @@ systemd files or code are reused here.
 2. **initd-supervisor** – Privilege-separated master (root) and worker (unprivileged) that parse units, resolve dependencies, and manage services.
 3. **initd-timer** – Independent timer daemon (master/worker) providing cron-style scheduling, including `OnUnitInactiveSec` with persistence.
 4. **initd-socket** – Independent socket activator (master/worker) that binds listeners, enforces IdleTimeout/RuntimeMaxSec, and reports adopted services back to the supervisor.
-5. **initctl / systemctl** – CLI front-end that routes requests to the appropriate daemon over their control sockets.
+5. **initctl / systemctl** – CLI front-end that routes requests to the appropriate daemon over their control sockets; includes `--user` routing and root-only `initctl user` helpers to seed per-user configs.
 6. **journalctl wrapper** – Convenience shim over syslog for journalctl-like log viewing.
+7. **initd-user-manager** – Boot-time helper script and unit that start the user-mode daemons according to `/etc/initd/users-enabled/` and `~/.config/initd/user-daemons.conf`.
 
 ### Architecture
 
@@ -107,6 +108,13 @@ initctl/systemctl
 - **journalctl** - Log query wrapper for traditional syslog that mimics some of systemd's journalctl
 - Standard targets (rescue, multi-user, graphical)
 - Drop-in compatibility with existing systemd unit files (will convert on the fly if a systemd service is enabled)
+
+### Per-User Daemons
+
+1. Root seeds per-user settings: `initctl user enable alice supervisor timer`
+2. Enable the boot helper: `systemctl enable --now initd-user-manager.service`
+3. Users manage their units under `~/.config/initd/user/`; `initctl --user …` targets the user instance
+4. Optional (Linux + elogind): `loginctl enable-linger alice` provides session manager persistence, independent of the initd reboot-persistence helpers above.
 
 ## Credits
 
@@ -376,10 +384,14 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 - Service registry + restart limiter prevent privilege/DoS abuse
 - Hardened IPC/path handling, KillMode, PrivateTmp, signal safety
 
-### Phase 3 – Independent Daemons (60%)
+### Phase 3 – Independent Daemons (80%)
 - Timer daemon: cron-style scheduling, OnUnitInactiveSec persistence
 - Socket activator: listeners, IdleTimeout/RuntimeMaxSec, supervisor adopt
-- Remaining: unify initctl routing across daemons; add full integration tests
+- Read-only status sockets exposed by each daemon; initctl routes queries to
+  the appropriate status endpoint and supports `--user`
+- Added `initctl user` commands plus `initd-user-manager` helper to seed and start per-user daemons
+- Added end-to-end integration tests across daemons and documented
+  reboot persistence for per-user instances
 - Maintain daemon independence (optional control sockets, standalone modes)
 
 ### Phase 4 – Linux Enhancements (0%)

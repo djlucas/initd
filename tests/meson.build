@@ -161,6 +161,56 @@ test('isolate closure', test_isolate)
 test('supervisor socket IPC', test_supervisor_socket)
 test('timer inactivity notify', test_timer_notify)
 
+cc = meson.get_compiler('c')
+
+initctl_route_lib = static_library(
+  'initctl-route-lib',
+  '../src/initctl/initctl.c',
+  dependencies: common_dep,
+  c_args: [
+    '-Dmain=initd_test_initctl_main',
+    '-DUSER_MARKER_DIR="/tmp/initd-user-persist-markers"',
+    '-DINITD_RUNTIME_DEFAULT="/tmp/initd-routing-system"',
+  ],
+)
+
+initctl_reboot_lib = static_library(
+  'initctl-reboot-lib',
+  '../src/initctl/initctl.c',
+  dependencies: common_dep,
+  c_args: [
+    '-Dmain=initd_test_initctl_main',
+    '-DUSER_MARKER_DIR="/tmp/initd-user-persist-markers"',
+    '-Dgetpwnam=initctl_test_getpwnam',
+    '-Dgeteuid=initctl_test_geteuid',
+    '-Dgetuid=initctl_test_getuid',
+    '-Dchown=initctl_test_chown',
+    '-Dfchown=initctl_test_fchown',
+  ],
+)
+
+test_initctl_routing = executable(
+  'test-initctl-routing',
+  [
+    'test-initctl-routing.c',
+  ],
+  dependencies: common_dep,
+  link_with: initctl_route_lib,
+)
+
+test('initctl routing', test_initctl_routing)
+
+test_user_persistence = executable(
+  'test-user-persistence',
+  [
+    'test-user-persistence.c',
+  ],
+  dependencies: common_dep,
+  link_with: initctl_reboot_lib,
+)
+
+test('user persistence', test_user_persistence)
+
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')
 

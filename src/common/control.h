@@ -12,7 +12,9 @@
 #include <sys/types.h>
 
 #define INITD_RUNTIME_DIR_ENV "INITD_RUNTIME_DIR"
+#ifndef INITD_RUNTIME_DEFAULT
 #define INITD_RUNTIME_DEFAULT "/run/initd"
+#endif
 
 #define CONTROL_SOCKET_NAME "supervisor.sock"
 #define CONTROL_STATUS_SOCKET_NAME "supervisor.status.sock"

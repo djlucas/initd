@@ -273,6 +273,16 @@ Exercises the supervisor/worker control path:
 - Sends `CMD_SOCKET_ADOPT` over the control socket
 - Confirms the supervisor marks services active or inactive accordingly
 
+### test-initctl-routing
+Validates `initctl` command routing logic:
+- Verifies service, timer, and socket commands connect to the correct daemon sockets
+- Confirms `--user` scope targets the per-user runtime directory and sockets
+
+### test-user-persistence
+Checks per-user reboot-persistence helpers:
+- Exercises `initctl user enable/disable/status` logic in a sandboxed environment
+- Verifies config files under `~/.config/initd/` and marker files in `/etc/initd/users-enabled/`
+
 ## Test Statistics
 
 **Total: 20 test suites, 106 individual tests - all passing ✅**

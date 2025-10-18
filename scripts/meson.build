@@ -1,88 +1,22 @@
-# Reference installation scripts
-# Install with: meson install --tags reference
+optional_network_scripts = [
+  'bridge',
+  'dhclient',
+  'dhcpcd',
+  'iwd',
+  'pppoe',
+  'wpa_supplicant',
+]
 
-# Install helper scripts
-install_data(
-  'ifup',
-  'ifdown',
-  'journalctl',
-  install_dir: get_option('sbindir'),
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'reference',
-)
+bash = find_program('bash')
 
-install_data(
-  'initd-user-manager',
-  install_dir: get_option('libexecdir') / 'initd',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'reference',
-)
-
-# Install service scripts
-install_data(
-  'service-scripts/checkfs',
-  'service-scripts/console',
-  'service-scripts/createfiles',
-  'service-scripts/localnet',
-  'service-scripts/modules-load',
-  'service-scripts/mountvirtfs',
-  'service-scripts/netfs',
-  'service-scripts/network-configure',
-  'service-scripts/network-wait-online',
-  'service-scripts/udev-retry',
-  'service-scripts/udev-trigger',
-  install_dir: get_option('libexecdir') / 'initd' / 'service-scripts',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'reference',
-)
-
-# Install static network service (installed by default with reference)
-install_data(
-  'network-services/static',
-  install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'reference',
-)
-
-# Optional network services - individual install targets
-install_data(
-  'network-services/bridge',
-  install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'install-network-bridge',
-)
-
-install_data(
-  'network-services/dhclient',
-  install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'install-network-dhclient',
-)
-
-install_data(
-  'network-services/dhcpcd',
-  install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'install-network-dhcpcd',
-)
-
-install_data(
-  'network-services/iwd',
-  install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'install-network-iwd',
-)
-
-install_data(
-  'network-services/pppoe',
-  install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'install-network-pppoe',
-)
-
-install_data(
-  'network-services/wpa_supplicant',
-  install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-  install_mode: 'rwxr-xr-x',
-  install_tag: 'install-network-wpa_supplicant',
-)
+foreach script : optional_network_scripts
+  src_path = meson.current_source_dir() / ('network-services/' + script)
+  dst_path = get_option('prefix') / get_option('libexecdir') / ('initd/network-services/' + script)
+  install_cmd = 'set -e; DESTDIR="${DESTDIR:-}"; install -D -m 755 "{0}" "$DESTDIR{1}"'.format(
+    src_path,
+    dst_path,
+  )
+  run_target('install-network-' + script,
+    command: [bash, '-c', install_cmd]
+  )
+endforeach

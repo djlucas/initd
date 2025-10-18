@@ -26,7 +26,7 @@ Each component is a **separate, independent daemon** that can be installed and r
 **Independence Requirements:**
 - Each daemon has a clearly defined purpose
 - Each can function without others being present
-- Each manages its own control socket
+- Each manages its own control (write) and status (read-only) sockets
 - Each can be packaged/installed separately
 - Cross-daemon communication is optional, not required
 
@@ -141,6 +141,7 @@ enum priv_request_type {
 **Independence:**
 - Runs standalone without supervisor
 - Own control socket: `/run/initd/socket-activator.sock`
+- Own status socket: `/run/initd/socket-activator.status.sock`
 - Manages its own .socket unit files
 - Can activate services via supervisor OR exec directly
 
@@ -154,7 +155,7 @@ enum priv_request_type {
 **Unique feature:** Idle timeout (systemd doesn't have this!)
 
 **Service Activation:**
-1. Check if supervisor socket exists (`/run/initd/supervisor.sock`)
+1. Check if supervisor control socket exists (`/run/initd/supervisor.sock`)
 2. If yes: send activation request to supervisor
 3. If no: exec service directly or use native init commands
 
@@ -171,6 +172,7 @@ enum priv_request_type {
 **Independence:**
 - Runs standalone without supervisor
 - Own control socket: `/run/initd/timer.sock`
+- Own status socket: `/run/initd/timer.status.sock`
 - Manages its own .timer unit files
 - Can activate services via supervisor OR exec directly
 
@@ -185,7 +187,7 @@ enum priv_request_type {
 
 **Service Activation:**
 1. Timer expires
-2. Check if supervisor socket exists (`/run/initd/supervisor.sock`)
+2. Check if supervisor control socket exists (`/run/initd/supervisor.sock`)
 3. If yes: send activation request to supervisor
 4. If no: exec service directly or use `systemctl start foo`
 
@@ -201,10 +203,16 @@ enum priv_request_type {
 
 **Routes commands to appropriate daemon based on unit type**
 
-**Control Sockets:**
-- `/run/initd/supervisor.sock` - for .service units
-- `/run/initd/timer.sock` - for .timer units
-- `/run/initd/socket-activator.sock` - for .socket units
+**IPC Sockets:**
+- Supervisor
+  - Control: `/run/initd/supervisor.sock` (privileged commands)
+  - Status: `/run/initd/supervisor.status.sock` (read-only queries; 0666)
+- Timer daemon
+  - Control: `/run/initd/timer.sock`
+  - Status: `/run/initd/timer.status.sock`
+- Socket activator
+  - Control: `/run/initd/socket-activator.sock`
+  - Status: `/run/initd/socket-activator.status.sock`
 
 **Protocol:**
 ```c
@@ -219,13 +227,24 @@ struct msg_header {
 
 **Command Routing:**
 ```c
+bool readonly = command in {
+    CMD_STATUS, CMD_IS_ACTIVE, CMD_IS_ENABLED,
+    CMD_LIST_UNITS, CMD_LIST_TIMERS, CMD_LIST_SOCKETS
+};
+
 // initctl determines unit type and routes to correct daemon
 if (unit ends with ".service" || no extension) {
-    socket = "/run/initd/supervisor.sock";
+    socket = readonly
+        ? "/run/initd/supervisor.status.sock"
+        : "/run/initd/supervisor.sock";
 } else if (unit ends with ".timer") {
-    socket = "/run/initd/timer.sock";
+    socket = readonly
+        ? "/run/initd/timer.status.sock"
+        : "/run/initd/timer.sock";
 } else if (unit ends with ".socket") {
-    socket = "/run/initd/socket-activator.sock";
+    socket = readonly
+        ? "/run/initd/socket-activator.status.sock"
+        : "/run/initd/socket-activator.sock";
 }
 
 // If daemon not running, provide helpful error
@@ -245,9 +264,16 @@ if (connect(socket) fails) {
 
 **Permissions:**
 - Root: full control
-- Non-root: read-only queries on system services
+- Non-root: read-only queries on system services via the daemon-specific `*.status.sock` endpoints (0666)
+- Control sockets remain `0600`/`0660`, so mutating commands require root or the dedicated service account
 
-**User mode:** `systemctl --user` connects to per-user daemons (if running)
+**User Mode Architecture:**
+- Per-user supervisor and timer daemons run entirely unprivileged.
+- Sockets live in `/run/user/$UID/initd/` (`supervisor.sock`, `supervisor.status.sock`, `timer.sock`, `timer.status.sock`, etc.) with `0600` perms.
+- Unit file roots default to `~/.config/initd/user/`; no system directories are consulted.
+- `initctl` auto-detects the per-user sockets; `initctl --user` forces user scope, `--system` forces the system instance.
+- `initctl user enable/disable` (root-only) populates per-user daemon settings in `~/.config/initd/user-daemons.conf`.
+- The `initd-user-manager` helper (oneshot service) reads `/etc/initd/users-enabled/` at boot, creates `/run/user/$UID/initd`, and starts the selected user daemons to provide reboot persistence. On Linux with elogind, administrators can optionally use `loginctl enable-linger` for session-manager persistence; it operates independently of initd's helpers.
 
 #### 6. journalctl
 
@@ -325,11 +351,13 @@ units += query_socket_activator();
 
 ### Socket Paths
 
-| Daemon | Control Socket | Purpose |
-|--------|---------------|----------|
-| supervisor-slave | `/run/initd/supervisor.sock` | Service management |
-| timer-daemon | `/run/initd/timer.sock` | Timer control |
-| socket-activator | `/run/initd/socket-activator.sock` | Socket control |
+| Daemon | Control Socket | Status Socket | Purpose |
+|--------|---------------|---------------|----------|
+| supervisor-slave | `/run/initd/supervisor.sock` | `/run/initd/supervisor.status.sock` | Service management |
+| timer-daemon | `/run/initd/timer.sock` | `/run/initd/timer.status.sock` | Timer control |
+| socket-activator | `/run/initd/socket-activator.sock` | `/run/initd/socket-activator.status.sock` | Socket control |
+
+> **Total:** six IPC sockets (three read/write control endpoints plus three read-only status endpoints) when all daemons are running.
 
 ### Shared Protocol
 
@@ -1001,44 +1029,58 @@ init (root, PID 1)
 
 ### Commit Message Guidelines
 
-Keep history easy to scan by using a structured template:
+Keep history easy to scan by using a consistent four-part structure. Wrap every
+line at 80 characters (72 preferred for the subject line). The only indentation
+should be the bullet list; all other lines begin flush left. Leave a single
+blank line between the major sections, and place the bullet list immediately
+after the `What Changed:` header (no intervening blank line).
 
 **Feature commits**
 ```
 Feature: Short title describing the addition
-Problem statement in one sentence explaining what was missing or broken.
+
+Formerly, single wrapped sentence explaining the missing capability.
+
+This commit single wrapped sentence summarising the solution.
 
 What Changed:
-- bullet for the first change
-- bullet for the next change
-- continue with additional bullets as needed
+  - bullet for the first change
+  - bullet for the next change
 ```
 
 **Bugfix commits**
 ```
 Bugfix: Short title describing the fix
-One-sentence description of the defect.
+
+Formerly, single wrapped sentence describing the defect.
+
+This commit single wrapped sentence summarising the fix.
 
 What Changed:
-- bullets explaining the fix
-Security Benefits: optional single sentence when relevant
+  - bullets explaining the code/config updates
+Security Benefits (optional):
+  - single sentence when relevant
 ```
 
 **Security commits**
 ```
 Security: Short title describing the mitigation
-One-sentence description of the issue/risk.
+
+Formerly, single wrapped sentence describing the risk.
+
+This commit single wrapped sentence summarising the mitigation.
 
 What Changed:
-- bullets describing code/config updates
+  - bullets describing code/config updates
 Security Benefits:
-- bullets highlighting the security impact
+  - bullets highlighting the security impact
 ```
 
 Notes:
-- Bullets should be concise, present tense, and use lowercase starts.
-- Omit the “Security Benefits” section when it does not apply.
-- Avoid duplicating information between the problem statement and bullets.
+- Bullets use two spaces followed by `-` and a concise, present-tense clause.
+- Omit the optional “Security Benefits” section when it does not apply.
+- Configure `git config commit.template` (project or global) or a prepare-
+  commit-msg hook to enforce the template automatically.
 
 ## Development Roadmap
 
@@ -1069,11 +1111,15 @@ Notes:
 ### Phase 3: Independent Daemons + Portable Supervision (IN PROGRESS)
 1. ✅ Timer daemon (independent, cron replacement) — OnUnitInactiveSec reschedules and persists last-inactive timestamps
 2. ✅ Socket activator daemon (independent, idle timeout, RuntimeMaxSec, supervisor adoption)
-3. ⚠️ Daemon independence (separate control sockets, optional communication)
-4. ⚠️ Full systemctl compatibility (command routing to daemons)
-5. ⚠️ journalctl wrapper
-6. ⚠️ Cross-platform process-group supervision parity (Linux/BSD/Hurd) with shared abstraction layer
-7. ⚠️ Platform detection/build plumbing for shared code paths (headers, feature flags, CI coverage)
+3. ✅ Daemon independence (separate control sockets, optional communication)
+4. ✅ Full systemctl compatibility (command routing to daemons)
+   - Added end-to-end integration tests exercising --user/--system routing
+5. ✅ journalctl wrapper
+6. ✅ Cross-platform process-group supervision parity (Linux/BSD/Hurd) with shared abstraction layer
+7. ✅ Platform detection/build plumbing for shared code paths (headers, feature flags, CI coverage)
+
+### User-Mode Follow-ups
+- ✅ Documented and tested per-user reboot persistence workflows
 
 ### Phase 4: Linux-Specific Enhancements (FUTURE)
 1. ⬜ Cgroup v2 integration (Linux-only, parallel to process groups)

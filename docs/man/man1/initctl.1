@@ -141,6 +141,22 @@ foo (no ext) → /run/initd/supervisor.sock (assumed .service)
 .RE
 .PP
 If the target daemon is not running, a helpful error message is displayed.
+.SS Per-user persistence
+The
+.B initctl user
+subcommands manage per-user daemon settings for reboot persistence. Running
+.B "initctl user enable USER [DAEMON...]"
+creates or updates
+.I ~/.config/initd/user-daemons.conf
+and places a marker under
+.I /etc/initd/users-enabled/.
+Daemons listed there are started at boot by
+.B initd-user-manager.
+.PP
+On Linux systems that use elogind, administrators may optionally run
+.B loginctl enable-linger USER
+to obtain session-manager persistence; this facility operates independently
+from initd's reboot-persistence helpers.
 .SH EXIT STATUS
 .TP
 .B 0
