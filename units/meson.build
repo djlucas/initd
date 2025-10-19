@@ -215,84 +215,100 @@ optional_services = [
   'xdm.service',
 ]
 
-# Process and install targets
+# Collect reference targets and generate service files
+reference_target_sources = []
 foreach target : reference_targets
-  install_data(target,
-    install_dir: get_option('libdir') / 'initd' / 'system',
-    install_tag: 'reference'
-  )
+  reference_target_sources += [meson.current_source_dir() / target]
 endforeach
 
-# Process and install services
+reference_service_outputs = []
 foreach service : reference_services
-  configure_file(
+  reference_service_outputs += [configure_file(
     input: 'reference' / service,
     output: service,
     configuration: conf_data,
-    install: true,
-    install_dir: get_option('libdir') / 'initd' / 'system',
-    install_tag: 'reference'
-  )
+    install: false
+  )]
 endforeach
 
-# Process and install helper scripts
+# Process helper scripts
 scriptdir = meson.project_source_root() / 'scripts'
+reference_sbin_scripts = []
 foreach script : reference_script_helpers
-  configure_file(
+  reference_sbin_scripts += [configure_file(
     input: scriptdir / script,
     output: script,
     configuration: conf_data,
-    install: true,
-    install_mode: 'rwxr-xr-x',
-    install_dir: get_option('sbindir'),
-    install_tag: 'reference'
-  )
+    install: false
+  )]
 endforeach
 
 # Install initd-user-manager
-configure_file(
+reference_libexec_scripts = [configure_file(
   input: scriptdir / 'initd-user-manager',
   output: 'initd-user-manager',
   configuration: conf_data,
-  install: true,
-  install_mode: 'rwxr-xr-x',
-  install_dir: get_option('libexecdir') / 'initd',
-  install_tag: 'reference'
-)
+  install: false
+)]
 
-# Process and install service scripts
+# Process service scripts
+reference_service_script_outputs = []
 foreach script : reference_service_scripts
-  configure_file(
+  reference_service_script_outputs += [configure_file(
     input: scriptdir / 'service-scripts' / script,
     output: script,
     configuration: conf_data,
-    install: true,
-    install_mode: 'rwxr-xr-x',
-    install_dir: get_option('libexecdir') / 'initd' / 'service-scripts',
-    install_tag: 'reference'
-  )
+    install: false
+  )]
 endforeach
 
-# Process and install network scripts
+# Process network scripts
+reference_network_script_outputs = []
 foreach script : reference_network_scripts
-  configure_file(
+  reference_network_script_outputs += [configure_file(
     input: scriptdir / 'network-services' / script,
     output: script,
     configuration: conf_data,
-    install: true,
-    install_mode: 'rwxr-xr-x',
-    install_dir: get_option('libexecdir') / 'initd' / 'network-services',
-    install_tag: 'reference'
-  )
+    install: false
+  )]
 endforeach
 
-# Install configuration files
+# Collect configuration sources
+reference_config_sources = []
 foreach config : reference_configs
-  install_data(
-    meson.project_source_root() / 'sysconfig' / 'reference' / config,
-    install_dir: get_option('sysconfdir') / 'sysconfig',
-    install_tag: 'reference'
-  )
+  reference_config_sources += [meson.project_source_root() / 'sysconfig' / 'reference' / config]
+endforeach
+
+install_cmd = find_program('install')
+
+unit_dest = get_option('libdir') / 'initd' / 'system'
+sbin_dest = get_option('sbindir')
+libexec_dest = get_option('libexecdir') / 'initd'
+service_script_dest = libexec_dest / 'service-scripts'
+network_script_dest = libexec_dest / 'network-services'
+config_dest = get_option('sysconfdir') / 'sysconfig'
+
+reference_install_args = []
+foreach src : reference_target_sources
+  reference_install_args += ['--unit', unit_dest, src]
+endforeach
+foreach src : reference_service_outputs
+  reference_install_args += ['--unit', unit_dest, src]
+endforeach
+foreach src : reference_sbin_scripts
+  reference_install_args += ['--exec', sbin_dest, src]
+endforeach
+foreach src : reference_libexec_scripts
+  reference_install_args += ['--exec', libexec_dest, src]
+endforeach
+foreach src : reference_service_script_outputs
+  reference_install_args += ['--exec', service_script_dest, src]
+endforeach
+foreach src : reference_network_script_outputs
+  reference_install_args += ['--exec', network_script_dest, src]
+endforeach
+foreach src : reference_config_sources
+  reference_install_args += ['--config', config_dest, src]
 endforeach
 
 # Convenience run target for reference installation
@@ -301,7 +317,37 @@ endforeach
 run_target('install-reference',
   command: [bash, '-c', '''
 set -eu
-meson install -C "$MESON_BUILD_ROOT" --tags reference --no-rebuild
+install_cmd="$0"
+shift
+if [ "$1" != "--" ]; then
+    echo "internal error: missing argument sentinel" >&2
+    exit 1
+fi
+shift
+while [ $# -gt 0 ]; do
+    key="$1"
+    dest="$2"
+    src="$3"
+    case "$key" in
+        --unit)
+            mode=0644
+            ;;
+        --exec)
+            mode=0755
+            ;;
+        --config)
+            mode=0644
+            ;;
+        *)
+            echo "unknown install key $key" >&2
+            exit 1
+            ;;
+    esac
+    base=$(basename "$src")
+    "$install_cmd" -D -m "$mode" "$src" "$dest/$base"
+    shift 3
+done
+
 if [ "${DESTDIR:-}" = "" ]; then
     INITCTL=''' + (bindir / 'initctl') + '''
     if [ ! -x "$INITCTL" ]; then
@@ -318,7 +364,7 @@ if [ "${DESTDIR:-}" = "" ]; then
         "$INITCTL" enable "getty@tty${tty}"
     done
 fi
-''']
+''', install_cmd.path(), '--'] + reference_install_args
 )
 
 # Optional service install targets are defined in units/optional/meson.build (included from main meson.build)

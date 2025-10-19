@@ -692,10 +692,33 @@ static void print_status(const struct control_response *resp, const char *unit_n
     printf("\n");
 }
 
+static bool derive_template_name(const char *instance_name, char *template_name, size_t len) {
+    const char *at = strchr(instance_name, '@');
+    const char *dot = strrchr(instance_name, '.');
+
+    if (!at || !dot || at > dot) {
+        return false;
+    }
+
+    size_t prefix_len = (size_t)(at - instance_name + 1); /* include '@' */
+    size_t suffix_len = strlen(dot + 1); /* extension without dot */
+
+    if (prefix_len + 1 + suffix_len + 1 > len) { /* +1 for dot, +1 for NUL */
+        return false;
+    }
+
+    memcpy(template_name, instance_name, prefix_len);
+    template_name[prefix_len] = '.';
+    memcpy(template_name + prefix_len + 1, dot + 1, suffix_len + 1);
+    return true;
+}
+
 /* Offline enable/disable/is-enabled handler when daemon isn't available */
 static int handle_offline_unit_operation(enum control_command cmd, const char *unit_name) {
     struct unit_file unit = {0};
     char unit_path[1024];
+    char template_name[256];
+    bool using_template = false;
 
     /* Only enable/disable/is-enabled can work offline */
     if (cmd != CMD_ENABLE && cmd != CMD_DISABLE && cmd != CMD_IS_ENABLED) {
@@ -722,9 +745,32 @@ static int handle_offline_unit_operation(enum control_command cmd, const char *u
         }
     }
 
+    if (!found && derive_template_name(unit_name, template_name, sizeof(template_name))) {
+        for (int i = 0; search_dirs[i]; i++) {
+            snprintf(unit_path, sizeof(unit_path), "%s/%s", search_dirs[i], template_name);
+            if (parse_unit_file(unit_path, &unit) == 0) {
+                found = true;
+                using_template = true;
+                break;
+            }
+        }
+    }
+
     if (!found) {
         fprintf(stderr, "Unit %s not found.\n", unit_name);
         return 1;
+    }
+
+    char instance_name[sizeof(unit.name)] = {0};
+    char template_unit_name[sizeof(unit.name)] = {0};
+    if (using_template) {
+        strncpy(instance_name, unit_name, sizeof(instance_name) - 1);
+        instance_name[sizeof(instance_name) - 1] = '\0';
+        strncpy(template_unit_name, unit.name, sizeof(template_unit_name) - 1);
+        template_unit_name[sizeof(template_unit_name) - 1] = '\0';
+    } else {
+        strncpy(unit.name, unit_name, sizeof(unit.name) - 1);
+        unit.name[sizeof(unit.name) - 1] = '\0';
     }
 
     int result = 0;
@@ -736,6 +782,16 @@ static int handle_offline_unit_operation(enum control_command cmd, const char *u
             fprintf(stderr, "Authentication required for enabling units (must be root)\n");
             free_unit_file(&unit);
             return 1;
+        }
+
+        if (using_template) {
+            if (convert_systemd_unit(&unit) < 0) {
+                fprintf(stderr, "Failed to prepare template %s\n", template_unit_name);
+                result = 1;
+                break;
+            }
+            strncpy(unit.name, instance_name, sizeof(unit.name) - 1);
+            unit.name[sizeof(unit.name) - 1] = '\0';
         }
 
         if (enable_unit(&unit) < 0) {
@@ -753,6 +809,11 @@ static int handle_offline_unit_operation(enum control_command cmd, const char *u
             return 1;
         }
 
+        if (using_template) {
+            strncpy(unit.name, instance_name, sizeof(unit.name) - 1);
+            unit.name[sizeof(unit.name) - 1] = '\0';
+        }
+
         if (disable_unit(&unit) < 0) {
             fprintf(stderr, "Failed to disable %s\n", unit_name);
             result = 1;
@@ -762,6 +823,11 @@ static int handle_offline_unit_operation(enum control_command cmd, const char *u
 
     case CMD_IS_ENABLED:
         /* is-enabled doesn't need root */
+        if (using_template) {
+            strncpy(unit.name, instance_name, sizeof(unit.name) - 1);
+            unit.name[sizeof(unit.name) - 1] = '\0';
+        }
+
         if (is_unit_enabled(&unit)) {
             printf("enabled\n");
             result = 0;

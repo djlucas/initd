@@ -256,7 +256,9 @@ int connect_to_supervisor(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("connect");
+        if (errno != ENOENT && errno != ECONNREFUSED) {
+            perror("connect");
+        }
         close(fd);
         return -1;
     }
@@ -281,7 +283,9 @@ int connect_to_supervisor_status(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("connect");
+        if (errno != ENOENT && errno != ECONNREFUSED) {
+            perror("connect");
+        }
         close(fd);
         return -1;
     }
@@ -307,7 +311,9 @@ int connect_to_timer_daemon(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("connect");
+        if (errno != ENOENT && errno != ECONNREFUSED) {
+            perror("connect");
+        }
         close(fd);
         return -1;
     }
@@ -332,7 +338,9 @@ int connect_to_timer_status(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("connect");
+        if (errno != ENOENT && errno != ECONNREFUSED) {
+            perror("connect");
+        }
         close(fd);
         return -1;
     }
@@ -358,7 +366,9 @@ int connect_to_socket_activator(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("connect");
+        if (errno != ENOENT && errno != ECONNREFUSED) {
+            perror("connect");
+        }
         close(fd);
         return -1;
     }
@@ -383,7 +393,9 @@ int connect_to_socket_status(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("connect");
+        if (errno != ENOENT && errno != ECONNREFUSED) {
+            perror("connect");
+        }
         close(fd);
         return -1;
     }
