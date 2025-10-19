@@ -100,7 +100,7 @@ int main(void) {
         printf("Testing: offline enable (root required)... SKIP (not root)\n");
         printf("Note: Run as root to test offline enable/disable\n");
         printf("\n=== Tests skipped ===\n");
-        return 0;
+        return 77;
     }
 
     if (setup_test_environment() < 0) {
@@ -174,4 +174,3 @@ int main(void) {
     printf("\n=== %d test(s) failed ===\n", failures);
     return 1;
 }
-

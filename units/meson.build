@@ -43,6 +43,8 @@ conf_data.set('SBINDIR', sbindir)
 conf_data.set('BINDIR', bindir)
 conf_data.set('LIBEXECDIR', libexecdir / 'initd')
 
+bash = find_program('bash')
+
 # Target files (no templating needed)
 reference_targets = [
   'default.target',
@@ -72,6 +74,7 @@ reference_services = [
   'getty@.service',
   'initd-socket.service',
   'initd-timer.service',
+  'initd-user-manager.service',
   'klogd.service',
   'localnet.service',
   'modules-load.service',
@@ -89,6 +92,14 @@ reference_services = [
   'udev-trigger.service',
   'udevd.service',
 ]
+
+reference_enable_services = []
+foreach service : reference_services
+  if service != 'network@.service' and service != 'getty@.service'
+    reference_enable_services += service
+  endif
+endforeach
+reference_enable_services = ' '.join(reference_enable_services)
 
 # Helper scripts (need templating)
 reference_script_helpers = [
@@ -288,7 +299,26 @@ endforeach
 # Use: ninja -C build install-reference (or DESTDIR=... ninja -C build install-reference)
 # This will show each file being installed
 run_target('install-reference',
-  command: ['meson', 'install', '-C', meson.project_build_root(), '--tags', 'reference', '--no-rebuild']
+  command: [bash, '-c', '''
+set -eu
+meson install -C "$MESON_BUILD_ROOT" --tags reference --no-rebuild
+if [ "${DESTDIR:-}" = "" ]; then
+    INITCTL=''' + (bindir / 'initctl') + '''
+    if [ ! -x "$INITCTL" ]; then
+        INITCTL="$(command -v initctl || true)"
+    fi
+    if [ -z "$INITCTL" ] || [ ! -x "$INITCTL" ]; then
+        echo "initctl not found; skipping enablement" >&2
+        exit 1
+    fi
+    for svc in ''' + reference_enable_services + '''; do
+        "$INITCTL" enable "$svc"
+    done
+    for tty in 1 2 3 4 5 6; do
+        "$INITCTL" enable "getty@tty${tty}"
+    done
+fi
+''']
 )
 
 # Optional service install targets are defined in units/optional/meson.build (included from main meson.build)

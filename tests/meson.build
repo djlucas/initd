@@ -157,7 +157,6 @@ test('socket IPC protocol', test_socket_ipc)
 test('service features', test_service_features)
 test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
 test('socket worker', test_socket_worker)
-test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged')
 test('isolate closure', test_isolate)
 test('supervisor socket IPC', test_supervisor_socket)
 test('timer inactivity notify', test_timer_notify)
@@ -219,10 +218,10 @@ test_offline_enable = executable(
   link_with: initctl_route_lib,
 )
 
-test('offline enable/disable', test_offline_enable, suite: 'privileged')
-
 # Privileged tests - run separately with: meson test --suite privileged
-test('privileged operations', test_privileged_ops, suite: 'privileged')
+test('offline enable/disable', test_offline_enable, suite: 'privileged', priority: 1000)
+test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged', priority: 1000)
+test('privileged operations', test_privileged_ops, suite: 'privileged', priority: 1000)
 
 # Create a ninja target for privileged tests
 bash = find_program('bash')

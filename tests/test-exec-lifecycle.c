@@ -235,6 +235,10 @@ static void test_reload_without_exec_reload(void) {
 }
 
 int main(void) {
+    if (getuid() != 0) {
+        printf("Testing Exec* lifecycle handling... SKIP (not root)\n");
+        return 77;
+    }
     printf("Testing Exec* lifecycle handling...\n");
     test_exec_lifecycle_success();
     test_reload_without_exec_reload();
