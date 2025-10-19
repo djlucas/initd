@@ -19,6 +19,7 @@ init = executable(
   init_sources,
   c_args: init_c_args,
   link_args: init_link_args,
+  dependencies: [common_dep],
   install: true,
   install_dir: get_option('sbindir'),
 )

@@ -50,6 +50,7 @@
 #include "../common/parser.h"
 #include "../common/scanner.h"
 #include "../common/log.h"
+#include "../common/log-enhanced.h"
 
 static volatile sig_atomic_t shutdown_requested = 0;
 static int master_socket = -1;
@@ -131,9 +132,8 @@ static bool is_control_client_authorized(int client_fd) {
         if (cred.uid == 0 || cred.uid == getuid()) {
             return true;
         }
-        fprintf(stderr,
-                "supervisor-slave: unauthorized control socket client (uid=%u); connection rejected\n",
-                (unsigned int)cred.uid);
+        log_warn("worker", "unauthorized control socket client (uid=%u); connection rejected",
+                 (unsigned int)cred.uid);
         return false;
     }
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
@@ -143,14 +143,12 @@ static bool is_control_client_authorized(int client_fd) {
         if (euid == 0 || euid == getuid()) {
             return true;
         }
-        fprintf(stderr,
-                "supervisor-slave: unauthorized control socket client (uid=%u); connection rejected\n",
-                (unsigned int)euid);
+        log_warn("worker", "unauthorized control socket client (uid=%u); connection rejected",
+                 (unsigned int)euid);
         return false;
     }
 #endif
-    fprintf(stderr,
-            "supervisor-slave: warning: unable to verify control socket client credentials; permitting connection\n");
+    log_warn("worker", "unable to verify control socket client credentials; permitting connection");
     return true;
 }
 
@@ -171,7 +169,7 @@ static int setup_signals(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGTERM, &sa, NULL) < 0) {
-        perror("supervisor-slave: sigaction SIGTERM");
+        log_error("worker", "sigaction SIGTERM: %s", strerror(errno));
         return -1;
     }
 
@@ -205,7 +203,7 @@ static int enable_unit(struct unit_file *unit) {
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
     strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
-    fprintf(stderr, "slave: enabling %s\n", unit->name);
+    log_debug("worker", "enabling %s", unit->name);
 
     /* Send request to master */
     if (send_request(master_socket, &req) < 0) {
@@ -220,7 +218,7 @@ static int enable_unit(struct unit_file *unit) {
     if (resp.type == RESP_UNIT_ENABLED) {
         return 0;
     } else if (resp.type == RESP_ERROR) {
-        fprintf(stderr, "slave: failed to enable %s: %s\n", unit->name, resp.error_msg);
+        log_error("worker", "failed to enable %s: %s", unit->name, resp.error_msg);
         errno = resp.error_code;
         return -1;
     }
@@ -237,7 +235,7 @@ static int disable_unit(struct unit_file *unit) {
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
     strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
-    fprintf(stderr, "slave: disabling %s\n", unit->name);
+    log_debug("worker", "disabling %s", unit->name);
 
     /* Send request to master */
     if (send_request(master_socket, &req) < 0) {
@@ -252,7 +250,7 @@ static int disable_unit(struct unit_file *unit) {
     if (resp.type == RESP_UNIT_DISABLED) {
         return 0;
     } else if (resp.type == RESP_ERROR) {
-        fprintf(stderr, "slave: failed to disable %s: %s\n", unit->name, resp.error_msg);
+        log_error("worker", "failed to disable %s: %s", unit->name, resp.error_msg);
         errno = resp.error_code;
         return -1;
     }
@@ -628,13 +626,13 @@ static int create_control_socket(void) {
     }
 
     if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
-        perror("slave: mkdir runtime dir");
+        log_error("worker", "mkdir runtime dir: %s", strerror(errno));
         return -1;
     }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
-        perror("slave: socket");
+        log_error("worker", "socket: %s", strerror(errno));
         return -1;
     }
 
@@ -645,24 +643,24 @@ static int create_control_socket(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("slave: bind");
+        log_error("worker", "bind: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (fchmod(fd, 0600) < 0) {
-        perror("slave: fchmod");
+        log_error("worker", "fchmod: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (listen(fd, 5) < 0) {
-        perror("slave: listen");
+        log_error("worker", "listen: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
-    fprintf(stderr, "slave: control socket listening on %s\n", path);
+    log_debug("worker", "Control socket listening on %s", path);
     return fd;
 }
 
@@ -676,13 +674,13 @@ static int create_status_socket(void) {
     }
 
     if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
-        perror("slave: mkdir runtime dir");
+        log_error("worker", "mkdir runtime dir: %s", strerror(errno));
         return -1;
     }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
-        perror("slave: status socket");
+        log_error("worker", "status socket: %s", strerror(errno));
         return -1;
     }
 
@@ -693,24 +691,24 @@ static int create_status_socket(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("slave: bind status");
+        log_error("worker", "bind status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (fchmod(fd, 0666) < 0) {
-        perror("slave: fchmod status");
+        log_error("worker", "fchmod status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (listen(fd, 5) < 0) {
-        perror("slave: listen status");
+        log_error("worker", "listen status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
-    fprintf(stderr, "slave: status socket listening on %s\n", path);
+    log_debug("worker", "Status socket listening on %s", path);
     return fd;
 }
 
@@ -1386,11 +1384,11 @@ static int start_unit_recursive(struct unit_file *unit) {
 __attribute__((unused))
 #endif
 static int main_loop(void) {
-    fprintf(stderr, "supervisor-slave: entering main loop\n");
+    log_debug("worker", "Entering main loop");
 
     /* Defensive check: ensure sockets are valid */
     if (control_socket < 0 || master_socket < 0) {
-        fprintf(stderr, "supervisor-slave: invalid socket in main_loop\n");
+        log_error("worker", "invalid socket in main_loop");
         return -1;
     }
 
@@ -1420,7 +1418,7 @@ static int main_loop(void) {
 
         if (ret < 0) {
             if (errno == EINTR) continue;
-            perror("slave: poll");
+            log_error("worker", "poll: %s", strerror(errno));
             break;
         }
 
@@ -1452,7 +1450,7 @@ static int main_loop(void) {
                         handle_service_exit(notif.service_pid, notif.exit_status);
                     }
                 } else {
-                    fprintf(stderr, "slave: master socket closed\n");
+                    log_warn("worker", "Master socket closed");
                     break;
                 }
             }
@@ -1462,7 +1460,7 @@ static int main_loop(void) {
     }
 
     /* Shutdown sequence */
-    fprintf(stderr, "supervisor-slave: shutting down services\n");
+    log_info("worker", "Shutting down services");
 
     /* Stop all active services in reverse dependency order */
     /* We iterate through all units and stop them; the recursive function
@@ -1473,7 +1471,7 @@ static int main_loop(void) {
         }
     }
 
-    fprintf(stderr, "supervisor-slave: all services stopped\n");
+    log_info("worker", "All services stopped");
 
     /* Notify master we're done */
     notify_shutdown_complete();
@@ -1493,8 +1491,11 @@ int main(int argc, char *argv[]) {
 
     /* Initialize logging */
     log_init("supervisor-slave");
+    log_enhanced_init("worker", "/var/log/initd/supervisor.log");
+    log_set_console_level(LOGLEVEL_INFO);
+    log_set_file_level(LOGLEVEL_DEBUG);
 
-    log_msg(LOG_INFO, NULL, "starting (ipc_fd=%d)", master_socket);
+    log_info("worker", "Starting (ipc_fd=%d)", master_socket);
 
     /* Setup signals */
     if (setup_signals() < 0) {
@@ -1504,13 +1505,13 @@ int main(int argc, char *argv[]) {
     /* Create control socket */
     control_socket = create_control_socket();
     if (control_socket < 0) {
-        fprintf(stderr, "supervisor-slave: failed to create control socket\n");
+        log_error("worker", "failed to create control socket");
         return 1;
     }
 
     status_socket = create_status_socket();
     if (status_socket < 0) {
-        fprintf(stderr, "supervisor-slave: failed to create status socket\n");
+        log_error("worker", "failed to create status socket");
         close(control_socket);
         const char *ctrl_path = control_socket_path(false);
         if (ctrl_path) {
@@ -1520,9 +1521,9 @@ int main(int argc, char *argv[]) {
     }
 
     /* Scan unit directories */
-    fprintf(stderr, "supervisor-slave: scanning unit directories\n");
+    log_debug("worker", "Scanning unit directories");
     if (scan_unit_directories(&units, &unit_count) < 0) {
-        fprintf(stderr, "supervisor-slave: failed to scan unit directories\n");
+        log_error("worker", "failed to scan unit directories");
         close(control_socket);
         const char *ctrl_path = control_socket_path(false);
         if (ctrl_path) {
@@ -1539,7 +1540,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Start default.target */
-    fprintf(stderr, "supervisor-slave: starting default.target\n");
+    log_info("worker", "Starting default.target");
     struct unit_file *default_target = find_unit("default.target");
     if (!default_target) {
         /* Fallback to multi-user.target */
@@ -1548,10 +1549,10 @@ int main(int argc, char *argv[]) {
 
     if (default_target) {
         if (start_unit_recursive(default_target) < 0) {
-            fprintf(stderr, "supervisor-slave: failed to start default target\n");
+            log_error("worker", "failed to start default target");
         }
     } else {
-        fprintf(stderr, "supervisor-slave: no default target found\n");
+        log_warn("worker", "no default target found");
     }
 
     /* Main loop */

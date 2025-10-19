@@ -32,6 +32,7 @@ common_sources = files(
   'ipc.c',
   'control.c',
   'log.c',
+  'log-enhanced.c',
 )
 
 common_lib = static_library(

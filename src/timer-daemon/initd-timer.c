@@ -28,6 +28,7 @@
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
 #include "../common/control.h"
+#include "../common/log-enhanced.h"
 
 #ifndef WORKER_PATH
 #define WORKER_PATH "/usr/libexecdir/initd/initd-timer-worker"
@@ -55,10 +56,8 @@ static int fallback_to_nobody_allowed(void) {
 }
 
 static void warn_user_fallback(const char *component, const char *missing_user) {
-    fprintf(stderr,
-            "\033[1;31m%s: WARNING: dedicated user '%s' not found; falling back to 'nobody'. "
-            "This mode is UNSUPPORTED for production.\033[0m\n",
-            component, missing_user);
+    log_warn(component, "dedicated user '%s' not found; falling back to 'nobody'. "
+             "This mode is UNSUPPORTED for production", missing_user);
 }
 
 static int lookup_timer_user(uid_t *uid, gid_t *gid) {
@@ -71,19 +70,17 @@ static int lookup_timer_user(uid_t *uid, gid_t *gid) {
     struct passwd *pw = getpwnam(TIMER_USER);
     if (!pw) {
         if (!fallback_to_nobody_allowed()) {
-            fprintf(stderr,
-                    "initd-timer: ERROR: user '%s' not found. "
-                    "Create the dedicated account or set INITD_ALLOW_USER_FALLBACK=1 "
-                    "to permit an UNSUPPORTED fallback to 'nobody'.\n",
-                    TIMER_USER);
+            log_error("timer",
+                      "user '%s' not found. Create the dedicated account or set "
+                      "INITD_ALLOW_USER_FALLBACK=1 to permit an UNSUPPORTED fallback to 'nobody'",
+                      TIMER_USER);
             return -1;
         }
 
         warn_user_fallback("initd-timer", TIMER_USER);
         pw = getpwnam("nobody");
         if (!pw) {
-            fprintf(stderr,
-                    "initd-timer: ERROR: fallback user 'nobody' not found; cannot continue.\n");
+            log_error("timer", "fallback user 'nobody' not found; cannot continue");
             return -1;
         }
     }
@@ -108,7 +105,7 @@ static void sigchld_handler(int sig) {
     int status;
     pid_t pid = waitpid(-1, &status, WNOHANG);
     if (pid == worker_pid) {
-        fprintf(stderr, "initd-timer: worker exited\n");
+        log_warn("timer", "Worker exited");
         worker_pid = 0;
     }
 }
@@ -121,11 +118,11 @@ static int setup_signals(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGTERM, &sa, NULL) < 0) {
-        perror("initd-timer: sigaction SIGTERM");
+        log_error("timer", "sigaction SIGTERM: %s", strerror(errno));
         return -1;
     }
     if (sigaction(SIGINT, &sa, NULL) < 0) {
-        perror("initd-timer: sigaction SIGINT");
+        log_error("timer", "sigaction SIGINT: %s", strerror(errno));
         return -1;
     }
 
@@ -133,7 +130,7 @@ static int setup_signals(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
     if (sigaction(SIGCHLD, &sa, NULL) < 0) {
-        perror("initd-timer: sigaction SIGCHLD");
+        log_error("timer", "sigaction SIGCHLD: %s", strerror(errno));
         return -1;
     }
 
@@ -217,7 +214,7 @@ static int spawn_worker(void) {
 
     /* Create socketpair for IPC */
     if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) < 0) {
-        perror("initd-timer: socketpair");
+        log_error("timer", "socketpair: %s", strerror(errno));
         return -1;
     }
 
@@ -230,7 +227,7 @@ static int spawn_worker(void) {
     pid_t pid = fork();
 
     if (pid < 0) {
-        perror("initd-timer: fork");
+        log_error("timer", "fork: %s", strerror(errno));
         return -1;
     }
 
@@ -244,34 +241,34 @@ static int spawn_worker(void) {
         /* Drop privileges before exec */
         if (!user_mode && worker_gid != 0) {
             if (setgroups(1, &worker_gid) < 0) {
-                perror("initd-timer: setgroups");
+                log_error("timer", "setgroups: %s", strerror(errno));
                 _exit(1);
             }
 
             if (setgid(worker_gid) < 0) {
-                perror("initd-timer: setgid");
+                log_error("timer", "setgid: %s", strerror(errno));
                 _exit(1);
             }
         }
 
         if (!user_mode && worker_uid != 0) {
             if (setuid(worker_uid) < 0) {
-                perror("initd-timer: setuid");
+                log_error("timer", "setuid: %s", strerror(errno));
                 _exit(1);
             }
         }
 
         /* Verify we dropped privileges */
         if (!user_mode && (getuid() == 0 || geteuid() == 0)) {
-            fprintf(stderr, "initd-timer: failed to drop privileges!\n");
+            log_error("timer", "failed to drop privileges!");
             _exit(1);
         }
 
-        fprintf(stderr, "initd-timer-worker: running as uid=%d, gid=%d\n",
-                getuid(), getgid());
+        log_debug("timer-worker", "running as uid=%d, gid=%d",
+                  getuid(), getgid());
 
         execl(WORKER_PATH, "initd-timer-worker", fd_str, NULL);
-        perror("initd-timer: exec worker");
+        log_error("timer", "exec worker: %s", strerror(errno));
         _exit(1);
     }
 
@@ -279,7 +276,7 @@ static int spawn_worker(void) {
     close(sockets[1]); /* Close child end */
     worker_pid = pid;
 
-    fprintf(stderr, "initd-timer: spawned worker pid %d\n", pid);
+    log_info("timer", "Spawned worker (pid %d)", pid);
 
     return sockets[0]; /* Return parent end for IPC */
 }
@@ -333,11 +330,16 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    fprintf(stderr, "initd-timer: starting%s\n", user_mode ? " (user mode)" : "");
+    /* Initialize enhanced logging */
+    log_enhanced_init("initd-timer", "/var/log/initd/timer.log");
+    log_set_console_level(LOGLEVEL_INFO);
+    log_set_file_level(LOGLEVEL_DEBUG);
+
+    log_info("timer", "Starting%s", user_mode ? " (user mode)" : "");
 
     /* Must run as root unless user mode */
     if (!user_mode && getuid() != 0) {
-        fprintf(stderr, "initd-timer: must run as root\n");
+        log_error("timer", "must run as root");
         return 1;
     }
 
@@ -367,7 +369,7 @@ int main(int argc, char *argv[]) {
 
         if (ret < 0) {
             if (errno == EINTR) continue;
-            perror("initd-timer: select");
+            log_error("timer", "select: %s", strerror(errno));
             break;
         }
 
@@ -378,13 +380,14 @@ int main(int argc, char *argv[]) {
 
     /* Cleanup */
     if (worker_pid > 0) {
-        fprintf(stderr, "initd-timer: waiting for worker to exit\n");
+        log_info("timer", "Waiting for worker to exit");
         kill(worker_pid, SIGTERM);
         waitpid(worker_pid, NULL, 0);
     }
 
     close(worker_fd);
 
-    fprintf(stderr, "initd-timer: exiting\n");
+    log_info("timer", "Exiting");
+    log_enhanced_close();
     return 0;
 }

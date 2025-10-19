@@ -35,6 +35,7 @@
 #include "../common/scanner.h"
 #include "../common/parser.h"
 #include "../common/socket-ipc.h"
+#include "../common/log-enhanced.h"
 
 #define MAX_SOCKETS 64
 
@@ -86,8 +87,8 @@ static void notify_supervisor_socket_state(const struct socket_instance *sock, p
 
     int fd = connect_to_supervisor();
     if (fd < 0) {
-        fprintf(stderr, "socket-activator: failed to notify supervisor for %s\n",
-                sock->service_name);
+        log_warn("socket-worker", "failed to notify supervisor for %s",
+                 sock->service_name);
         return;
     }
 
@@ -112,16 +113,16 @@ static void notify_supervisor_socket_state(const struct socket_instance *sock, p
     close(fd);
 
     if (resp.code != RESP_SUCCESS) {
-        fprintf(stderr, "socket-activator: supervisor refused adopt for %s: %s\n",
-                sock->service_name, resp.message);
+        log_warn("socket-worker", "supervisor refused adopt for %s: %s",
+                 sock->service_name, resp.message);
     }
 }
 
 static void mark_service_exit(pid_t pid) {
     for (struct socket_instance *s = sockets; s; s = s->next) {
         if (s->service_pid == pid) {
-            fprintf(stderr, "socket-activator: service for %s exited (pid %d)\n",
-                    s->unit->name, pid);
+            log_info("socket-worker", "service for %s exited (pid %d)",
+                     s->unit->name, pid);
             s->service_pid = 0;
             s->service_start = 0;
             s->last_activity = 0;
@@ -160,18 +161,18 @@ static int setup_signals(void) {
     sa.sa_flags = SA_RESTART;
 
     if (sigaction(SIGTERM, &sa, NULL) < 0) {
-        perror("socket-activator: sigaction SIGTERM");
+        log_error("socket-worker", "sigaction SIGTERM: %s", strerror(errno));
         return -1;
     }
     if (sigaction(SIGINT, &sa, NULL) < 0) {
-        perror("socket-activator: sigaction SIGINT");
+        log_error("socket-worker", "sigaction SIGINT: %s", strerror(errno));
         return -1;
     }
 
     /* Handle SIGCHLD to reap zombies */
     sa.sa_handler = sigchld_handler;
     if (sigaction(SIGCHLD, &sa, NULL) < 0) {
-        perror("socket-activator: sigaction SIGCHLD");
+        log_error("socket-worker", "sigaction SIGCHLD: %s", strerror(errno));
         return -1;
     }
 
@@ -189,13 +190,13 @@ static int create_control_socket(void) {
     }
 
     if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
-        perror("socket-activator: mkdir runtime dir");
+        log_error("socket-worker", "mkdir runtime dir: %s", strerror(errno));
         return -1;
     }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
-        perror("socket-activator: socket");
+        log_error("socket-worker", "socket: %s", strerror(errno));
         return -1;
     }
 
@@ -208,13 +209,13 @@ static int create_control_socket(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("socket-activator: bind");
+        log_error("socket-worker", "bind: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (listen(fd, 5) < 0) {
-        perror("socket-activator: listen");
+        log_error("socket-worker", "listen: %s", strerror(errno));
         close(fd);
         return -1;
     }
@@ -222,8 +223,7 @@ static int create_control_socket(void) {
     /* Set permissions - use fchmod to avoid race condition */
     fchmod(fd, 0666);
 
-    fprintf(stderr, "socket-activator: control socket created at %s\n",
-            path);
+    log_debug("socket-worker", "Control socket created at %s", path);
     return fd;
 }
 
@@ -237,13 +237,13 @@ static int create_status_socket(void) {
     }
 
     if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
-        perror("socket-activator: mkdir runtime dir");
+        log_error("socket-worker", "mkdir runtime dir: %s", strerror(errno));
         return -1;
     }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
-        perror("socket-activator: status socket");
+        log_error("socket-worker", "status socket: %s", strerror(errno));
         return -1;
     }
 
@@ -256,25 +256,24 @@ static int create_status_socket(void) {
             sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("socket-activator: bind status");
+        log_error("socket-worker", "bind status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (listen(fd, 5) < 0) {
-        perror("socket-activator: listen status");
+        log_error("socket-worker", "listen status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (fchmod(fd, 0666) < 0) {
-        perror("socket-activator: fchmod status");
+        log_error("socket-worker", "fchmod status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
-    fprintf(stderr, "socket-activator: status socket created at %s\n",
-            path);
+    log_debug("socket-worker", "Status socket created at %s", path);
     return fd;
 }
 
@@ -287,7 +286,7 @@ static int create_listen_socket(struct socket_instance *sock) {
     if (s->listen_stream && s->listen_stream[0] == '/') {
         fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
-            perror("socket-activator: socket");
+            log_error("socket-worker", "socket: %s", strerror(errno));
             return -1;
         }
 
@@ -299,20 +298,19 @@ static int create_listen_socket(struct socket_instance *sock) {
         unlink(s->listen_stream);
 
         if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-            perror("socket-activator: bind");
+            log_error("socket-worker", "bind: %s", strerror(errno));
             close(fd);
             return -1;
         }
 
         if (listen(fd, 128) < 0) {
-            perror("socket-activator: listen");
+            log_error("socket-worker", "listen: %s", strerror(errno));
             close(fd);
             return -1;
         }
 
         sock->is_stream = true;
-        fprintf(stderr, "socket-activator: listening on Unix stream %s\n",
-                s->listen_stream);
+        log_info("socket-worker", "Listening on Unix stream %s", s->listen_stream);
         return fd;
     }
 
@@ -320,8 +318,8 @@ static int create_listen_socket(struct socket_instance *sock) {
     if (s->listen_stream) {
         char *colon = strchr(s->listen_stream, ':');
         if (!colon) {
-            fprintf(stderr, "socket-activator: invalid ListenStream format: %s\n",
-                    s->listen_stream);
+            log_error("socket-worker", "invalid ListenStream format: %s",
+                      s->listen_stream);
             return -1;
         }
 
@@ -333,7 +331,7 @@ static int create_listen_socket(struct socket_instance *sock) {
 
         fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
-            perror("socket-activator: socket");
+            log_error("socket-worker", "socket: %s", strerror(errno));
             return -1;
         }
 
@@ -351,19 +349,19 @@ static int create_listen_socket(struct socket_instance *sock) {
         }
 
         if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-            perror("socket-activator: bind");
+            log_error("socket-worker", "bind: %s", strerror(errno));
             close(fd);
             return -1;
         }
 
         if (listen(fd, 128) < 0) {
-            perror("socket-activator: listen");
+            log_error("socket-worker", "listen: %s", strerror(errno));
             close(fd);
             return -1;
         }
 
         sock->is_stream = true;
-        fprintf(stderr, "socket-activator: listening on TCP %s:%d\n", host, port);
+        log_info("socket-worker", "Listening on TCP %s:%d", host, port);
         return fd;
     }
 
@@ -371,7 +369,7 @@ static int create_listen_socket(struct socket_instance *sock) {
     if (s->listen_datagram && s->listen_datagram[0] == '/') {
         fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
-            perror("socket-activator: socket");
+            log_error("socket-worker", "socket: %s", strerror(errno));
             return -1;
         }
 
@@ -382,14 +380,13 @@ static int create_listen_socket(struct socket_instance *sock) {
         unlink(s->listen_datagram);
 
         if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-            perror("socket-activator: bind");
+            log_error("socket-worker", "bind: %s", strerror(errno));
             close(fd);
             return -1;
         }
 
         sock->is_stream = false;
-        fprintf(stderr, "socket-activator: listening on Unix dgram %s\n",
-                s->listen_datagram);
+        log_info("socket-worker", "Listening on Unix dgram %s", s->listen_datagram);
         return fd;
     }
 
@@ -397,8 +394,8 @@ static int create_listen_socket(struct socket_instance *sock) {
     if (s->listen_datagram) {
         char *colon = strchr(s->listen_datagram, ':');
         if (!colon) {
-            fprintf(stderr, "socket-activator: invalid ListenDatagram format: %s\n",
-                    s->listen_datagram);
+            log_error("socket-worker", "invalid ListenDatagram format: %s",
+                      s->listen_datagram);
             return -1;
         }
 
@@ -410,7 +407,7 @@ static int create_listen_socket(struct socket_instance *sock) {
 
         fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
-            perror("socket-activator: socket");
+            log_error("socket-worker", "socket: %s", strerror(errno));
             return -1;
         }
 
@@ -425,13 +422,13 @@ static int create_listen_socket(struct socket_instance *sock) {
         }
 
         if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-            perror("socket-activator: bind");
+            log_error("socket-worker", "bind: %s", strerror(errno));
             close(fd);
             return -1;
         }
 
         sock->is_stream = false;
-        fprintf(stderr, "socket-activator: listening on UDP %s:%d\n", host, port);
+        log_info("socket-worker", "Listening on UDP %s:%d", host, port);
         return fd;
     }
 
@@ -462,7 +459,7 @@ static int activate_direct(struct socket_instance *sock) {
     }
 
     if (!found) {
-        fprintf(stderr, "socket-activator: service %s not found\n", sock->service_name);
+        log_error("socket-worker", "service %s not found", sock->service_name);
         return -1;
     }
 
@@ -498,7 +495,7 @@ static int activate_direct(struct socket_instance *sock) {
 
         /* Duplicate listening socket to fd 3 (systemd convention) */
         if (dup2(sock->listen_fd, 3) < 0) {
-            perror("socket-activator: dup2");
+            log_error("socket-worker", "dup2: %s", strerror(errno));
             exit(1);
         }
 
@@ -523,13 +520,13 @@ static int activate_direct(struct socket_instance *sock) {
         argv[argc] = NULL;
 
         execvp(argv[0], argv);
-        perror("socket-activator: exec");
+        log_error("socket-worker", "exec: %s", strerror(errno));
         exit(1);
     }
 
     /* Parent */
     free_unit_file(&unit);
-    fprintf(stderr, "socket-activator: activated %s (pid %d)\n", sock->service_name, pid);
+    log_info("socket-worker", "Activated %s (pid %d)", sock->service_name, pid);
 
     sock->service_pid = pid;
     sock->runtime_max_sec = runtime_limit;
@@ -554,7 +551,7 @@ static void handle_socket_ready(struct socket_instance *sock) {
         return;
     }
 
-    fprintf(stderr, "socket-activator: activity detected on %s\n", sock->unit->name);
+    log_debug("socket-worker", "Activity detected on %s", sock->unit->name);
 
     if (sock->service_pid > 0) {
         if (kill(sock->service_pid, 0) == 0) {
@@ -566,7 +563,7 @@ static void handle_socket_ready(struct socket_instance *sock) {
     }
 
     if (activate_direct(sock) < 0) {
-        fprintf(stderr, "socket-activator: failed to activate %s\n", sock->service_name);
+        log_error("socket-worker", "failed to activate %s", sock->service_name);
     }
 }
 
@@ -582,8 +579,8 @@ static void check_idle_timeouts(void) {
 
         time_t idle_time = now - s->last_activity;
         if (idle_time >= idle_timeout) {
-            fprintf(stderr, "socket-activator: killing idle service %s (pid %d) after %ld seconds\n",
-                    s->unit->name, s->service_pid, idle_time);
+            log_info("socket-worker", "Killing idle service %s (pid %d) after %ld seconds",
+                     s->unit->name, s->service_pid, idle_time);
             kill(s->service_pid, SIGTERM);
 #ifdef UNIT_TEST
             test_idle_kill_count++;
@@ -611,8 +608,8 @@ static void check_runtime_limits(void) {
 
         time_t runtime = now - s->service_start;
         if (runtime >= s->runtime_max_sec) {
-            fprintf(stderr, "socket-activator: killing %s (pid %d) after RuntimeMaxSec=%d\n",
-                    s->service_name, s->service_pid, s->runtime_max_sec);
+            log_info("socket-worker", "Killing %s (pid %d) after RuntimeMaxSec=%d",
+                     s->service_name, s->service_pid, s->runtime_max_sec);
             kill(s->service_pid, SIGTERM);
 #ifdef UNIT_TEST
             test_runtime_kill_count++;
@@ -662,8 +659,8 @@ static int load_sockets(void) {
         instance->listen_fd = -1;
         instance->listen_fd = create_listen_socket(instance);
         if (instance->listen_fd < 0) {
-            fprintf(stderr, "socket-activator: failed to create socket for %s\n",
-                    units[i]->name);
+            log_warn("socket-worker", "failed to create socket for %s",
+                     units[i]->name);
             free(instance);
             continue;
         }
@@ -672,8 +669,8 @@ static int load_sockets(void) {
         instance->next = sockets;
         sockets = instance;
 
-        fprintf(stderr, "socket-activator: loaded %s (fd %d)\n",
-                units[i]->name, instance->listen_fd);
+        log_debug("socket-worker", "Loaded %s (fd %d)",
+                  units[i]->name, instance->listen_fd);
     }
 
     return 0;
@@ -723,8 +720,8 @@ static void handle_control_command(int client_fd, bool read_only) {
         return;
     }
 
-    fprintf(stderr, "socket-activator: received command %s for unit %s\n",
-            command_to_string(req.header.command), req.unit_name);
+    log_debug("socket-worker", "Received command %s for unit %s",
+              command_to_string(req.header.command), req.unit_name);
 
     /* Set default response */
     resp.header.length = sizeof(resp);
@@ -1013,7 +1010,7 @@ static int event_loop(void) {
 
         if (ret < 0) {
             if (errno == EINTR) continue;
-            perror("socket-activator: poll");
+            log_error("socket-worker", "poll: %s", strerror(errno));
             return -1;
         }
 
@@ -1156,15 +1153,20 @@ void socket_worker_test_handle_status_fd(int fd) {
 
 #ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
+    /* Initialize enhanced logging */
+    log_enhanced_init("socket-worker", "/var/log/initd/socket.log");
+    log_set_console_level(LOGLEVEL_INFO);
+    log_set_file_level(LOGLEVEL_DEBUG);
+
     if (argc < 2) {
-        fprintf(stderr, "initd-socket-worker: usage: %s <ipc_fd>\n", argv[0]);
+        log_error("socket-worker", "usage: %s <ipc_fd>", argv[0]);
         return 1;
     }
 
     /* Get IPC socket FD from command line */
     daemon_socket = atoi(argv[1]);
 
-    fprintf(stderr, "initd-socket-worker: starting (ipc_fd=%d)\n", daemon_socket);
+    log_info("socket-worker", "Starting (ipc_fd=%d)", daemon_socket);
 
     /* Setup signals */
     if (setup_signals() < 0) {
@@ -1189,7 +1191,7 @@ int main(int argc, char *argv[]) {
 
     /* Load socket units */
     if (load_sockets() < 0) {
-        fprintf(stderr, "socket-activator: failed to load sockets\n");
+        log_error("socket-worker", "failed to load sockets");
         close(control_socket);
         close(status_socket);
         const char *ctrl_path = socket_activator_socket_path(false);
@@ -1204,11 +1206,11 @@ int main(int argc, char *argv[]) {
     }
 
     /* Run event loop */
-    fprintf(stderr, "socket-activator: entering event loop\n");
+    log_debug("socket-worker", "Entering event loop");
     event_loop();
 
     /* Cleanup */
-    fprintf(stderr, "socket-activator: shutting down\n");
+    log_info("socket-worker", "Shutting down");
     close(control_socket);
     const char *ctrl_path = socket_activator_socket_path(false);
     if (ctrl_path) {
@@ -1222,6 +1224,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    log_enhanced_close();
     return 0;
 }
 #endif

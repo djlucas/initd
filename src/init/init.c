@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdbool.h>
+#include "../common/log-enhanced.h"
 
 #ifndef SUPERVISOR_PATH
 #define SUPERVISOR_PATH "/usr/sbin/initd-supervisor"
@@ -114,7 +115,8 @@ static pid_t start_supervisor(void) {
     }
 
     /* Parent */
-    fprintf(stderr, "init: started %s (pid %d)\n", supervisor_path, pid);
+    log_info("init", "Started %s", supervisor_path);
+    log_debug("init", "supervisor pid: %d", pid);
     return pid;
 }
 
@@ -125,13 +127,13 @@ static void reap_zombies(void) {
 
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         if (pid == supervisor_pid) {
-            fprintf(stderr, "init: initd-supervisor exited (status %d)\n",
+            log_warn("init", "initd-supervisor exited (status %d)",
                     WIFEXITED(status) ? WEXITSTATUS(status) : -1);
             supervisor_pid = 0;
 
             /* If shutdown not requested, restart supervisor */
             if (!shutdown_requested) {
-                fprintf(stderr, "init: restarting initd-supervisor\n");
+                log_info("init", "Restarting initd-supervisor");
                 supervisor_pid = start_supervisor();
             }
         }
@@ -168,17 +170,17 @@ static void kill_remaining_processes(void) {
     int status;
     int killed = 0;
 
-    fprintf(stderr, "init: cleaning up any orphaned processes\n");
+    log_warn("init", "Cleaning up orphaned processes");
 
     /* First pass: reap any children that got reparented to us */
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        fprintf(stderr, "init: reaped orphaned process %d\n", pid);
+        log_debug("init", "reaped orphaned process %d", pid);
         killed++;
     }
 
     /* Second pass: send SIGTERM to all processes except ourselves
      * Note: kill(-1, sig) sends signal to all processes we can signal */
-    fprintf(stderr, "init: sending SIGTERM to all remaining processes\n");
+    log_debug("init", "sending SIGTERM to all remaining processes");
     kill(-1, SIGTERM);
 
     /* Give processes time to exit gracefully */
@@ -186,29 +188,30 @@ static void kill_remaining_processes(void) {
 
     /* Third pass: reap any that exited */
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        fprintf(stderr, "init: reaped process %d after SIGTERM\n", pid);
+        log_debug("init", "reaped process %d after SIGTERM", pid);
         killed++;
     }
 
     /* Final pass: SIGKILL anything still alive */
-    fprintf(stderr, "init: sending SIGKILL to all remaining processes\n");
+    log_debug("init", "sending SIGKILL to all remaining processes");
     kill(-1, SIGKILL);
 
     /* Reap the killed processes */
     sleep(1);
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        fprintf(stderr, "init: reaped process %d after SIGKILL\n", pid);
+        log_debug("init", "reaped process %d after SIGKILL", pid);
         killed++;
     }
 
     if (killed > 0) {
-        fprintf(stderr, "init: cleaned up %d orphaned processes\n", killed);
+        log_info("init", "Cleaned up %d orphaned processes", killed);
     }
 }
 
 /* Perform system shutdown */
 static void do_shutdown(void) {
-    fprintf(stderr, "INIT: shutdown requested (type %d)\n", shutdown_type);
+    const char *shutdown_names[] = {"poweroff", "reboot", "halt"};
+    log_info("init", "Shutdown requested: %s", shutdown_names[shutdown_type]);
 
     /* RACE PREVENTION: Block SIGCHLD during critical section to prevent
      * concurrent reap_zombies() from modifying supervisor_pid while we're
@@ -224,7 +227,7 @@ static void do_shutdown(void) {
     pid_t supervisor_to_shutdown = supervisor_pid;
 
     if (supervisor_to_shutdown > 0) {
-        fprintf(stderr, "INIT: signaling supervisor to shutdown (pid %d)\n", supervisor_to_shutdown);
+        log_debug("init", "signaling supervisor to shutdown (pid %d)", supervisor_to_shutdown);
         kill(supervisor_to_shutdown, SIGTERM);
 
         /* Wait for supervisor to exit (with timeout) */
@@ -236,7 +239,7 @@ static void do_shutdown(void) {
             int status;
             pid_t pid = waitpid(supervisor_to_shutdown, &status, WNOHANG);
             if (pid == supervisor_to_shutdown) {
-                fprintf(stderr, "INIT: initd-supervisor exited gracefully (status %d)\n",
+                log_debug("init", "initd-supervisor exited gracefully (status %d)",
                         WIFEXITED(status) ? WEXITSTATUS(status) : -1);
                 supervisor_pid = 0;
                 break;
@@ -251,7 +254,7 @@ static void do_shutdown(void) {
 
         /* Force kill if still running after timeout */
         if (timeout == 0 && kill(supervisor_to_shutdown, 0) == 0) {
-            fprintf(stderr, "INIT: supervisor timeout, sending SIGKILL\n");
+            log_warn("init", "Supervisor timeout, sending SIGKILL");
             kill(supervisor_to_shutdown, SIGKILL);
             waitpid(supervisor_to_shutdown, NULL, 0);
             supervisor_pid = 0;
@@ -270,7 +273,7 @@ static void do_shutdown(void) {
     sync();
 
     /* Perform shutdown action */
-    fprintf(stderr, "INIT: performing final shutdown\n");
+    log_info("init", "Performing final shutdown");
 
     switch (shutdown_type) {
     case 0: /* poweroff */
@@ -285,7 +288,7 @@ static void do_shutdown(void) {
     }
 
     /* Should not reach here */
-    fprintf(stderr, "INIT: initd shutdown failed: %s\n", strerror(errno));
+    log_error("init", "Shutdown failed: %s", strerror(errno));
     while (1) pause();
 }
 
@@ -339,6 +342,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* Initialize logging (console only for init) */
+    log_enhanced_init("init", NULL);
+    log_set_console_level(LOGLEVEL_INFO);
+
     fprintf(stderr, "INIT: initd version %s booting\n", INITD_VERSION);
 
     /* Parse command line arguments */
@@ -346,19 +353,19 @@ int main(int argc, char *argv[]) {
 
     /* Setup signal handlers */
     if (setup_signals() < 0) {
-        fprintf(stderr, "init: failed to setup signal handlers\n");
+        log_error("init", "failed to setup signal handlers");
         return 1;
     }
 
     /* Start supervisor */
     supervisor_pid = start_supervisor();
     if (supervisor_pid < 0) {
-        fprintf(stderr, "init: failed to start supervisor\n");
+        log_error("init", "failed to start supervisor");
         return 1;
     }
 
     /* Main loop */
-    fprintf(stderr, "init: entering main loop\n");
+    log_debug("init", "entering main loop");
 
     while (1) {
         /* Check for shutdown */

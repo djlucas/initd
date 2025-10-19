@@ -32,6 +32,7 @@
 #include "../common/parser.h"
 #include "../common/timer-ipc.h"
 #include "../common/path-security.h"
+#include "../common/log-enhanced.h"
 #include "calendar.h"
 
 #define TIMER_STATE_DIR "/var/lib/initd/timers"
@@ -180,11 +181,11 @@ static int setup_signals(void) {
     sa.sa_flags = SA_RESTART;
 
     if (sigaction(SIGTERM, &sa, NULL) < 0) {
-        perror("timer-daemon: sigaction SIGTERM");
+        log_error("timer-worker", "sigaction SIGTERM: %s", strerror(errno));
         return -1;
     }
     if (sigaction(SIGINT, &sa, NULL) < 0) {
-        perror("timer-daemon: sigaction SIGINT");
+        log_error("timer-worker", "sigaction SIGINT: %s", strerror(errno));
         return -1;
     }
 
@@ -202,13 +203,13 @@ static int create_control_socket(void) {
     }
 
     if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
-        perror("timer-daemon: mkdir runtime dir");
+        log_error("timer-worker", "mkdir runtime dir: %s", strerror(errno));
         return -1;
     }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
-        perror("timer-daemon: socket");
+        log_error("timer-worker", "socket: %s", strerror(errno));
         return -1;
     }
 
@@ -221,13 +222,13 @@ static int create_control_socket(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("timer-daemon: bind");
+        log_error("timer-worker", "bind: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (listen(fd, 5) < 0) {
-        perror("timer-daemon: listen");
+        log_error("timer-worker", "listen: %s", strerror(errno));
         close(fd);
         return -1;
     }
@@ -235,7 +236,7 @@ static int create_control_socket(void) {
     /* Set permissions - use fchmod to avoid race condition */
     fchmod(fd, 0666);
 
-    fprintf(stderr, "timer-daemon: control socket created at %s\n", path);
+    log_debug("timer-worker", "Control socket created at %s", path);
     return fd;
 }
 
@@ -249,13 +250,13 @@ static int create_status_socket(void) {
     }
 
     if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
-        perror("timer-daemon: mkdir runtime dir");
+        log_error("timer-worker", "mkdir runtime dir: %s", strerror(errno));
         return -1;
     }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
-        perror("timer-daemon: status socket");
+        log_error("timer-worker", "status socket: %s", strerror(errno));
         return -1;
     }
 
@@ -267,24 +268,24 @@ static int create_status_socket(void) {
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("timer-daemon: bind status");
+        log_error("timer-worker", "bind status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (listen(fd, 5) < 0) {
-        perror("timer-daemon: listen status");
+        log_error("timer-worker", "listen status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
     if (fchmod(fd, 0666) < 0) {
-        perror("timer-daemon: fchmod status");
+        log_error("timer-worker", "fchmod status: %s", strerror(errno));
         close(fd);
         return -1;
     }
 
-    fprintf(stderr, "timer-daemon: status socket created at %s\n", path);
+    log_debug("timer-worker", "Status socket created at %s", path);
     return fd;
 }
 
@@ -1148,15 +1149,20 @@ int main(int argc, char *argv[]) {
     /* Get IPC socket FD from command line */
     daemon_socket = atoi(argv[1]);
 
-    fprintf(stderr, "initd-timer-worker: starting (ipc_fd=%d)\n", daemon_socket);
+    /* Initialize enhanced logging */
+    log_enhanced_init("timer-worker", "/var/log/initd/timer.log");
+    log_set_console_level(LOGLEVEL_INFO);
+    log_set_file_level(LOGLEVEL_DEBUG);
+
+    log_info("timer-worker", "Starting (ipc_fd=%d)", daemon_socket);
 
     /* Initialize time tracking */
     boot_time = get_boot_time();
     daemon_start_time = time(NULL);
     srand(daemon_start_time);
 
-    fprintf(stderr, "timer-daemon: boot_time=%ld, start_time=%ld\n",
-            boot_time, daemon_start_time);
+    log_debug("timer-worker", "boot_time=%ld, start_time=%ld",
+              boot_time, daemon_start_time);
 
     /* Setup signals */
     if (setup_signals() < 0) {
@@ -1181,7 +1187,7 @@ int main(int argc, char *argv[]) {
 
     /* Load timer units */
     if (load_timers() < 0) {
-        fprintf(stderr, "timer-daemon: failed to load timers\n");
+        log_error("timer-worker", "failed to load timers");
         close(control_socket);
         close(status_socket);
         const char *ctrl_path = timer_socket_path(false);
@@ -1196,11 +1202,11 @@ int main(int argc, char *argv[]) {
     }
 
     /* Run event loop */
-    fprintf(stderr, "timer-daemon: entering event loop\n");
+    log_debug("timer-worker", "Entering event loop");
     event_loop();
 
     /* Cleanup */
-    fprintf(stderr, "timer-daemon: shutting down\n");
+    log_info("timer-worker", "Shutting down");
     close(control_socket);
     const char *ctrl_path = timer_socket_path(false);
     if (ctrl_path) {
@@ -1213,6 +1219,7 @@ int main(int argc, char *argv[]) {
             unlink(status_path);
         }
     }
+    log_enhanced_close();
     free_timer_instances();
 
     return 0;

@@ -33,6 +33,7 @@
 #include "../common/parser.h"
 #include "../common/path-security.h"
 #include "../common/control.h"
+#include "../common/log-enhanced.h"
 #include "service-registry.h"
 #include "process-tracking.h"
 
@@ -145,20 +146,20 @@ static int run_lifecycle_command(const struct service_section *service,
 
     char **argv = NULL;
     if (build_exec_argv(command, &argv) < 0) {
-        fprintf(stderr, "initd-supervisor: %s for %s failed to parse command\n", stage, unit_name);
+        log_error("supervisor", "%s for %s failed to parse command", stage, unit_name);
         return -1;
     }
 
     const char *exec_path = argv[0];
     if (!exec_path || exec_path[0] != '/') {
-        fprintf(stderr, "initd-supervisor: %s for %s must use absolute path\n", stage, unit_name);
+        log_error("supervisor", "%s for %s must use absolute path", stage, unit_name);
         free_exec_argv(argv);
         errno = EINVAL;
         return -1;
     }
 
     if (strstr(exec_path, "..") != NULL) {
-        fprintf(stderr, "initd-supervisor: %s for %s path contains '..'\n", stage, unit_name);
+        log_error("supervisor", "%s for %s path contains '..'", stage, unit_name);
         free_exec_argv(argv);
         errno = EINVAL;
         return -1;
@@ -167,7 +168,7 @@ static int run_lifecycle_command(const struct service_section *service,
     pid_t pid = fork();
     if (pid < 0) {
         int saved_errno = errno;
-        perror("initd-supervisor: fork lifecycle command");
+        log_error("supervisor", "fork lifecycle command: %s", strerror(saved_errno));
         free_exec_argv(argv);
         errno = saved_errno;
         return -1;
@@ -175,45 +176,45 @@ static int run_lifecycle_command(const struct service_section *service,
 
     if (pid == 0) {
         if (setsid() < 0) {
-            perror("initd-supervisor: setsid (lifecycle)");
+            log_error("supervisor", "setsid (lifecycle): %s", strerror(errno));
         }
 
         if (prepare_environment) {
             if (setup_service_environment(service) < 0) {
-                fprintf(stderr, "initd-supervisor: %s failed to setup environment for %s\n",
-                        stage, unit_name);
+                log_error("supervisor", "%s failed to setup environment for %s",
+                          stage, unit_name);
                 _exit(1);
             }
         }
 
         if (validated_gid != 0) {
             if (setgroups(1, &validated_gid) < 0) {
-                perror("initd-supervisor: setgroups (lifecycle)");
+                log_error("supervisor", "setgroups (lifecycle): %s", strerror(errno));
                 _exit(1);
             }
             if (setgid(validated_gid) < 0) {
-                perror("initd-supervisor: setgid (lifecycle)");
+                log_error("supervisor", "setgid (lifecycle): %s", strerror(errno));
                 _exit(1);
             }
         }
 
         if (validated_uid != 0) {
             if (setuid(validated_uid) < 0) {
-                perror("initd-supervisor: setuid (lifecycle)");
+                log_error("supervisor", "setuid (lifecycle): %s", strerror(errno));
                 _exit(1);
             }
         }
 
         if (validated_uid != 0) {
             if (setuid(0) == 0 || seteuid(0) == 0) {
-                fprintf(stderr, "initd-supervisor: SECURITY: %s for %s can regain root!\n",
-                        stage, unit_name);
+                log_error("supervisor", "SECURITY: %s for %s can regain root!",
+                          stage, unit_name);
                 _exit(1);
             }
         }
 
         execv(exec_path, argv);
-        perror("initd-supervisor: execv lifecycle");
+        log_error("supervisor", "execv lifecycle: %s", strerror(errno));
         _exit(1);
     }
 
@@ -225,15 +226,15 @@ static int run_lifecycle_command(const struct service_section *service,
             continue;
         }
         int saved_errno = errno;
-        perror("initd-supervisor: waitpid lifecycle");
+        log_error("supervisor", "waitpid lifecycle: %s", strerror(saved_errno));
         errno = saved_errno;
         return -1;
     }
 
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        fprintf(stderr, "initd-supervisor: %s for %s failed (status=%d)\n",
-                stage, unit_name,
-                WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        log_error("supervisor", "%s for %s failed (status=%d)",
+                  stage, unit_name,
+                  WIFEXITED(status) ? WEXITSTATUS(status) : -1);
         errno = ECANCELED;
         return -1;
     }
@@ -255,10 +256,8 @@ static int fallback_to_nobody_allowed(void) {
 }
 
 static void warn_user_fallback(const char *component, const char *missing_user) {
-    fprintf(stderr,
-            "\033[1;31m%s: WARNING: dedicated user '%s' not found; falling back to 'nobody'. "
-            "This mode is UNSUPPORTED for production.\033[0m\n",
-            component, missing_user);
+    log_warn(component, "dedicated user '%s' not found; falling back to 'nobody'. "
+             "This mode is UNSUPPORTED for production", missing_user);
 }
 
 /* Signal handlers */
@@ -283,7 +282,7 @@ static int setup_signals(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGTERM, &sa, NULL) < 0) {
-        perror("initd-supervisor: sigaction SIGTERM");
+        log_error("supervisor", "sigaction SIGTERM: %s", strerror(errno));
         return -1;
     }
 
@@ -291,7 +290,7 @@ static int setup_signals(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
     if (sigaction(SIGCHLD, &sa, NULL) < 0) {
-        perror("initd-supervisor: sigaction SIGCHLD");
+        log_error("supervisor", "sigaction SIGCHLD: %s", strerror(errno));
         return -1;
     }
 
@@ -306,7 +305,7 @@ static int create_ipc_socket(int *master_fd, int *slave_fd) {
     int sv[2];
 
     if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
-        perror("initd-supervisor: socketpair");
+        log_error("supervisor", "socketpair: %s", strerror(errno));
         return -1;
     }
 
@@ -326,19 +325,17 @@ static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
     struct passwd *pw = getpwnam(SUPERVISOR_USER);
     if (!pw) {
         if (!fallback_to_nobody_allowed()) {
-            fprintf(stderr,
-                    "initd-supervisor: ERROR: user '%s' not found. "
-                    "Create the dedicated account or set INITD_ALLOW_USER_FALLBACK=1 "
-                    "to permit an UNSUPPORTED fallback to 'nobody'.\n",
-                    SUPERVISOR_USER);
+            log_error("supervisor",
+                      "user '%s' not found. Create the dedicated account or set "
+                      "INITD_ALLOW_USER_FALLBACK=1 to permit an UNSUPPORTED fallback to 'nobody'",
+                      SUPERVISOR_USER);
             return -1;
         }
 
         warn_user_fallback("initd-supervisor", SUPERVISOR_USER);
         pw = getpwnam("nobody");
         if (!pw) {
-            fprintf(stderr,
-                    "initd-supervisor: ERROR: fallback user 'nobody' not found; cannot continue.\n");
+            log_error("supervisor", "fallback user 'nobody' not found; cannot continue");
             return -1;
         }
     }
@@ -346,8 +343,8 @@ static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
     *uid = pw->pw_uid;
     *gid = pw->pw_gid;
 
-    fprintf(stderr, "initd-supervisor: slave will run as %s (uid=%d, gid=%d)\n",
-            pw->pw_name, *uid, *gid);
+    log_debug("supervisor", "slave will run as %s (uid=%d, gid=%d)",
+              pw->pw_name, *uid, *gid);
     return 0;
 }
 
@@ -361,14 +358,14 @@ static pid_t start_slave(int slave_fd) {
 
     /* Lookup unprivileged user */
     if (lookup_supervisor_user(&slave_uid, &slave_gid) < 0) {
-        fprintf(stderr, "initd-supervisor: cannot find unprivileged user for slave\n");
+        log_error("supervisor", "cannot find unprivileged user for slave");
         return -1;
     }
 
     pid_t pid = fork();
 
     if (pid < 0) {
-        perror("initd-supervisor: fork slave");
+        log_error("supervisor", "fork slave: %s", strerror(errno));
         return -1;
     }
 
@@ -381,13 +378,13 @@ static pid_t start_slave(int slave_fd) {
         if (!user_mode && slave_gid != 0) {
             /* Set supplementary groups */
             if (setgroups(1, &slave_gid) < 0) {
-                perror("initd-supervisor: setgroups");
+                log_error("supervisor", "setgroups: %s", strerror(errno));
                 _exit(1);
             }
 
             /* Set GID */
             if (setgid(slave_gid) < 0) {
-                perror("initd-supervisor: setgid");
+                log_error("supervisor", "setgid: %s", strerror(errno));
                 _exit(1);
             }
         }
@@ -395,27 +392,27 @@ static pid_t start_slave(int slave_fd) {
         if (!user_mode && slave_uid != 0) {
             /* Set UID (must be last) */
             if (setuid(slave_uid) < 0) {
-                perror("initd-supervisor: setuid");
+                log_error("supervisor", "setuid: %s", strerror(errno));
                 _exit(1);
             }
         }
 
         /* Verify we dropped privileges */
         if (!user_mode && (getuid() == 0 || geteuid() == 0)) {
-            fprintf(stderr, "initd-supervisor: failed to drop privileges!\n");
+            log_error("supervisor", "failed to drop privileges!");
             _exit(1);
         }
 
-        fprintf(stderr, "supervisor-slave: running as uid=%d, gid=%d\n", getuid(), getgid());
+        log_debug("worker", "running as uid=%d, gid=%d", getuid(), getgid());
 
         execl(WORKER_PATH, "initd-supervisor-worker", fd_str, NULL);
-        perror("initd-supervisor: exec slave");
+        log_error("supervisor", "exec slave: %s", strerror(errno));
         _exit(1);
     }
 
     /* Parent */
     close(slave_fd); /* Master doesn't need slave's end */
-    fprintf(stderr, "initd-supervisor: started slave (pid %d)\n", pid);
+    log_info("supervisor", "Started worker (pid %d)", pid);
     return pid;
 }
 
@@ -441,24 +438,24 @@ static pid_t start_service_process(const struct service_section *service,
 
         /* Create new process group so we can kill all children with killpg() */
         if (process_tracking_setup_child() < 0) {
-            perror("initd-supervisor: setsid");
+            log_error("supervisor", "setsid: %s", strerror(errno));
         }
 
         /* Setup service environment (PrivateTmp, LimitNOFILE) BEFORE dropping privileges */
         if (setup_service_environment(service) < 0) {
-            fprintf(stderr, "initd-supervisor: failed to setup service environment\n");
+            log_error("supervisor", "failed to setup service environment");
             _exit(1);
         }
 
         /* Validate exec_path is absolute (prevent relative path attacks) */
         if (exec_path[0] != '/') {
-            fprintf(stderr, "initd-supervisor: exec_path must be absolute: %s\n", exec_path);
+            log_error("supervisor", "exec_path must be absolute: %s", exec_path);
             _exit(1);
         }
 
         /* Check for directory traversal attempts */
         if (strstr(exec_path, "..") != NULL) {
-            fprintf(stderr, "initd-supervisor: exec_path contains '..': %s\n", exec_path);
+            log_error("supervisor", "exec_path contains '..': %s", exec_path);
             _exit(1);
         }
 
@@ -466,19 +463,19 @@ static pid_t start_service_process(const struct service_section *service,
         if (validated_gid != 0) {
             /* Clear supplementary groups first */
             if (setgroups(1, &validated_gid) < 0) {
-                perror("initd-supervisor: setgroups");
+                log_error("supervisor", "setgroups: %s", strerror(errno));
                 _exit(1);
             }
 
             if (setgid(validated_gid) < 0) {
-                perror("initd-supervisor: setgid");
+                log_error("supervisor", "setgid: %s", strerror(errno));
                 _exit(1);
             }
         }
 
         if (validated_uid != 0) {
             if (setuid(validated_uid) < 0) {
-                perror("initd-supervisor: setuid");
+                log_error("supervisor", "setuid: %s", strerror(errno));
                 _exit(1);
             }
         }
@@ -486,7 +483,7 @@ static pid_t start_service_process(const struct service_section *service,
         /* Verify we cannot regain privileges */
         if (validated_uid != 0) {
             if (setuid(0) == 0 || seteuid(0) == 0) {
-                fprintf(stderr, "initd-supervisor: SECURITY: can still become root after dropping privileges!\n");
+                log_error("supervisor", "SECURITY: can still become root after dropping privileges!");
                 _exit(1);
             }
         }
@@ -494,7 +491,7 @@ static pid_t start_service_process(const struct service_section *service,
         /* Exec service using argv (NO SHELL - prevents injection) */
         execv(exec_path, argv);
 
-        perror("initd-supervisor: execv");
+        log_error("supervisor", "execv: %s", strerror(errno));
         _exit(1);
     }
 
@@ -523,11 +520,11 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
     switch (req->type) {
     case REQ_START_SERVICE: {
-        fprintf(stderr, "initd-supervisor: start service request: %s\n", req->unit_name);
+        log_debug("supervisor", "start service request: %s", req->unit_name);
 
         /* SECURITY: Validate unit path is in allowed directory before parsing */
         if (!validate_unit_path_from_worker(req->unit_path)) {
-            fprintf(stderr, "initd-supervisor: SECURITY: invalid unit path: %s\n", req->unit_path);
+            log_error("supervisor", "SECURITY: invalid unit path: %s", req->unit_path);
             resp->type = RESP_ERROR;
             resp->error_code = EACCES;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
@@ -536,8 +533,8 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
         /* DoS PREVENTION: Check if registry has capacity before starting service */
         if (!has_registry_capacity()) {
-            fprintf(stderr, "initd-supervisor: [DoS Prevention] service registry full, cannot start %s\n",
-                    req->unit_name);
+            log_debug("supervisor", "DoS Prevention: service registry full, cannot start %s",
+                      req->unit_name);
             resp->type = RESP_ERROR;
             resp->error_code = ENOMEM;
             snprintf(resp->error_msg, sizeof(resp->error_msg),
@@ -547,7 +544,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
         /* DoS PREVENTION: Check restart rate limiting */
         if (!can_restart_service(req->unit_name)) {
-            fprintf(stderr, "initd-supervisor: [DoS Prevention] %s rate limited\n", req->unit_name);
+            log_debug("supervisor", "DoS Prevention: %s rate limited", req->unit_name);
             resp->type = RESP_ERROR;
             resp->error_code = EAGAIN;
             snprintf(resp->error_msg, sizeof(resp->error_msg),
@@ -618,29 +615,29 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         if (unit.config.service.user[0] != '\0') {
             struct passwd *pw = getpwnam(unit.config.service.user);
             if (!pw) {
-                fprintf(stderr, "initd-supervisor: user '%s' not found\n", unit.config.service.user);
+                log_error("supervisor", "user '%s' not found", unit.config.service.user);
                 resp->type = RESP_ERROR;
                 resp->error_code = EINVAL;
                 snprintf(resp->error_msg, sizeof(resp->error_msg), "User '%s' not found", unit.config.service.user);
                 goto start_cleanup;
             }
             validated_uid = pw->pw_uid;
-            fprintf(stderr, "initd-supervisor: service will run as user %s (uid=%d)\n",
-                    unit.config.service.user, validated_uid);
+            log_debug("supervisor", "service will run as user %s (uid=%d)",
+                      unit.config.service.user, validated_uid);
         }
 
         if (unit.config.service.group[0] != '\0') {
             struct group *gr = getgrnam(unit.config.service.group);
             if (!gr) {
-                fprintf(stderr, "initd-supervisor: group '%s' not found\n", unit.config.service.group);
+                log_error("supervisor", "group '%s' not found", unit.config.service.group);
                 resp->type = RESP_ERROR;
                 resp->error_code = EINVAL;
                 snprintf(resp->error_msg, sizeof(resp->error_msg), "Group '%s' not found", unit.config.service.group);
                 goto start_cleanup;
             }
             validated_gid = gr->gr_gid;
-            fprintf(stderr, "initd-supervisor: service will run as group %s (gid=%d)\n",
-                    unit.config.service.group, validated_gid);
+            log_debug("supervisor", "service will run as group %s (gid=%d)",
+                      unit.config.service.group, validated_gid);
         } else if (validated_uid != 0) {
             /* If User specified but Group not specified, use user's primary group */
             struct passwd *pw = getpwuid(validated_uid);
@@ -697,8 +694,8 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
                                    unit.name,
                                    "ExecStartPost",
                                    true) < 0) {
-            fprintf(stderr, "initd-supervisor: ExecStartPost failed for %s, terminating service\n",
-                    unit.name);
+            log_error("supervisor", "ExecStartPost failed for %s, terminating service",
+                      unit.name);
             unregister_service(pid);
             process_tracking_signal_group(pid, SIGKILL);
             process_tracking_signal_process(pid, SIGKILL);
@@ -711,7 +708,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
         resp->type = RESP_SERVICE_STARTED;
         resp->service_pid = pid;
-        fprintf(stderr, "initd-supervisor: started %s (pid %d)\n", req->unit_name, pid);
+        log_debug("supervisor", "started %s (pid %d)", req->unit_name, pid);
 start_cleanup:
         free_unit_file(&unit);
         if (exec_argv) {
@@ -721,14 +718,14 @@ start_cleanup:
     }
 
     case REQ_STOP_SERVICE: {
-        fprintf(stderr, "initd-supervisor: stop service request: pid %d\n", req->service_pid);
+        log_debug("supervisor", "stop service request: pid %d", req->service_pid);
 
         /* SECURITY: Validate that this PID belongs to a managed service.
          * Prevents compromised worker from killing arbitrary processes. */
         struct service_record *svc = lookup_service(req->service_pid);
         if (!svc) {
-            fprintf(stderr, "initd-supervisor: SECURITY: attempt to stop unmanaged PID %d\n",
-                    req->service_pid);
+            log_error("supervisor", "SECURITY: attempt to stop unmanaged PID %d",
+                      req->service_pid);
             resp->type = RESP_ERROR;
             resp->error_code = ESRCH;
             snprintf(resp->error_msg, sizeof(resp->error_msg),
@@ -736,8 +733,8 @@ start_cleanup:
             break;
         }
 
-        fprintf(stderr, "initd-supervisor: stopping service %s (pid=%d, kill_mode=%d)\n",
-                svc->unit_name, svc->pid, svc->kill_mode);
+        log_debug("supervisor", "stopping service %s (pid=%d, kill_mode=%d)",
+                  svc->unit_name, svc->pid, svc->kill_mode);
 
         int kill_mode = svc->kill_mode;
         struct unit_file stop_unit = {0};
@@ -747,11 +744,11 @@ start_cleanup:
 
         if (svc->unit_path[0] != '\0') {
             if (!validate_unit_path_from_worker(svc->unit_path)) {
-                fprintf(stderr, "initd-supervisor: SECURITY: stored unit path invalid: %s\n",
-                        svc->unit_path);
+                log_error("supervisor", "SECURITY: stored unit path invalid: %s",
+                          svc->unit_path);
             } else if (parse_unit_file(svc->unit_path, &stop_unit) < 0) {
-                fprintf(stderr, "initd-supervisor: failed to parse unit file for %s\n",
-                        svc->unit_name);
+                log_error("supervisor", "failed to parse unit file for %s",
+                          svc->unit_name);
             } else {
                 unit_parsed = true;
                 kill_mode = stop_unit.config.service.kill_mode;
@@ -759,8 +756,8 @@ start_cleanup:
                 if (stop_unit.config.service.user[0] != '\0') {
                     struct passwd *pw = getpwnam(stop_unit.config.service.user);
                     if (!pw) {
-                        fprintf(stderr, "initd-supervisor: stop: user '%s' not found\n",
-                                stop_unit.config.service.user);
+                        log_error("supervisor", "stop: user '%s' not found",
+                                  stop_unit.config.service.user);
                     } else {
                         validated_uid = pw->pw_uid;
                     }
@@ -769,8 +766,8 @@ start_cleanup:
                 if (stop_unit.config.service.group[0] != '\0') {
                     struct group *gr = getgrnam(stop_unit.config.service.group);
                     if (!gr) {
-                        fprintf(stderr, "initd-supervisor: stop: group '%s' not found\n",
-                                stop_unit.config.service.group);
+                        log_error("supervisor", "stop: group '%s' not found",
+                                  stop_unit.config.service.group);
                     } else {
                         validated_gid = gr->gr_gid;
                     }
@@ -790,8 +787,8 @@ start_cleanup:
                                                stop_unit.name,
                                                "ExecStop",
                                                false) < 0) {
-                        fprintf(stderr, "initd-supervisor: ExecStop failed for %s\n",
-                                stop_unit.name);
+                        log_error("supervisor", "ExecStop failed for %s",
+                                  stop_unit.name);
                     }
                 }
             }
@@ -804,7 +801,7 @@ start_cleanup:
         switch (kill_mode) {
         case KILL_NONE:
             /* Don't kill anything */
-            fprintf(stderr, "initd-supervisor: KillMode=none, not sending signal\n");
+            log_debug("supervisor", "KillMode=none, not sending signal");
             break;
 
         case KILL_PROCESS:
@@ -865,11 +862,11 @@ start_cleanup:
     }
 
     case REQ_ENABLE_UNIT: {
-        fprintf(stderr, "initd-supervisor: enable unit request: %s\n", req->unit_path);
+        log_debug("supervisor", "enable unit request: %s", req->unit_path);
 
         /* SECURITY: Validate unit path is in allowed directory */
         if (!validate_unit_path_from_worker(req->unit_path)) {
-            fprintf(stderr, "initd-supervisor: SECURITY: invalid unit path: %s\n", req->unit_path);
+            log_error("supervisor", "SECURITY: invalid unit path: %s", req->unit_path);
             resp->type = RESP_ERROR;
             resp->error_code = EACCES;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
@@ -890,17 +887,17 @@ start_cleanup:
         } else {
             resp->type = RESP_UNIT_ENABLED;
             free_unit_file(&unit);
-            fprintf(stderr, "initd-supervisor: enabled unit %s\n", req->unit_path);
+            log_info("supervisor", "Enabled unit %s", req->unit_path);
         }
         break;
     }
 
     case REQ_DISABLE_UNIT: {
-        fprintf(stderr, "initd-supervisor: disable unit request: %s\n", req->unit_path);
+        log_debug("supervisor", "disable unit request: %s", req->unit_path);
 
         /* SECURITY: Validate unit path is in allowed directory */
         if (!validate_unit_path_from_worker(req->unit_path)) {
-            fprintf(stderr, "initd-supervisor: SECURITY: invalid unit path: %s\n", req->unit_path);
+            log_error("supervisor", "SECURITY: invalid unit path: %s", req->unit_path);
             resp->type = RESP_ERROR;
             resp->error_code = EACCES;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
@@ -921,14 +918,14 @@ start_cleanup:
         } else {
             resp->type = RESP_UNIT_DISABLED;
             free_unit_file(&unit);
-            fprintf(stderr, "initd-supervisor: disabled unit %s\n", req->unit_path);
+            log_info("supervisor", "Disabled unit %s", req->unit_path);
         }
         break;
     }
 
     case REQ_RELOAD_SERVICE: {
-        fprintf(stderr, "initd-supervisor: reload service request: %s (pid=%d)\n",
-                req->unit_name, req->service_pid);
+        log_debug("supervisor", "reload service request: %s (pid=%d)",
+                  req->unit_name, req->service_pid);
 
         struct service_record *svc = NULL;
         if (req->service_pid > 0) {
@@ -1033,11 +1030,11 @@ start_cleanup:
     }
 
     case REQ_CONVERT_UNIT: {
-        fprintf(stderr, "initd-supervisor: convert unit request: %s\n", req->unit_path);
+        log_debug("supervisor", "convert unit request: %s", req->unit_path);
 
         /* SECURITY: Validate unit path is in allowed directory */
         if (!validate_unit_path_from_worker(req->unit_path)) {
-            fprintf(stderr, "initd-supervisor: SECURITY: invalid unit path: %s\n", req->unit_path);
+            log_error("supervisor", "SECURITY: invalid unit path: %s", req->unit_path);
             resp->type = RESP_ERROR;
             resp->error_code = EACCES;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit path not in allowed directory");
@@ -1059,33 +1056,33 @@ start_cleanup:
             resp->type = RESP_UNIT_CONVERTED;
             strncpy(resp->converted_path, unit.path, sizeof(resp->converted_path) - 1);
             free_unit_file(&unit);
-            fprintf(stderr, "initd-supervisor: converted unit to %s\n", resp->converted_path);
+            log_info("supervisor", "Converted unit to %s", resp->converted_path);
         }
         break;
     }
 
     case REQ_SHUTDOWN_COMPLETE:
-        fprintf(stderr, "initd-supervisor: slave shutdown complete\n");
+        log_info("supervisor", "Worker shutdown complete");
         resp->type = RESP_OK;
         shutdown_requested = 1;
         break;
 
     case REQ_POWEROFF:
-        fprintf(stderr, "initd-supervisor: poweroff requested\n");
+        log_info("supervisor", "Poweroff requested");
         resp->type = RESP_OK;
         shutdown_requested = 1;
         shutdown_type = SHUTDOWN_POWEROFF;
         break;
 
     case REQ_REBOOT:
-        fprintf(stderr, "initd-supervisor: reboot requested\n");
+        log_info("supervisor", "Reboot requested");
         resp->type = RESP_OK;
         shutdown_requested = 1;
         shutdown_type = SHUTDOWN_REBOOT;
         break;
 
     case REQ_HALT:
-        fprintf(stderr, "initd-supervisor: halt requested\n");
+        log_info("supervisor", "Halt requested");
         resp->type = RESP_OK;
         shutdown_requested = 1;
         shutdown_type = SHUTDOWN_HALT;
@@ -1114,14 +1111,14 @@ static void reap_zombies(void) {
 
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         if (pid == slave_pid) {
-            fprintf(stderr, "initd-supervisor: slave exited (status %d)\n",
-                    WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+            log_warn("supervisor", "worker exited (status %d)",
+                     WIFEXITED(status) ? WEXITSTATUS(status) : -1);
             slave_pid = 0;
         } else {
             /* Service process exited - unregister and notify slave */
             int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-            fprintf(stderr, "initd-supervisor: service pid %d exited (status %d)\n",
-                    pid, exit_status);
+            log_debug("supervisor", "service pid %d exited (status %d)",
+                      pid, exit_status);
 
             /* Remove from service registry */
             unregister_service(pid);
@@ -1133,7 +1130,7 @@ static void reap_zombies(void) {
             notif.exit_status = exit_status;
 
             if (send_response(ipc_socket, &notif) < 0) {
-                fprintf(stderr, "initd-supervisor: failed to notify slave of service exit\n");
+                log_error("supervisor", "failed to notify worker of service exit");
             }
         }
     }
@@ -1161,14 +1158,14 @@ static int main_loop(void) {
 
         if (ret < 0) {
             if (errno == EINTR) continue;
-            perror("initd-supervisor: select");
+            log_error("supervisor", "select: %s", strerror(errno));
             break;
         }
 
         /* Handle IPC request from slave */
         if (ret > 0 && FD_ISSET(ipc_socket, &readfds)) {
             if (recv_request(ipc_socket, &req) < 0) {
-                fprintf(stderr, "initd-supervisor: IPC read failed\n");
+                log_error("supervisor", "IPC read failed");
                 break;
             }
 
@@ -1177,7 +1174,7 @@ static int main_loop(void) {
 
             /* Send response */
             if (send_response(ipc_socket, &resp) < 0) {
-                fprintf(stderr, "initd-supervisor: IPC write failed\n");
+                log_error("supervisor", "IPC write failed");
                 free_request(&req);
                 break;
             }
@@ -1209,7 +1206,7 @@ int main(int argc, char *argv[]) {
             }
             runtime_dir_arg = argv[++i];
         } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
-            fprintf(stderr, "Usage: %s [--user-mode] [--runtime-dir PATH]\n", argv[0]);
+            printf("Usage: %s [--user-mode] [--runtime-dir PATH]\n", argv[0]);
             return 0;
         } else {
             fprintf(stderr, "initd-supervisor: unknown option '%s'\n", arg);
@@ -1243,7 +1240,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    fprintf(stderr, "initd-supervisor: starting%s\n", user_mode ? " (user mode)" : "");
+    /* Initialize enhanced logging */
+    log_enhanced_init("initd-supervisor", "/var/log/initd/supervisor.log");
+    log_set_console_level(LOGLEVEL_INFO);
+    log_set_file_level(LOGLEVEL_DEBUG);
+
+    log_info("supervisor", "Starting%s", user_mode ? " (user mode)" : "");
 
     /* Initialize service registry */
     service_registry_init();
@@ -1279,7 +1281,7 @@ int main(int argc, char *argv[]) {
     if (shutdown_type != SHUTDOWN_NONE) {
         if (initd_is_running_as_init()) {
             /* Running as PID 1 or child of initd-init - perform system action */
-            fprintf(stderr, "initd-supervisor: performing system shutdown\n");
+            log_info("supervisor", "Performing system shutdown");
 
             #ifdef __linux__
             sync();
@@ -1317,11 +1319,11 @@ int main(int argc, char *argv[]) {
             }
             #endif
 
-            perror("shutdown failed");
+            log_error("supervisor", "shutdown failed: %s", strerror(errno));
             return 1;
         } else {
             /* Running standalone - execute native shutdown commands */
-            fprintf(stderr, "initd-supervisor: executing native shutdown command\n");
+            log_info("supervisor", "Executing native shutdown command");
 
             switch (shutdown_type) {
             case SHUTDOWN_POWEROFF:
@@ -1340,12 +1342,13 @@ int main(int argc, char *argv[]) {
                 break;
             }
 
-            perror("shutdown command failed");
+            log_error("supervisor", "shutdown command failed: %s", strerror(errno));
             return 1;
         }
     }
 
-    fprintf(stderr, "initd-supervisor: exiting\n");
+    log_info("supervisor", "Exiting");
+    log_enhanced_close();
     return 0;
 }
 #endif /* !UNIT_TEST */
