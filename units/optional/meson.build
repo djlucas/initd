@@ -130,16 +130,16 @@ SYSCONFIG_DEST="${DESTDIR:-}''' + get_option('sysconfdir') / 'sysconfig' / confi
 if [ -f "$SYSCONFIG_DEST" ]; then
   # Find next available .new-N suffix
   if [ ! -f "${SYSCONFIG_DEST}.new" ]; then
-    install -D -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new"
+    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new"
   else
     COUNTER=1
     while [ -f "${SYSCONFIG_DEST}.new-${COUNTER}" ]; do
       COUNTER=$((COUNTER + 1))
     done
-    install -D -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new-${COUNTER}"
+    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new-${COUNTER}"
   fi
 else
-  install -D -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "$SYSCONFIG_DEST"
+  install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "$SYSCONFIG_DEST"
 fi
 '''
       ],
@@ -170,26 +170,26 @@ foreach service_name, unit_files : optional_units
   if config_file != ''
     all_install_commands += ['''
 # Install ''' + service_name + '''
-install -D -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
+install -D -v -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
 SYSCONFIG_DEST="${DESTDIR:-}''' + get_option('sysconfdir') / 'sysconfig' / config_file + '''"
 if [ -f "$SYSCONFIG_DEST" ]; then
   if [ ! -f "${SYSCONFIG_DEST}.new" ]; then
-    install -D -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new"
+    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new"
   else
     COUNTER=1
     while [ -f "${SYSCONFIG_DEST}.new-${COUNTER}" ]; do
       COUNTER=$((COUNTER + 1))
     done
-    install -D -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new-${COUNTER}"
+    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new-${COUNTER}"
   fi
 else
-  install -D -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "$SYSCONFIG_DEST"
+  install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "$SYSCONFIG_DEST"
 fi
 ''']
   else
     all_install_commands += ['''
 # Install ''' + service_name + '''
-install -D -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
+install -D -v -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
 ''']
   endif
 endforeach
