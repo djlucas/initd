@@ -14,12 +14,14 @@ static struct service_record service_registry[MAX_SERVICES];
 
 /* Restart tracking per unit (indexed by unit name hash, simple approach) */
 static struct restart_tracker restart_trackers[MAX_SERVICES];
+static time_t service_registry_boot_time;
 
 static void release_restart_tracker(const char *unit_name);
 /* Initialize the service registry */
 void service_registry_init(void) {
     memset(service_registry, 0, sizeof(service_registry));
     memset(restart_trackers, 0, sizeof(restart_trackers));
+    service_registry_boot_time = time(NULL);
 }
 
 /* Add a service to the registry */
@@ -132,7 +134,7 @@ static struct restart_tracker *get_restart_tracker(const char *unit_name) {
         /* Claim unused slot */
         tracker->in_use = 1;
         tracker->attempt_count = 0;
-        tracker->last_attempt = 0;
+        tracker->last_attempt = service_registry_boot_time ? service_registry_boot_time - MIN_RESTART_INTERVAL_SEC - 1 : 0;
         memset(tracker->attempts, 0, sizeof(tracker->attempts));
         strncpy(tracker->unit_name, unit_name, sizeof(tracker->unit_name) - 1);
         tracker->unit_name[sizeof(tracker->unit_name) - 1] = '\0';
