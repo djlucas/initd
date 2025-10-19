@@ -1,5 +1,5 @@
 # Default installation: completely minimal - no targets, no services
-# All targets and services are installed via meson install --tags=reference
+# Reference installation: ninja -C build install-reference
 
 # Configuration data for template substitution
 conf_data = configuration_data()
@@ -42,8 +42,6 @@ conf_data.set('LIBDIR', libdir)
 conf_data.set('SBINDIR', sbindir)
 conf_data.set('BINDIR', bindir)
 conf_data.set('LIBEXECDIR', libexecdir / 'initd')
-
-bash = find_program('bash')
 
 # Target files (no templating needed)
 reference_targets = [
@@ -93,14 +91,6 @@ reference_services = [
   'udevd.service',
 ]
 
-reference_enable_services = []
-foreach service : reference_services
-  if service != 'network@.service' and service != 'getty@.service'
-    reference_enable_services += service
-  endif
-endforeach
-reference_enable_services = ' '.join(reference_enable_services)
-
 # Helper scripts (need templating)
 reference_script_helpers = [
   'ifup',
@@ -141,234 +131,179 @@ reference_configs = [
   'udev_retry.conf',
 ]
 
-# Optional service files (need templating)
-optional_services = [
-  'accounts-daemon.service',
-  'acpid.service',
-  'alsa.service',
-  'atd.service',
-  'autofs.service',
-  'avahi-daemon.service',
-  'avahi-dnsconfd.service',
-  'bluetooth.service',
-  'cups.service',
-  'dbus.service',
-  'dhcpcdat.service',
-  'dovecot.service',
-  'exim.service',
-  'fcron.service',
-  'firewalld.service',
-  'git-daemon.service',
-  'gpm.service',
-  'haveged.service',
-  'httpd.service',
-  'iptables.service',
-  'kea-ctrl-agent.service',
-  'kea-ddns-server.service',
-  'kea-dhcp4-server.service',
-  'kea-dhcp6-server.service',
-  'krb5-kadmind.service',
-  'krb5-kdc.service',
-  'krb5-kpropd.service',
-  'lightdm.service',
-  'mariadb.service',
-  'named.service',
-  'networkmanager.service',
-  'nfs-client.service',
-  'nfs-server.service',
-  'nfsd.service',
-  'nftables.service',
-  'nmbd.service',
-  'ntpd.service',
-  'php-fpm.service',
-  'postfix.service',
-  'postgresql.service',
-  'power-profiles-daemon.service',
-  'proftpd.service',
-  'random-seed.service',
-  'rpc-idmapd.service',
-  'rpc-mountd.service',
-  'rpc-statd-notify.service',
-  'rpc-statd.service',
-  'rpcbind.service',
-  'rsyncd.service',
-  'rsyncdat.service',
-  'rsyslog.service',
-  'samba.service',
-  'saslauthd.service',
-  'sendmail.service',
-  'slapd.service',
-  'sm-client.service',
-  'smartd.service',
-  'smbd.service',
-  'smbdat.service',
-  'sshd.service',
-  'sshdat.service',
-  'stunnel.service',
-  'svnserve.service',
-  'syslog-ng.service',
-  'sysmond.service',
-  'sysstat.service',
-  'unbound.service',
-  'vsftpd.service',
-  'winbindd.service',
-  'xdm.service',
-]
+# Process template files at meson setup time
+scriptdir = meson.project_source_root() / 'scripts'
+sysconfigdir = meson.project_source_root() / 'sysconfig'
 
-reference_target_sources = []
-foreach target : reference_targets
-  reference_target_sources += [meson.current_source_dir() / target]
-endforeach
-
-reference_service_outputs = []
+# Process service templates
+reference_service_files = []
 foreach service : reference_services
-  reference_service_outputs += [configure_file(
+  reference_service_files += configure_file(
     input: 'reference' / service,
     output: service,
     configuration: conf_data,
-    install: false
-  )]
+  )
 endforeach
 
-scriptdir = meson.project_source_root() / 'scripts'
-reference_sbin_scripts = []
+# Process script helper templates
+reference_sbin_script_files = []
 foreach script : reference_script_helpers
-  reference_sbin_scripts += [configure_file(
+  reference_sbin_script_files += configure_file(
     input: scriptdir / script,
-    output: script,
+    output: 'sbin-' + script,
     configuration: conf_data,
-    install: false
-  )]
+  )
 endforeach
 
-reference_libexec_scripts = [configure_file(
+# Process libexec script templates
+reference_libexec_script_files = [configure_file(
   input: scriptdir / 'initd-user-manager',
-  output: 'initd-user-manager',
+  output: 'libexec-initd-user-manager',
   configuration: conf_data,
-  install: false
 )]
 
-reference_service_script_outputs = []
+# Process service script templates
+reference_service_script_files = []
 foreach script : reference_service_scripts
-  reference_service_script_outputs += [configure_file(
+  reference_service_script_files += configure_file(
     input: scriptdir / 'service-scripts' / script,
-    output: script,
+    output: 'servicescript-' + script,
     configuration: conf_data,
-    install: false
-  )]
+  )
 endforeach
 
-reference_network_script_outputs = []
+# Process network script templates
+reference_network_script_files = []
 foreach script : reference_network_scripts
-  reference_network_script_outputs += [configure_file(
+  reference_network_script_files += configure_file(
     input: scriptdir / 'network-services' / script,
-    output: script,
+    output: 'networkscript-' + script,
     configuration: conf_data,
-    install: false
-  )]
+  )
 endforeach
 
-reference_config_sources = []
-foreach config : reference_configs
-  reference_config_sources += [meson.project_source_root() / 'sysconfig' / 'reference' / config]
-endforeach
+# Build install script for reference installation
+install_sh = find_program('install')
+bash = find_program('bash')
 
-reference_man_pages = [
-  meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifup.8',
-  meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifdown.8',
-]
+install_reference_script = '''#!/bin/bash
+set -e
 
-unit_dest = get_option('libdir') / 'initd' / 'system'
-sbin_dest = get_option('sbindir')
-libexec_dest = get_option('libexecdir') / 'initd'
-service_script_dest = libexec_dest / 'service-scripts'
-network_script_dest = libexec_dest / 'network-services'
-config_dest = get_option('sysconfdir') / 'sysconfig'
-man8_dest = get_option('mandir') / 'man8'
+DESTDIR="${DESTDIR:-}"
+UNIT_DIR="@0@"
+SBIN_DIR="@1@"
+LIBEXEC_DIR="@2@"
+SERVICE_SCRIPT_DIR="@3@"
+NETWORK_SCRIPT_DIR="@4@"
+CONFIG_DIR="@5@"
+MAN8_DIR="@6@"
+BINDIR="@7@"
+INITCTL="${DESTDIR}@7@/initctl"
 
-reference_install_args = []
-foreach src : reference_target_sources
-  reference_install_args += ['--copy', '0644', unit_dest, src]
-endforeach
-foreach src : reference_service_outputs
-  reference_install_args += ['--copy', '0644', unit_dest, src]
-endforeach
-foreach src : reference_sbin_scripts
-  reference_install_args += ['--copy', '0755', sbin_dest, src]
-endforeach
-foreach src : reference_libexec_scripts
-  reference_install_args += ['--copy', '0755', libexec_dest, src]
-endforeach
-foreach src : reference_service_script_outputs
-  reference_install_args += ['--copy', '0755', service_script_dest, src]
-endforeach
-foreach src : reference_network_script_outputs
-  reference_install_args += ['--copy', '0755', network_script_dest, src]
-endforeach
-foreach src : reference_config_sources
-  reference_install_args += ['--copy', '0644', config_dest, src]
-endforeach
-foreach src : reference_man_pages
-  reference_install_args += ['--copy', '0644', man8_dest, src]
-endforeach
-
-# Convenience run target for reference installation
-# Use: ninja -C build install-reference (or DESTDIR=... ninja -C build install-reference)
-# This will show each file being installed
-run_target('install-reference',
-  command: [bash, '-c', '''
-set -eu
-if [ "$#" -lt 1 ] || [ "$1" != "--" ]; then
-    echo "internal error: missing argument sentinel" >&2
-    exit 1
-fi
-shift
-if ! command -v install >/dev/null 2>&1; then
-    echo "install command not found" >&2
-    exit 1
-fi
-while [ $# -gt 0 ]; do
-    if [ "$1" != "--copy" ]; then
-        echo "unknown install key $1" >&2
-        exit 1
-    fi
-    mode="$2"
-    dest="$3"
-    src="$4"
-    case "$mode" in
-        ''|*[!0-9]*)
-            echo "invalid mode $mode" >&2
-            exit 1
-            ;;
-    esac
-    base=$(basename "$src")
-    target="${dest%/}/$base"
-    if [ -n "${DESTDIR:-}" ]; then
-        target="${DESTDIR%/}/$target"
-    fi
-    install -D -m "$mode" "$src" "$target"
-    shift 4
-done
-
-if [ "${DESTDIR:-}" = "" ]; then
-    INITCTL=''' + (bindir / 'initctl') + '''
-    if [ ! -x "$INITCTL" ]; then
-        INITCTL="$(command -v initctl || true)"
-    fi
-    if [ -z "$INITCTL" ] || [ ! -x "$INITCTL" ]; then
-        echo "initctl not found; skipping enablement" >&2
-        exit 1
-    fi
-    for svc in ''' + reference_enable_services + '''; do
-        "$INITCTL" enable "$svc"
-    done
-    for tty in 1 2 3 4 5 6; do
-        "$INITCTL" enable "getty@tty${tty}"
-    done
-fi
-''', 'initd-install-helper', '--'] + reference_install_args
+# Install target files
+'''.format(
+  libdir / 'initd' / 'system',
+  sbindir,
+  libexecdir / 'initd',
+  libexecdir / 'initd' / 'service-scripts',
+  libexecdir / 'initd' / 'network-services',
+  sysconfdir / 'sysconfig',
+  get_option('mandir') / 'man8',
+  bindir,
 )
 
-# Optional service install targets are defined in units/optional/meson.build (included from main meson.build)
-# Use: ninja -C build install-sshd (or install-networkmanager, etc.)
-# These targets use 'install -D -v' to show what's being installed
+foreach target : reference_targets
+  install_reference_script += 'install -D -v -m 0644 "@0@" "${DESTDIR}@1@/@2@"\n'.format(
+    meson.current_source_dir() / target,
+    libdir / 'initd' / 'system',
+    target
+  )
+endforeach
+
+install_reference_script += '\n# Install service files\n'
+builddir = meson.current_build_dir()
+foreach i : range(reference_services.length())
+  src_path = builddir / reference_services[i]
+  install_reference_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + libdir / 'initd' / 'system' / reference_services[i] + '"\n'
+endforeach
+
+install_reference_script += '\n# Install sbin scripts\n'
+foreach i : range(reference_script_helpers.length())
+  src_path = builddir / ('sbin-' + reference_script_helpers[i])
+  install_reference_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + sbindir / reference_script_helpers[i] + '"\n'
+endforeach
+
+install_reference_script += '\n# Install libexec scripts\n'
+src_path = builddir / 'libexec-initd-user-manager'
+install_reference_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + libexecdir / 'initd' / 'initd-user-manager' + '"\n'
+
+install_reference_script += '\n# Install service scripts\n'
+foreach i : range(reference_service_scripts.length())
+  src_path = builddir / ('servicescript-' + reference_service_scripts[i])
+  install_reference_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + libexecdir / 'initd' / 'service-scripts' / reference_service_scripts[i] + '"\n'
+endforeach
+
+install_reference_script += '\n# Install network scripts\n'
+foreach i : range(reference_network_scripts.length())
+  src_path = builddir / ('networkscript-' + reference_network_scripts[i])
+  install_reference_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + libexecdir / 'initd' / 'network-services' / reference_network_scripts[i] + '"\n'
+endforeach
+
+install_reference_script += '\n# Install config files\n'
+foreach config : reference_configs
+  src_path = sysconfigdir / 'reference' / config
+  dest_path = sysconfdir / 'sysconfig' / config
+  install_reference_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + dest_path + '"\n'
+endforeach
+
+install_reference_script += '\n# Install man pages\n'
+src_path = meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifup.8'
+dest_path = get_option('mandir') / 'man8' / 'ifup.8'
+install_reference_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + dest_path + '"\n'
+
+src_path = meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifdown.8'
+dest_path = get_option('mandir') / 'man8' / 'ifdown.8'
+install_reference_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + dest_path + '"\n'
+
+# Enable services if not using DESTDIR
+reference_enable_services = []
+foreach service : reference_services
+  if service != 'network@.service' and service != 'getty@.service'
+    reference_enable_services += service
+  endif
+endforeach
+
+install_reference_script += '''
+# Enable services if not using DESTDIR
+if [ -z "${DESTDIR}" ]; then
+  if [ ! -x "$INITCTL" ]; then
+    INITCTL="$(command -v initctl 2>/dev/null || true)"
+  fi
+  if [ -n "$INITCTL" ] && [ -x "$INITCTL" ]; then
+'''
+
+foreach service : reference_enable_services
+  install_reference_script += '    "$INITCTL" enable @0@ || true\n'.format(service)
+endforeach
+
+install_reference_script += '''    for tty in 1 2 3 4 5 6; do
+      "$INITCTL" enable "getty@tty${tty}" || true
+    done
+  else
+    echo "Warning: initctl not found, skipping service enablement" >&2
+  fi
+fi
+
+echo "Reference installation complete"
+'''
+
+# Create ninja target for install-reference
+install_reference_target = custom_target('install-reference-stamp',
+  output: 'install-reference.stamp',
+  command: [bash, '-c', install_reference_script + '\ntouch @OUTPUT@'],
+  build_by_default: false,
+  console: true,
+)
+
+# Create phony alias for convenience
+alias_target('install-reference', install_reference_target)

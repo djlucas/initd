@@ -1,5 +1,5 @@
 # Optional BLFS services - not installed by default
-# Each service has its own install target: meson install --tags install-<service>
+# Each service has its own ninja target: ninja -C build install-<service>
 
 # Define all optional units
 optional_units = {
@@ -75,11 +75,10 @@ optional_units = {
   'xdm': ['xdm.service'],
 }
 
-# Create ninja install targets for each optional service
-install_cmd = find_program('install')
 bash = find_program('bash')
+install_cmd = find_program('install')
 
-# Sysconfig file mapping (from sysconfig/meson.build)
+# Sysconfig file mapping
 sysconfig_map = {
   'autofs': 'autofs',
   'bluetooth': 'bluetooth',
@@ -105,98 +104,109 @@ sysconfig_map = {
   'xdm': 'xdm',
 }
 
+# Create ninja install target for each optional service
 foreach service_name, unit_files : optional_units
-  install_args = []
+  # Build list of source files
+  unit_sources = []
   foreach unit_file : unit_files
-    install_args += [
-      meson.current_source_dir() / unit_file,
-    ]
+    unit_sources += meson.current_source_dir() / unit_file
+  endforeach
+
+  # Build install script
+  install_script = '#!/bin/bash\nset -e\necho "Installing ' + service_name + ' unit files..."\n'
+
+  # Install unit files
+  foreach src : unit_sources
+    install_script += 'install -D -v -m 0644 "' + src + '" "${DESTDIR:-}' + get_option('prefix') / get_option('libdir') / 'initd' / 'system' + '/$(basename ' + src + ')"\n'
   endforeach
 
   # Check if this service has a sysconfig file
   config_file = sysconfig_map.get(service_name, '')
 
   if config_file != ''
-    run_target('install-' + service_name,
-      command: [
-        bash, '-c', '''
-set -e
-echo "Installing ''' + service_name + ''' unit files..."
-# Install unit files
-install -D -v -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
+    config_src = meson.project_source_root() / 'sysconfig' / 'optional' / config_file
+    config_dest = get_option('sysconfdir') / 'sysconfig' / config_file
+    install_script += '''
 echo "Installing sysconfig file for ''' + service_name + '''..."
-# Install sysconfig file, preserving existing files
-SYSCONFIG_DEST="${DESTDIR:-}''' + get_option('sysconfdir') / 'sysconfig' / config_file + '''"
+SYSCONFIG_DEST="${DESTDIR:-}''' + config_dest + '''"
 if [ -f "$SYSCONFIG_DEST" ]; then
   # Find next available .new-N suffix
   if [ ! -f "${SYSCONFIG_DEST}.new" ]; then
-    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new"
+    install -D -v -m 0644 "''' + config_src + '''" "${SYSCONFIG_DEST}.new"
   else
     COUNTER=1
     while [ -f "${SYSCONFIG_DEST}.new-${COUNTER}" ]; do
       COUNTER=$((COUNTER + 1))
     done
-    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new-${COUNTER}"
+    install -D -v -m 0644 "''' + config_src + '''" "${SYSCONFIG_DEST}.new-${COUNTER}"
   fi
 else
-  install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "$SYSCONFIG_DEST"
+  install -D -v -m 0644 "''' + config_src + '''" "$SYSCONFIG_DEST"
 fi
 '''
-      ],
-    )
-  else
-    run_target('install-' + service_name,
-      command: [
-        bash, '-c',
-        'echo "Installing ' + service_name + ' unit files..." && ' +
-        'install -D -v -m 644 ' + ' '.join(install_args) + ' -t "${DESTDIR:-}' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"'
-      ],
-    )
   endif
+
+  install_script += 'echo "Installation of ' + service_name + ' complete"\n'
+
+  # Create custom target
+  install_target = custom_target('install-' + service_name + '-stamp',
+    output: 'install-' + service_name + '.stamp',
+    command: [bash, '-c', install_script + 'touch @OUTPUT@\n'],
+    build_by_default: false,
+    console: true,
+  )
+
+  # Create phony alias for convenience
+  alias_target('install-' + service_name, install_target)
 endforeach
 
 # Create install-everything target to install all optional services
-all_install_commands = []
+all_install_script = '#!/bin/bash\nset -e\n\n'
+
 foreach service_name, unit_files : optional_units
-  install_args = []
+  all_install_script += '# Install ' + service_name + '\n'
+  all_install_script += 'echo "Installing ' + service_name + '..."\n'
+
+  # Install unit files
   foreach unit_file : unit_files
-    install_args += [
-      meson.current_source_dir() / unit_file,
-    ]
+    src = meson.current_source_dir() / unit_file
+    all_install_script += 'install -D -v -m 0644 "' + src + '" "${DESTDIR:-}' + get_option('prefix') / get_option('libdir') / 'initd' / 'system' + '/' + unit_file + '"\n'
   endforeach
 
+  # Install sysconfig if applicable
   config_file = sysconfig_map.get(service_name, '')
-
   if config_file != ''
-    all_install_commands += ['''
-# Install ''' + service_name + '''
-install -D -v -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
-SYSCONFIG_DEST="${DESTDIR:-}''' + get_option('sysconfdir') / 'sysconfig' / config_file + '''"
+    config_src = meson.project_source_root() / 'sysconfig' / 'optional' / config_file
+    config_dest = get_option('sysconfdir') / 'sysconfig' / config_file
+    all_install_script += '''SYSCONFIG_DEST="${DESTDIR:-}''' + config_dest + '''"
 if [ -f "$SYSCONFIG_DEST" ]; then
   if [ ! -f "${SYSCONFIG_DEST}.new" ]; then
-    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new"
+    install -D -v -m 0644 "''' + config_src + '''" "${SYSCONFIG_DEST}.new"
   else
     COUNTER=1
     while [ -f "${SYSCONFIG_DEST}.new-${COUNTER}" ]; do
       COUNTER=$((COUNTER + 1))
     done
-    install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "${SYSCONFIG_DEST}.new-${COUNTER}"
+    install -D -v -m 0644 "''' + config_src + '''" "${SYSCONFIG_DEST}.new-${COUNTER}"
   fi
 else
-  install -D -v -m 644 ''' + meson.project_source_root() / 'sysconfig' / 'optional' / config_file + ''' "$SYSCONFIG_DEST"
+  install -D -v -m 0644 "''' + config_src + '''" "$SYSCONFIG_DEST"
 fi
-''']
-  else
-    all_install_commands += ['''
-# Install ''' + service_name + '''
-install -D -v -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
-''']
+'''
   endif
+
+  all_install_script += '\n'
 endforeach
 
-run_target('install-everything',
-  command: [
-    bash, '-c',
-    'set -e\n' + '\n'.join(all_install_commands)
-  ],
+all_install_script += 'echo "All optional services installed"\n'
+
+# Create custom target
+install_everything_target = custom_target('install-everything-stamp',
+  output: 'install-everything.stamp',
+  command: [bash, '-c', all_install_script + 'touch @OUTPUT@\n'],
+  build_by_default: false,
+  console: true,
 )
+
+# Create phony alias for convenience
+alias_target('install-everything', install_everything_target)
