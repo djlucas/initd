@@ -284,19 +284,6 @@ foreach config : reference_configs
   )
 endforeach
 
-# Optional services - install individually with tags
-foreach service : optional_services
-  service_name = service.replace('.service', '')
-  configure_file(
-    input: 'optional' / service,
-    output: service,
-    configuration: conf_data,
-    install: true,
-    install_dir: get_option('libdir') / 'initd' / 'system',
-    install_tag: service_name
-  )
-endforeach
-
 # Convenience run target for reference installation
 # Use: ninja -C build install-reference (or DESTDIR=... ninja -C build install-reference)
 # This will show each file being installed
@@ -304,4 +291,6 @@ run_target('install-reference',
   command: ['meson', 'install', '-C', meson.project_build_root(), '--tags', 'reference', '--no-rebuild']
 )
 
-# For optional services, use: meson install --tags=sshd (or --tags=networkmanager, etc.)
+# Optional service install targets are defined in units/optional/meson.build (included from main meson.build)
+# Use: ninja -C build install-sshd (or install-networkmanager, etc.)
+# These targets use 'install -D -v' to show what's being installed

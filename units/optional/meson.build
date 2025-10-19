@@ -121,8 +121,10 @@ foreach service_name, unit_files : optional_units
       command: [
         bash, '-c', '''
 set -e
+echo "Installing ''' + service_name + ''' unit files..."
 # Install unit files
-install -D -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
+install -D -v -m 644 ''' + ' '.join(install_args) + ''' -t "${DESTDIR:-}''' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"' + '''
+echo "Installing sysconfig file for ''' + service_name + '''..."
 # Install sysconfig file, preserving existing files
 SYSCONFIG_DEST="${DESTDIR:-}''' + get_option('sysconfdir') / 'sysconfig' / config_file + '''"
 if [ -f "$SYSCONFIG_DEST" ]; then
@@ -146,7 +148,8 @@ fi
     run_target('install-' + service_name,
       command: [
         bash, '-c',
-        'install -D -m 644 ' + ' '.join(install_args) + ' -t "${DESTDIR:-}' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"'
+        'echo "Installing ' + service_name + ' unit files..." && ' +
+        'install -D -v -m 644 ' + ' '.join(install_args) + ' -t "${DESTDIR:-}' + get_option('prefix') / get_option('libdir') / 'initd' / 'system"'
       ],
     )
   endif
