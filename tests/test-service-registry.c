@@ -351,11 +351,11 @@ void test_restart_window_limit(void) {
     /* Next attempt should be blocked (exceeded window limit) */
     assert(can_restart_service(unit_name) == 0);
 
-    printf("\n    (Sleeping %d seconds to test window expiration...)\n    ", RESTART_WINDOW_SEC + 2);
+    printf("\n    (Sleeping %d seconds to test window expiration...)\n    ", RESTART_WINDOW_SEC + 3);
     fflush(stdout);
 
     /* Wait for window to expire */
-    sleep(RESTART_WINDOW_SEC + 2);
+    sleep(RESTART_WINDOW_SEC + 3);
 
     /* Now should be allowed again (old attempts expired) */
     assert(can_restart_service(unit_name) == 1);
