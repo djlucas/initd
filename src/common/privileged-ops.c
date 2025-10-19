@@ -59,6 +59,16 @@ int convert_systemd_unit(struct unit_file *unit) {
     /* Create initd path using validated unit name */
     snprintf(initd_path, sizeof(initd_path), "/lib/initd/system/%s", unit->name);
 
+    /* Ensure destination directories exist */
+    if (mkdir("/lib/initd", 0755) < 0 && errno != EEXIST) {
+        log_msg(LOG_ERR, unit->name, "failed to create /lib/initd: %s", strerror(errno));
+        return -1;
+    }
+    if (mkdir("/lib/initd/system", 0755) < 0 && errno != EEXIST) {
+        log_msg(LOG_ERR, unit->name, "failed to create /lib/initd/system: %s", strerror(errno));
+        return -1;
+    }
+
     /* SECURITY: Use lstat instead of access to prevent TOCTOU */
     if (lstat(initd_path, &st) == 0) {
         /* File exists - verify it's a regular file, not a symlink */
