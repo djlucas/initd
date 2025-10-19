@@ -13,8 +13,6 @@ install_man('man/man8/initd-supervisor.8')
 install_man('man/man8/initd-supervisor-worker.8')
 install_man('man/man8/timer-daemon.8')
 install_man('man/man8/socket-activator.8')
-install_man('man/man8/ifup.8')
-install_man('man/man8/ifdown.8')
 
 # Create systemctl symlink for initctl man page
 install_symlink(

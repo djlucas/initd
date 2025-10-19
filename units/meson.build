@@ -215,7 +215,6 @@ optional_services = [
   'xdm.service',
 ]
 
-# Collect reference targets and generate service files
 reference_target_sources = []
 foreach target : reference_targets
   reference_target_sources += [meson.current_source_dir() / target]
@@ -231,7 +230,6 @@ foreach service : reference_services
   )]
 endforeach
 
-# Process helper scripts
 scriptdir = meson.project_source_root() / 'scripts'
 reference_sbin_scripts = []
 foreach script : reference_script_helpers
@@ -243,7 +241,6 @@ foreach script : reference_script_helpers
   )]
 endforeach
 
-# Install initd-user-manager
 reference_libexec_scripts = [configure_file(
   input: scriptdir / 'initd-user-manager',
   output: 'initd-user-manager',
@@ -251,7 +248,6 @@ reference_libexec_scripts = [configure_file(
   install: false
 )]
 
-# Process service scripts
 reference_service_script_outputs = []
 foreach script : reference_service_scripts
   reference_service_script_outputs += [configure_file(
@@ -262,7 +258,6 @@ foreach script : reference_service_scripts
   )]
 endforeach
 
-# Process network scripts
 reference_network_script_outputs = []
 foreach script : reference_network_scripts
   reference_network_script_outputs += [configure_file(
@@ -273,13 +268,15 @@ foreach script : reference_network_scripts
   )]
 endforeach
 
-# Collect configuration sources
 reference_config_sources = []
 foreach config : reference_configs
   reference_config_sources += [meson.project_source_root() / 'sysconfig' / 'reference' / config]
 endforeach
 
-install_cmd = find_program('install')
+reference_man_pages = [
+  meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifup.8',
+  meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifdown.8',
+]
 
 unit_dest = get_option('libdir') / 'initd' / 'system'
 sbin_dest = get_option('sbindir')
@@ -287,28 +284,32 @@ libexec_dest = get_option('libexecdir') / 'initd'
 service_script_dest = libexec_dest / 'service-scripts'
 network_script_dest = libexec_dest / 'network-services'
 config_dest = get_option('sysconfdir') / 'sysconfig'
+man8_dest = get_option('mandir') / 'man8'
 
 reference_install_args = []
 foreach src : reference_target_sources
-  reference_install_args += ['--unit', unit_dest, src]
+  reference_install_args += ['--copy', '0644', unit_dest, src]
 endforeach
 foreach src : reference_service_outputs
-  reference_install_args += ['--unit', unit_dest, src]
+  reference_install_args += ['--copy', '0644', unit_dest, src]
 endforeach
 foreach src : reference_sbin_scripts
-  reference_install_args += ['--exec', sbin_dest, src]
+  reference_install_args += ['--copy', '0755', sbin_dest, src]
 endforeach
 foreach src : reference_libexec_scripts
-  reference_install_args += ['--exec', libexec_dest, src]
+  reference_install_args += ['--copy', '0755', libexec_dest, src]
 endforeach
 foreach src : reference_service_script_outputs
-  reference_install_args += ['--exec', service_script_dest, src]
+  reference_install_args += ['--copy', '0755', service_script_dest, src]
 endforeach
 foreach src : reference_network_script_outputs
-  reference_install_args += ['--exec', network_script_dest, src]
+  reference_install_args += ['--copy', '0755', network_script_dest, src]
 endforeach
 foreach src : reference_config_sources
-  reference_install_args += ['--config', config_dest, src]
+  reference_install_args += ['--copy', '0644', config_dest, src]
+endforeach
+foreach src : reference_man_pages
+  reference_install_args += ['--copy', '0644', man8_dest, src]
 endforeach
 
 # Convenience run target for reference installation
@@ -327,27 +328,26 @@ if ! command -v install >/dev/null 2>&1; then
     exit 1
 fi
 while [ $# -gt 0 ]; do
-    key="$1"
-    dest="$2"
-    src="$3"
-    case "$key" in
-        --unit)
-            mode=0644
-            ;;
-        --exec)
-            mode=0755
-            ;;
-        --config)
-            mode=0644
-            ;;
-        *)
-            echo "unknown install key $key" >&2
+    if [ "$1" != "--copy" ]; then
+        echo "unknown install key $1" >&2
+        exit 1
+    fi
+    mode="$2"
+    dest="$3"
+    src="$4"
+    case "$mode" in
+        ''|*[!0-9]*)
+            echo "invalid mode $mode" >&2
             exit 1
             ;;
     esac
     base=$(basename "$src")
-    install -D -m "$mode" "$src" "$dest/$base"
-    shift 3
+    target="${dest%/}/$base"
+    if [ -n "${DESTDIR:-}" ]; then
+        target="${DESTDIR%/}/$target"
+    fi
+    install -D -m "$mode" "$src" "$target"
+    shift 4
 done
 
 if [ "${DESTDIR:-}" = "" ]; then
