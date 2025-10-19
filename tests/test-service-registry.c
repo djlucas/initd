@@ -344,8 +344,9 @@ void test_restart_window_limit(void) {
         assert(can_restart_service(unit_name) == 1);
         record_restart_attempt(unit_name);
 
-        /* Sleep to avoid MIN_RESTART_INTERVAL check */
-        sleep(MIN_RESTART_INTERVAL_SEC + 1);
+        /* Sleep to avoid MIN_RESTART_INTERVAL check
+         * +2 instead of +1 to account for time(NULL) granularity */
+        sleep(MIN_RESTART_INTERVAL_SEC + 2);
     }
 
     /* Next attempt should be blocked (exceeded window limit) */
