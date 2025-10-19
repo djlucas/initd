@@ -317,13 +317,15 @@ endforeach
 run_target('install-reference',
   command: [bash, '-c', '''
 set -eu
-install_cmd="$0"
-shift
-if [ "$1" != "--" ]; then
+if [ "$#" -lt 1 ] || [ "$1" != "--" ]; then
     echo "internal error: missing argument sentinel" >&2
     exit 1
 fi
 shift
+if ! command -v install >/dev/null 2>&1; then
+    echo "install command not found" >&2
+    exit 1
+fi
 while [ $# -gt 0 ]; do
     key="$1"
     dest="$2"
@@ -344,7 +346,7 @@ while [ $# -gt 0 ]; do
             ;;
     esac
     base=$(basename "$src")
-    "$install_cmd" -D -m "$mode" "$src" "$dest/$base"
+    install -D -m "$mode" "$src" "$dest/$base"
     shift 3
 done
 
@@ -364,7 +366,7 @@ if [ "${DESTDIR:-}" = "" ]; then
         "$INITCTL" enable "getty@tty${tty}"
     done
 fi
-''', install_cmd.path(), '--'] + reference_install_args
+''', 'initd-install-helper', '--'] + reference_install_args
 )
 
 # Optional service install targets are defined in units/optional/meson.build (included from main meson.build)
