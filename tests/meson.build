@@ -167,7 +167,7 @@ cc = meson.get_compiler('c')
 initctl_route_lib = static_library(
   'initctl-route-lib',
   '../src/initctl/initctl.c',
-  dependencies: common_dep,
+  dependencies: [common_dep, privileged_ops_dep],
   c_args: [
     '-Dmain=initd_test_initctl_main',
     '-DUSER_MARKER_DIR="/tmp/initd-user-persist-markers"',
@@ -178,7 +178,7 @@ initctl_route_lib = static_library(
 initctl_reboot_lib = static_library(
   'initctl-reboot-lib',
   '../src/initctl/initctl.c',
-  dependencies: common_dep,
+  dependencies: [common_dep, privileged_ops_dep],
   c_args: [
     '-Dmain=initd_test_initctl_main',
     '-DUSER_MARKER_DIR="/tmp/initd-user-persist-markers"',
@@ -211,6 +211,15 @@ test_user_persistence = executable(
 )
 
 test('user persistence', test_user_persistence)
+
+test_offline_enable = executable(
+  'test-offline-enable',
+  'test-offline-enable.c',
+  dependencies: [common_dep, privileged_ops_dep],
+  link_with: initctl_route_lib,
+)
+
+test('offline enable/disable', test_offline_enable, suite: 'privileged')
 
 # Privileged tests - run separately with: meson test --suite privileged
 test('privileged operations', test_privileged_ops, suite: 'privileged')

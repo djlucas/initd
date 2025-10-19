@@ -1,7 +1,7 @@
 initctl = executable(
   'initctl',
   'initctl.c',
-  dependencies: common_dep,
+  dependencies: [common_dep, privileged_ops_dep],
   install: true,
   install_dir: get_option('bindir')
 )

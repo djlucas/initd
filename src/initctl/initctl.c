@@ -19,6 +19,9 @@
 #include <strings.h>
 #include <ctype.h>
 #include "../common/control.h"
+#include "../common/parser.h"
+#include "../common/privileged-ops.h"
+#include "../common/unit.h"
 
 /* Print usage */
 static void format_time_iso(time_t ts, char *buf, size_t len) {
@@ -689,6 +692,94 @@ static void print_status(const struct control_response *resp, const char *unit_n
     printf("\n");
 }
 
+/* Offline enable/disable/is-enabled handler when daemon isn't available */
+static int handle_offline_unit_operation(enum control_command cmd, const char *unit_name) {
+    struct unit_file unit = {0};
+    char unit_path[1024];
+
+    /* Only enable/disable/is-enabled can work offline */
+    if (cmd != CMD_ENABLE && cmd != CMD_DISABLE && cmd != CMD_IS_ENABLED) {
+        return -1;
+    }
+
+    /* Search for unit file in standard directories */
+    const char *search_dirs[] = {
+        "/etc/initd/system",
+        "/lib/initd/system",
+        "/usr/lib/initd/system",
+        "/etc/systemd/system",
+        "/lib/systemd/system",
+        "/usr/lib/systemd/system",
+        NULL
+    };
+
+    bool found = false;
+    for (int i = 0; search_dirs[i]; i++) {
+        snprintf(unit_path, sizeof(unit_path), "%s/%s", search_dirs[i], unit_name);
+        if (parse_unit_file(unit_path, &unit) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        fprintf(stderr, "Unit %s not found.\n", unit_name);
+        return 1;
+    }
+
+    int result = 0;
+
+    switch (cmd) {
+    case CMD_ENABLE:
+        /* Need root for enable */
+        if (getuid() != 0) {
+            fprintf(stderr, "Authentication required for enabling units (must be root)\n");
+            free_unit_file(&unit);
+            return 1;
+        }
+
+        if (enable_unit(&unit) < 0) {
+            fprintf(stderr, "Failed to enable %s\n", unit_name);
+            result = 1;
+        }
+        /* Silent success like systemd */
+        break;
+
+    case CMD_DISABLE:
+        /* Need root for disable */
+        if (getuid() != 0) {
+            fprintf(stderr, "Authentication required for disabling units (must be root)\n");
+            free_unit_file(&unit);
+            return 1;
+        }
+
+        if (disable_unit(&unit) < 0) {
+            fprintf(stderr, "Failed to disable %s\n", unit_name);
+            result = 1;
+        }
+        /* Silent success like systemd */
+        break;
+
+    case CMD_IS_ENABLED:
+        /* is-enabled doesn't need root */
+        if (is_unit_enabled(&unit)) {
+            printf("enabled\n");
+            result = 0;
+        } else {
+            printf("disabled\n");
+            result = 1;
+        }
+        break;
+
+    default:
+        result = -1;
+        break;
+    }
+
+    free_unit_file(&unit);
+    return result;
+}
+
 int main(int argc, char *argv[]) {
     const char *progname = argv[0];
 
@@ -1196,6 +1287,10 @@ int main(int argc, char *argv[]) {
         /* Route timer units to timer daemon */
         fd = read_only_cmd ? connect_to_timer_status() : connect_to_timer_daemon();
         if (fd < 0) {
+            /* Try offline mode for enable/disable/is-enabled */
+            if (cmd == CMD_ENABLE || cmd == CMD_DISABLE || cmd == CMD_IS_ENABLED) {
+                return handle_offline_unit_operation(cmd, unit_name);
+            }
             fprintf(stderr, "Error: Failed to connect to timer daemon\n");
             fprintf(stderr, "Is the timer daemon running?\n");
             return 1;
@@ -1204,6 +1299,10 @@ int main(int argc, char *argv[]) {
         /* Route socket units to socket activator */
         fd = read_only_cmd ? connect_to_socket_status() : connect_to_socket_activator();
         if (fd < 0) {
+            /* Try offline mode for enable/disable/is-enabled */
+            if (cmd == CMD_ENABLE || cmd == CMD_DISABLE || cmd == CMD_IS_ENABLED) {
+                return handle_offline_unit_operation(cmd, unit_name);
+            }
             fprintf(stderr, "Error: Failed to connect to socket activator\n");
             fprintf(stderr, "Is the socket activator running?\n");
             return 1;
@@ -1212,6 +1311,10 @@ int main(int argc, char *argv[]) {
         /* Route service/target units to supervisor */
         fd = read_only_cmd ? connect_to_supervisor_status() : connect_to_supervisor();
         if (fd < 0) {
+            /* Try offline mode for enable/disable/is-enabled */
+            if (cmd == CMD_ENABLE || cmd == CMD_DISABLE || cmd == CMD_IS_ENABLED) {
+                return handle_offline_unit_operation(cmd, unit_name);
+            }
             fprintf(stderr, "Error: Failed to connect to supervisor\n");
             fprintf(stderr, "Is the init system running?\n");
             return 1;
