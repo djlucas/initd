@@ -31,7 +31,7 @@
 #include "../common/log-enhanced.h"
 
 #ifndef WORKER_PATH
-#define WORKER_PATH "/usr/libexecdir/initd/initd-socket-worker"
+#define WORKER_PATH "/usr/libexec/initd/initd-socket-worker"
 #endif
 
 #ifndef SOCKET_USER

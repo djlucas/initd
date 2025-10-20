@@ -2,7 +2,7 @@ timer_daemon_sources = files('initd-timer.c')
 timer_worker_sources = files('initd-timer-worker.c', 'calendar.c')
 
 timer_c_args = [
-  '-DWORKER_PATH="@0@"'.format(get_option('libexecdir') / 'initd' / 'initd-timer-worker'),
+  '-DWORKER_PATH="@0@"'.format(get_option('prefix') / get_option('libexecdir') / 'initd' / 'initd-timer-worker'),
   '-DTIMER_USER="@0@"'.format(get_option('timer-user')),
 ]
 

@@ -38,7 +38,7 @@
 #include "process-tracking.h"
 
 #ifndef WORKER_PATH
-#define WORKER_PATH "/usr/libexecdir/initd/initd-supervisor-worker"
+#define WORKER_PATH "/usr/libexec/initd/initd-supervisor-worker"
 #endif
 
 #ifndef SUPERVISOR_USER
@@ -343,12 +343,12 @@ static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
     *uid = pw->pw_uid;
     *gid = pw->pw_gid;
 
-    log_debug("supervisor", "slave will run as %s (uid=%d, gid=%d)",
+    log_debug("supervisor", "worker will run as %s (uid=%d, gid=%d)",
               pw->pw_name, *uid, *gid);
     return 0;
 }
 
-/* Fork and exec slave process */
+/* Fork and exec worker process */
 #ifdef UNIT_TEST
 __attribute__((unused))
 #endif

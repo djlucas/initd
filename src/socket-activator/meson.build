@@ -2,7 +2,7 @@ socket_daemon_sources = files('initd-socket.c')
 socket_worker_sources = files('initd-socket-worker.c')
 
 socket_c_args = [
-  '-DWORKER_PATH="@0@"'.format(get_option('libexecdir') / 'initd' / 'initd-socket-worker'),
+  '-DWORKER_PATH="@0@"'.format(get_option('prefix') / get_option('libexecdir') / 'initd' / 'initd-socket-worker'),
   '-DSOCKET_USER="@0@"'.format(get_option('socket-user')),
 ]
 

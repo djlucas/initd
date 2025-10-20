@@ -31,7 +31,7 @@
 #include "../common/log-enhanced.h"
 
 #ifndef WORKER_PATH
-#define WORKER_PATH "/usr/libexecdir/initd/initd-timer-worker"
+#define WORKER_PATH "/usr/libexec/initd/initd-timer-worker"
 #endif
 
 #ifndef TIMER_USER

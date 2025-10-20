@@ -2,7 +2,7 @@ supervisor_sources = files('initd-supervisor.c', 'service-registry.c', 'process-
 supervisor_worker_sources = files('initd-supervisor-worker.c')
 
 supervisor_c_args = [
-  '-DWORKER_PATH="@0@"'.format(get_option('libexecdir') / 'initd' / 'initd-supervisor-worker'),
+  '-DWORKER_PATH="@0@"'.format(get_option('prefix') / get_option('libexecdir') / 'initd' / 'initd-supervisor-worker'),
   '-DSUPERVISOR_USER="@0@"'.format(get_option('supervisor-user')),
 ]
 
