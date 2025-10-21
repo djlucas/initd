@@ -92,8 +92,19 @@ static void server_process(const struct routing_expectation *expect,
     int server_fd, client_fd;
     char ready = '1';
 
-    snprintf(socket_path, sizeof(socket_path), "%s/%s",
-             runtime_dir, expect->socket_name);
+    int written = snprintf(socket_path, sizeof(socket_path), "%s/%s",
+                           runtime_dir, expect->socket_name);
+    if (written < 0 || (size_t)written >= sizeof(socket_path)) {
+        fprintf(stderr, "socket path too long\n");
+        exit(1);
+    }
+
+    char *last_slash = strrchr(socket_path, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+        ensure_directory(socket_path, 0755);
+        *last_slash = '/';
+    }
 
     unlink(socket_path);
 
@@ -237,7 +248,7 @@ static void test_system_service_status(void) {
     TEST("system scope service status routes to supervisor.status.sock");
     char *argv[] = {"initctl", "status", "demo.service", NULL};
     struct routing_expectation expect = {
-        .socket_name = "supervisor.status.sock",
+        .socket_name = "supervisor/supervisor.status.sock",
         .expected_command = CMD_STATUS,
         .expected_unit = "demo.service",
         .response_state = UNIT_STATE_ACTIVE,
@@ -251,7 +262,7 @@ static void test_system_service_start(void) {
     TEST("system scope service start routes to supervisor.sock");
     char *argv[] = {"initctl", "start", "demo", NULL};
     struct routing_expectation expect = {
-        .socket_name = "supervisor.sock",
+        .socket_name = "supervisor/supervisor.sock",
         .expected_command = CMD_START,
         .expected_unit = "demo.service",
         .response_state = UNIT_STATE_ACTIVE,
@@ -265,7 +276,7 @@ static void test_system_timer_status(void) {
     TEST("system scope timer status routes to timer.status.sock");
     char *argv[] = {"initctl", "status", "backup.timer", NULL};
     struct routing_expectation expect = {
-        .socket_name = "timer.status.sock",
+        .socket_name = "timer/timer.status.sock",
         .expected_command = CMD_STATUS,
         .expected_unit = "backup.timer",
         .response_state = UNIT_STATE_ACTIVE,
@@ -279,7 +290,7 @@ static void test_system_socket_start(void) {
     TEST("system scope socket start routes to socket-activator.sock");
     char *argv[] = {"initctl", "start", "ssh.socket", NULL};
     struct routing_expectation expect = {
-        .socket_name = "socket-activator.sock",
+        .socket_name = "socket/socket-activator.sock",
         .expected_command = CMD_START,
         .expected_unit = "ssh.socket",
         .response_state = UNIT_STATE_ACTIVE,
@@ -293,7 +304,7 @@ static void test_user_service_status(void) {
     TEST("user scope service status routes to per-user supervisor.status.sock");
     char *argv[] = {"initctl", "--user", "status", "demo", NULL};
     struct routing_expectation expect = {
-        .socket_name = "supervisor.status.sock",
+        .socket_name = "supervisor/supervisor.status.sock",
         .expected_command = CMD_STATUS,
         .expected_unit = "demo.service",
         .response_state = UNIT_STATE_ACTIVE,
