@@ -1,4 +1,4 @@
-/* supervisor-slave.c - Unprivileged supervisor process
+/* supervisor-worker.c - Unprivileged supervisor process
  *
  * Responsibilities:
  * - Parse unit files
@@ -325,7 +325,7 @@ static int stop_service(struct unit_file *unit) {
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
     strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
-    fprintf(stderr, "slave: stopping %s (pid %d)\n", unit->name, unit->pid);
+    fprintf(stderr, "worker: stopping %s (pid %d)\n", unit->name, unit->pid);
 
     /* Send request to master */
     if (send_request(master_socket, &req) < 0) {
@@ -357,7 +357,7 @@ static int stop_service(struct unit_file *unit) {
         }
 
         /* Timeout - send SIGKILL */
-        fprintf(stderr, "slave: %s stop timeout, sending SIGKILL\n", unit->name);
+        fprintf(stderr, "worker: %s stop timeout, sending SIGKILL\n", unit->name);
         kill(unit->pid, SIGKILL);
         sleep(1); /* Give it a moment */
         unit->pid = 0;
@@ -422,7 +422,7 @@ static pid_t start_service(struct unit_file *unit) {
 
         /* Lookup user/group */
         if (lookup_user(unit->config.service.user, &req.run_uid, &req.run_gid) < 0) {
-            fprintf(stderr, "slave: failed to lookup user %s\n", unit->config.service.user);
+            fprintf(stderr, "worker: failed to lookup user %s\n", unit->config.service.user);
             return -1;
         }
 
@@ -601,16 +601,16 @@ static void handle_service_exit(pid_t pid, int exit_status) {
         int restart_sec = unit->config.service.restart_sec;
         if (restart_sec <= 0) restart_sec = 1; /* Default 1 second */
 
-        fprintf(stderr, "slave: restarting %s in %d seconds (restart count: %d)\n",
+        fprintf(stderr, "worker: restarting %s in %d seconds (restart count: %d)\n",
                 unit->name, restart_sec, unit->restart_count + 1);
 
         sleep(restart_sec);
 
         unit->restart_count++;
         if (start_service(unit) > 0) {
-            fprintf(stderr, "slave: successfully restarted %s\n", unit->name);
+            fprintf(stderr, "worker: successfully restarted %s\n", unit->name);
         } else {
-            fprintf(stderr, "slave: failed to restart %s\n", unit->name);
+            fprintf(stderr, "worker: failed to restart %s\n", unit->name);
         }
     }
 }
@@ -758,7 +758,7 @@ static void handle_control_command(int client_fd, bool read_only) {
         return;
     }
 
-    fprintf(stderr, "slave: received command %s for unit %s\n",
+    fprintf(stderr, "worker: received command %s for unit %s\n",
             command_to_string(req.header.command), req.unit_name);
 
     /* Set default response */
@@ -1156,7 +1156,7 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
     }
 
     if (depth > MAX_RECURSION_DEPTH) {
-        fprintf(stderr, "slave: maximum recursion depth exceeded stopping %s\n", unit->name);
+        fprintf(stderr, "worker: maximum recursion depth exceeded stopping %s\n", unit->name);
         log_msg(LOG_ERR, unit->name, "maximum recursion depth exceeded (possible circular dependency)");
         return -1;
     }
@@ -1171,7 +1171,7 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
     }
 
     if (unit->stop_visit_state == DEP_VISIT_IN_PROGRESS) {
-        fprintf(stderr, "slave: circular dependency detected stopping %s\n", unit->name);
+        fprintf(stderr, "worker: circular dependency detected stopping %s\n", unit->name);
         log_msg(LOG_ERR, unit->name, "circular dependency detected during shutdown");
         return 0;
     }
@@ -1185,7 +1185,7 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
 
     /* Mark as deactivating to detect cycles */
     unit->state = STATE_DEACTIVATING;
-    fprintf(stderr, "slave: stopping %s\n", unit->name);
+    fprintf(stderr, "worker: stopping %s\n", unit->name);
 
     for (int i = 0; i < unit_count; i++) {
         struct unit_file *other = units[i];
@@ -1266,7 +1266,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     }
 
     if (depth > MAX_RECURSION_DEPTH) {
-        fprintf(stderr, "slave: maximum recursion depth exceeded starting %s\n", unit->name);
+        fprintf(stderr, "worker: maximum recursion depth exceeded starting %s\n", unit->name);
         log_msg(LOG_ERR, unit->name, "maximum recursion depth exceeded (possible circular dependency)");
         return -1;
     }
@@ -1281,7 +1281,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     }
 
     if (unit->start_visit_state == DEP_VISIT_IN_PROGRESS) {
-        fprintf(stderr, "slave: circular dependency detected starting %s\n", unit->name);
+        fprintf(stderr, "worker: circular dependency detected starting %s\n", unit->name);
         log_msg(LOG_ERR, unit->name, "circular dependency detected");
         unit->state = STATE_FAILED;
         return -1;
@@ -1295,12 +1295,12 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     unit->start_visit_state = DEP_VISIT_IN_PROGRESS;
 
     unit->state = STATE_ACTIVATING;
-    fprintf(stderr, "slave: starting %s\n", unit->name);
+    fprintf(stderr, "worker: starting %s\n", unit->name);
 
     for (int i = 0; i < unit->unit.requires_count; i++) {
         struct unit_file *dep = find_unit(unit->unit.requires[i]);
         if (dep && start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-            fprintf(stderr, "slave: failed to start required dependency %s\n", unit->unit.requires[i]);
+            fprintf(stderr, "worker: failed to start required dependency %s\n", unit->unit.requires[i]);
             log_msg(LOG_ERR, unit->name, "failed to start required dependency %s", unit->unit.requires[i]);
             unit->state = STATE_FAILED;
             unit->start_visit_state = DEP_VISIT_NONE;
@@ -1320,7 +1320,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         if (dep && dep->state != STATE_ACTIVE && dep->state != STATE_FAILED) {
             if (dep->state == STATE_INACTIVE) {
                 if (start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-                    fprintf(stderr, "slave: After= dependency %s failed\n", unit->unit.after[i]);
+                    fprintf(stderr, "worker: After= dependency %s failed\n", unit->unit.after[i]);
                     log_msg(LOG_WARNING, unit->name, "After= dependency %s failed", unit->unit.after[i]);
                 }
             }
@@ -1329,7 +1329,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
 
     if (unit->type == UNIT_SERVICE) {
         if (start_service(unit) < 0) {
-            fprintf(stderr, "slave: failed to start %s\n", unit->name);
+            fprintf(stderr, "worker: failed to start %s\n", unit->name);
             log_msg(LOG_ERR, unit->name, "failed to start service");
             unit->state = STATE_FAILED;
             unit->start_visit_state = DEP_VISIT_NONE;
@@ -1482,7 +1482,7 @@ static int main_loop(void) {
 #ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "supervisor-slave: usage: %s <ipc_fd>\n", argv[0]);
+        fprintf(stderr, "supervisor-worker: usage: %s <ipc_fd>\n", argv[0]);
         return 1;
     }
 
@@ -1490,7 +1490,7 @@ int main(int argc, char *argv[]) {
     master_socket = atoi(argv[1]);
 
     /* Initialize logging */
-    log_init("supervisor-slave");
+    log_init("supervisor-worker");
     log_enhanced_init("worker", "/var/log/initd/supervisor.log");
     log_set_console_level(LOGLEVEL_INFO);
     log_set_file_level(LOGLEVEL_DEBUG);

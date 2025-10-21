@@ -9,7 +9,7 @@ is the unprivileged, main logic component of the initd supervisor system.
 It handles all service management operations including unit file parsing,
 dependency resolution, state tracking, and user command processing.
 .PP
-Running as a dedicated unprivileged user, supervisor-slave contains the bulk
+Running as a dedicated unprivileged user, supervisor-worker contains the bulk
 of the service management code while maintaining a minimal attack surface.
 All operations requiring root privileges are delegated to
 .BR initd-supervisor (8)

@@ -361,7 +361,7 @@ units += query_socket_activator();
 
 | Daemon | Control Socket | Status Socket | Purpose |
 |--------|---------------|---------------|----------|
-| supervisor-slave | `/run/initd/supervisor/supervisor.sock` | `/run/initd/supervisor/supervisor.status.sock` | Service management |
+| supervisor-worker | `/run/initd/supervisor/supervisor.sock` | `/run/initd/supervisor/supervisor.status.sock` | Service management |
 | timer-daemon | `/run/initd/timer/timer.sock` | `/run/initd/timer/timer.status.sock` | Timer control |
 | socket-activator | `/run/initd/socket/socket-activator.sock` | `/run/initd/socket/socket-activator.status.sock` | Socket control |
 
@@ -586,11 +586,11 @@ graphical.target
 
 1. **Kernel starts init**
 2. **Init starts initd-supervisor**
-3. **Master forks slave (drops privs)**
-4. **Slave scans unit directories**
-5. **Slave parses unit files**
-6. **Slave builds dependency graph**
-7. **Slave starts default.target**
+3. **Master forks worker (drops privs)**
+4. **Worker scans unit directories**
+5. **Worker parses unit files**
+6. **Worker builds dependency graph**
+7. **Worker starts default.target**
    - Resolves dependencies
    - Starts in topological order
    - Parallel where no ordering constraints
@@ -1153,7 +1153,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - ✅ Conditional reboot() - uses reboot(2) in PID 1 mode, native commands in standalone
 - ✅ Shared process-group abstraction (Phase 3 complete) - cgroups deferred to Phase 4
 
-**Supervisor Slave**
+**Supervisor Worker**
 - ✅ Already unprivileged and mode-agnostic
 - ✅ Process supervision via process groups (portable, POSIX-compliant)
 - ✅ Platform-specific includes properly abstracted
@@ -1390,7 +1390,7 @@ All analysis tools are configured with dedicated build directories and proper lo
 This specification provides complete architecture for implementation. Key points:
 
 - Start with minimal init
-- Build supervisor master/slave next
+- Build supervisor master/worker next
 - Implement unit parser
 - Add service management
 - Everything else follows

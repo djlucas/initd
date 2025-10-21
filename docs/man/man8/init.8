@@ -111,7 +111,7 @@ is designed to be statically linked for minimal dependencies. It contains
 no complex logic - all service management is delegated to supervisor processes.
 .PP
 The initd-supervisor process runs with root privileges but only performs
-specific privileged operations. The supervisor-slave process (spawned by master)
+specific privileged operations. The supervisor-worker process (spawned by master)
 runs unprivileged and handles the bulk of service management logic.
 .SH EXAMPLES
 Typical kernel command line with default supervisor:

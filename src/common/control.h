@@ -1,4 +1,4 @@
-/* control.h - Control protocol between initctl and supervisor-slave
+/* control.h - Control protocol between initctl and supervisor-worker
  *
  * Copyright (c) 2025 DJ Lucas
  * SPDX-License-Identifier: MIT

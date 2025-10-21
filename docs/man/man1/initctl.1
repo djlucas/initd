@@ -22,13 +22,13 @@ system.
 .B initctl
 automatically routes commands to the appropriate daemon based on unit type:
 .IP \(bu 2
-.service units → supervisor-slave (/run/initd/supervisor.sock)
+.service units → supervisor-worker (/run/initd/supervisor/supervisor.sock)
 .IP \(bu
-.timer units → timer-daemon (/run/initd/timer.sock)
+.timer units → timer-daemon (/run/initd/timer/timer.sock)
 .IP \(bu
-.socket units → socket-activator (/run/initd/socket-activator.sock)
+.socket units → socket-activator (/run/initd/socket/socket-activator.sock)
 .IP \(bu
-.target units → supervisor-slave
+.target units → supervisor-worker
 .SH COMMANDS
 .SS Unit Commands
 .TP
@@ -281,7 +281,7 @@ System unit file directory
 .SH SEE ALSO
 .BR initd.unit (5),
 .BR init (8),
-.BR supervisor-slave (8),
+.BR supervisor-worker (8),
 .BR timer-daemon (8),
 .BR socket-activator (8),
 .BR journalctl (1)

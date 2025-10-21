@@ -1,8 +1,8 @@
 /* initd-supervisor.c - Privileged supervisor process
  *
  * Responsibilities:
- * - Fork supervisor-slave and drop privileges
- * - Handle privileged requests from slave (fork/exec services)
+ * - Fork supervisor-worker and drop privileges
+ * - Handle privileged requests from worker (fork/exec services)
  * - Set up cgroups (Linux only)
  * - Set up namespaces
  * - Drop privileges before exec
@@ -56,7 +56,7 @@ enum shutdown_type {
 
 static volatile sig_atomic_t shutdown_requested = 0;
 static enum shutdown_type shutdown_type = SHUTDOWN_NONE;
-static pid_t slave_pid = 0;
+static pid_t worker_pid = 0;
 static int ipc_socket = -1;
 static bool user_mode = false;
 
@@ -298,11 +298,11 @@ static int setup_signals(void) {
     return 0;
 }
 
-/* Create IPC socketpair for master/slave communication */
+/* Create IPC socketpair for master/worker communication */
 #ifdef UNIT_TEST
 __attribute__((unused))
 #endif
-static int create_ipc_socket(int *master_fd, int *slave_fd) {
+static int create_ipc_socket(int *master_fd, int *worker_fd) {
     int sv[2];
 
     if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
@@ -311,11 +311,11 @@ static int create_ipc_socket(int *master_fd, int *slave_fd) {
     }
 
     *master_fd = sv[0];
-    *slave_fd = sv[1];
+    *worker_fd = sv[1];
     return 0;
 }
 
-/* Lookup unprivileged user for slave */
+/* Lookup unprivileged user for worker */
 static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
     if (user_mode) {
         *uid = getuid();
@@ -353,46 +353,46 @@ static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
 #ifdef UNIT_TEST
 __attribute__((unused))
 #endif
-static pid_t start_slave(int slave_fd) {
-    uid_t slave_uid;
-    gid_t slave_gid;
+static pid_t start_worker(int worker_fd) {
+    uid_t worker_uid;
+    gid_t worker_gid;
 
     /* Lookup unprivileged user */
-    if (lookup_supervisor_user(&slave_uid, &slave_gid) < 0) {
-        log_error("supervisor", "cannot find unprivileged user for slave");
+    if (lookup_supervisor_user(&worker_uid, &worker_gid) < 0) {
+        log_error("supervisor", "cannot find unprivileged user for worker");
         return -1;
     }
 
     pid_t pid = fork();
 
     if (pid < 0) {
-        log_error("supervisor", "fork slave: %s", strerror(errno));
+        log_error("supervisor", "fork worker: %s", strerror(errno));
         return -1;
     }
 
     if (pid == 0) {
-        /* Child: will become slave */
+        /* Child: will become worker */
         char fd_str[32];
-        snprintf(fd_str, sizeof(fd_str), "%d", slave_fd);
+        snprintf(fd_str, sizeof(fd_str), "%d", worker_fd);
 
         /* Drop privileges before exec */
-        if (!user_mode && slave_gid != 0) {
+        if (!user_mode && worker_gid != 0) {
             /* Set supplementary groups */
-            if (setgroups(1, &slave_gid) < 0) {
+            if (setgroups(1, &worker_gid) < 0) {
                 log_error("supervisor", "setgroups: %s", strerror(errno));
                 _exit(1);
             }
 
             /* Set GID */
-            if (setgid(slave_gid) < 0) {
+            if (setgid(worker_gid) < 0) {
                 log_error("supervisor", "setgid: %s", strerror(errno));
                 _exit(1);
             }
         }
 
-        if (!user_mode && slave_uid != 0) {
+        if (!user_mode && worker_uid != 0) {
             /* Set UID (must be last) */
-            if (setuid(slave_uid) < 0) {
+            if (setuid(worker_uid) < 0) {
                 log_error("supervisor", "setuid: %s", strerror(errno));
                 _exit(1);
             }
@@ -407,12 +407,12 @@ static pid_t start_slave(int slave_fd) {
         log_debug("worker", "running as uid=%d, gid=%d", getuid(), getgid());
 
         execl(WORKER_PATH, "initd-supervisor-worker", fd_str, NULL);
-        log_error("supervisor", "exec slave: %s", strerror(errno));
+        log_error("supervisor", "exec worker: %s", strerror(errno));
         _exit(1);
     }
 
     /* Parent */
-    close(slave_fd); /* Master doesn't need slave's end */
+    close(worker_fd); /* Master doesn't need worker's end */
     log_info("supervisor", "Started worker (pid %d)", pid);
     return pid;
 }
@@ -515,7 +515,7 @@ static bool validate_unit_path_from_worker(const char *path) {
            ;
 }
 
-/* Handle privileged request from slave */
+/* Handle privileged request from worker */
 static int handle_request(struct priv_request *req, struct priv_response *resp) {
     memset(resp, 0, sizeof(*resp));
 
@@ -1105,18 +1105,18 @@ int supervisor_handle_request_for_test(struct priv_request *req, struct priv_res
 }
 #endif
 
-/* Reap zombie processes and notify slave */
+/* Reap zombie processes and notify worker */
 static void reap_zombies(void) {
     pid_t pid;
     int status;
 
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        if (pid == slave_pid) {
+        if (pid == worker_pid) {
             log_warn("supervisor", "worker exited (status %d)",
                      WIFEXITED(status) ? WEXITSTATUS(status) : -1);
-            slave_pid = 0;
+            worker_pid = 0;
         } else {
-            /* Service process exited - unregister and notify slave */
+            /* Service process exited - unregister and notify worker */
             int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
             log_debug("supervisor", "service pid %d exited (status %d)",
                       pid, exit_status);
@@ -1124,7 +1124,7 @@ static void reap_zombies(void) {
             /* Remove from service registry */
             unregister_service(pid);
 
-            /* Send notification to slave */
+            /* Send notification to worker */
             struct priv_response notif = {0};
             notif.type = RESP_SERVICE_EXITED;
             notif.service_pid = pid;
@@ -1137,7 +1137,7 @@ static void reap_zombies(void) {
     }
 }
 
-/* Main loop: handle IPC from slave */
+/* Main loop: handle IPC from worker */
 #ifdef UNIT_TEST
 __attribute__((unused))
 #endif
@@ -1147,7 +1147,7 @@ static int main_loop(void) {
     struct priv_request req;
     struct priv_response resp;
 
-    while (!shutdown_requested && slave_pid > 0) {
+    while (!shutdown_requested && worker_pid > 0) {
         /* Set up select */
         FD_ZERO(&readfds);
         FD_SET(ipc_socket, &readfds);
@@ -1163,7 +1163,7 @@ static int main_loop(void) {
             break;
         }
 
-        /* Handle IPC request from slave */
+        /* Handle IPC request from worker */
         if (ret > 0 && FD_ISSET(ipc_socket, &readfds)) {
             if (recv_request(ipc_socket, &req) < 0) {
                 log_error("supervisor", "IPC read failed");
@@ -1288,15 +1288,15 @@ int main(int argc, char *argv[]) {
     }
 
     /* Create IPC socket */
-    int master_fd, slave_fd;
-    if (create_ipc_socket(&master_fd, &slave_fd) < 0) {
+    int master_fd, worker_fd;
+    if (create_ipc_socket(&master_fd, &worker_fd) < 0) {
         return 1;
     }
     ipc_socket = master_fd;
 
-    /* Fork and exec slave */
-    slave_pid = start_slave(slave_fd);
-    if (slave_pid < 0) {
+    /* Fork and exec worker */
+    worker_pid = start_worker(worker_fd);
+    if (worker_pid < 0) {
         return 1;
     }
 
@@ -1304,9 +1304,9 @@ int main(int argc, char *argv[]) {
     main_loop();
 
     /* Cleanup */
-    if (slave_pid > 0) {
-        process_tracking_signal_process(slave_pid, SIGTERM);
-        waitpid(slave_pid, NULL, 0);
+    if (worker_pid > 0) {
+        process_tracking_signal_process(worker_pid, SIGTERM);
+        waitpid(worker_pid, NULL, 0);
     }
 
     /* Handle shutdown/reboot/halt if requested */

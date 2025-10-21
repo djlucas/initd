@@ -1,4 +1,4 @@
-/* ipc.h - IPC protocol between supervisor master and slave
+/* ipc.h - IPC protocol between supervisor master and worker
  *
  * Copyright (c) 2025 DJ Lucas
  * SPDX-License-Identifier: MIT
