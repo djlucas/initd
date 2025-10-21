@@ -61,6 +61,7 @@ static int unit_count = 0;
 static unsigned int start_traversal_generation = 0;
 static unsigned int stop_traversal_generation = 0;
 static unsigned int isolate_generation = 0;
+static bool debug_mode = false;
 
 /* Forward declarations */
 static bool unit_provides(struct unit_file *unit, const char *service_name);
@@ -434,12 +435,21 @@ static pid_t start_service(struct unit_file *unit) {
 
     /* Send request to master */
     if (send_request(master_socket, &req) < 0) {
+        log_error("worker", "send_request failed starting %s: %s",
+                  unit->name, strerror(errno));
         return -1;
     }
 
     /* Receive response */
     if (recv_response(master_socket, &resp) < 0) {
+        log_error("worker", "recv_response failed starting %s: %s",
+                  unit->name, strerror(errno));
         return -1;
+    }
+
+    if (debug_mode) {
+        log_debug("worker", "start_service response type=%d pid=%d",
+                  resp.type, resp.service_pid);
     }
 
     if (resp.type == RESP_SERVICE_STARTED) {
@@ -465,8 +475,16 @@ static int notify_shutdown_complete(void) {
 
     req.type = REQ_SHUTDOWN_COMPLETE;
 
-    send_request(master_socket, &req);
-    recv_response(master_socket, &resp);
+    if (send_request(master_socket, &req) < 0) {
+        log_error("worker", "failed to notify shutdown completion: %s",
+                  strerror(errno));
+        return -1;
+    }
+    if (recv_response(master_socket, &resp) < 0) {
+        log_error("worker", "failed to receive shutdown ack: %s",
+                  strerror(errno));
+        return -1;
+    }
 
     return 0;
 }
@@ -622,12 +640,17 @@ __attribute__((unused))
 static int create_control_socket(void) {
     const char *path = control_socket_path(false);
     if (!path) {
+        log_error("worker", "control_socket_path returned NULL");
         return -1;
     }
 
     if (initd_ensure_runtime_dir() < 0 && errno != EEXIST) {
         log_error("worker", "mkdir runtime dir: %s", strerror(errno));
         return -1;
+    }
+
+    if (debug_mode) {
+        log_debug("worker", "Creating control socket at %s", path);
     }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -1491,9 +1514,17 @@ int main(int argc, char *argv[]) {
 
     /* Initialize logging */
     log_init("supervisor-worker");
-    log_enhanced_init("worker", "/var/log/initd/supervisor.log");
-    log_set_console_level(LOGLEVEL_INFO);
-    log_set_file_level(LOGLEVEL_DEBUG);
+    log_enhanced_init("worker", NULL);
+
+    const char *debug_env = getenv("INITD_DEBUG_BOOT");
+    debug_mode = (debug_env && strcmp(debug_env, "0") != 0);
+    if (debug_mode) {
+        log_set_console_level(LOGLEVEL_DEBUG);
+        log_set_file_level(LOGLEVEL_DEBUG);
+    } else {
+        log_set_console_level(LOGLEVEL_INFO);
+        log_set_file_level(LOGLEVEL_DEBUG);
+    }
 
     log_info("worker", "Starting (ipc_fd=%d)", master_socket);
 
@@ -1507,6 +1538,11 @@ int main(int argc, char *argv[]) {
     if (control_socket < 0) {
         log_error("worker", "failed to create control socket");
         return 1;
+    }
+    if (debug_mode) {
+        const char *ctrl_path_dbg = control_socket_path(false);
+        log_debug("worker", "control socket bound fd=%d path=%s",
+                  control_socket, ctrl_path_dbg ? ctrl_path_dbg : "<null>");
     }
 
     status_socket = create_status_socket();

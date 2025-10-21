@@ -12,6 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
+
 #include "log-enhanced.h"
 
 /* Enhanced log state */

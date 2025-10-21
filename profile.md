@@ -1153,6 +1153,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - 🚩 Consider extending PID 1 detection to support external init handoff (sysvinit/etc.)
 - ✅ Conditional reboot() - uses reboot(2) in PID 1 mode, native commands in standalone
 - ✅ Shared process-group abstraction (Phase 3 complete) - cgroups deferred to Phase 4
+- 🚩 For user instances, join existing elogind user.slice if present instead of creating new initd subtree
 
 **Supervisor Worker**
 - ✅ Already unprivileged and mode-agnostic

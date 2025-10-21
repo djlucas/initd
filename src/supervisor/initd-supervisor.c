@@ -62,6 +62,11 @@ static enum shutdown_type shutdown_type = SHUTDOWN_NONE;
 static pid_t worker_pid = 0;
 static int ipc_socket = -1;
 static bool user_mode = false;
+#ifdef UNIT_TEST
+static bool debug_mode __attribute__((unused)) = false;
+#else
+static bool debug_mode = false;
+#endif
 
 #if defined(__linux__) && !defined(UNIT_TEST)
 #ifndef TMPFS_MAGIC
@@ -1267,6 +1272,9 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
+    const char *debug_env = getenv("INITD_DEBUG_BOOT");
+    debug_mode = (debug_env && strcmp(debug_env, "0") != 0);
+
     if (runtime_dir_arg) {
         if (initd_validate_runtime_dir(runtime_dir_arg, user_mode) < 0) {
             fprintf(stderr, "initd-supervisor: runtime dir '%s' invalid: %s\n",
@@ -1308,6 +1316,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (debug_mode) {
+        log_debug("supervisor", "Ensuring runtime directory root exists");
+    }
+
     if (!user_mode) {
         uid_t worker_uid;
         gid_t worker_gid;
@@ -1329,10 +1341,18 @@ int main(int argc, char *argv[]) {
     }
 
     /* Initialize enhanced logging */
-    log_enhanced_init("initd-supervisor", "/var/log/initd/supervisor.log");
-    log_set_console_level(LOGLEVEL_INFO);
-    log_set_file_level(LOGLEVEL_DEBUG);
+    log_enhanced_init("initd-supervisor", NULL);
+    if (debug_mode) {
+        log_set_console_level(LOGLEVEL_DEBUG);
+        log_set_file_level(LOGLEVEL_DEBUG);
+    } else {
+        log_set_console_level(LOGLEVEL_INFO);
+        log_set_file_level(LOGLEVEL_DEBUG);
+    }
 
+    if (debug_mode) {
+        log_info("supervisor", "Boot debug mode enabled (INITD_DEBUG_BOOT)");
+    }
     log_info("supervisor", "Starting%s", user_mode ? " (user mode)" : "");
 
     /* Initialize service registry */
@@ -1347,6 +1367,10 @@ int main(int argc, char *argv[]) {
     int master_fd, worker_fd;
     if (create_ipc_socket(&master_fd, &worker_fd) < 0) {
         return 1;
+    }
+    if (debug_mode) {
+        log_debug("supervisor", "Created IPC socket pair (master_fd=%d, worker_fd=%d)",
+                  master_fd, worker_fd);
     }
     ipc_socket = master_fd;
 

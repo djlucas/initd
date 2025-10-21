@@ -37,6 +37,7 @@ static volatile sig_atomic_t shutdown_type = 0; /* 0=poweroff, 1=reboot, 2=halt 
 static pid_t supervisor_pid = 0;
 static char supervisor_path[MAX_PATH] = SUPERVISOR_PATH;
 static int supervisor_timeout = DEFAULT_TIMEOUT;
+static int supervisor_restart_count = 0;
 
 /* Signal handlers */
 static void sigchld_handler(int sig) {
@@ -133,7 +134,14 @@ static void reap_zombies(void) {
 
             /* If shutdown not requested, restart supervisor */
             if (!shutdown_requested) {
-                log_info("init", "Restarting initd-supervisor");
+                supervisor_restart_count++;
+                if (supervisor_restart_count > 10) {
+                    log_error("init", "Supervisor crashed more than 10 times; dropping to rescue shell");
+                    execl("/bin/bash", "bash", "-l", NULL);
+                    _exit(1);
+                }
+                log_info("init", "Restarting initd-supervisor (attempt %d)",
+                         supervisor_restart_count);
                 supervisor_pid = start_supervisor();
             }
         }

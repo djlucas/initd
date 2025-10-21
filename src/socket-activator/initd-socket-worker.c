@@ -1154,7 +1154,7 @@ void socket_worker_test_handle_status_fd(int fd) {
 #ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
     /* Initialize enhanced logging */
-    log_enhanced_init("socket-worker", "/var/log/initd/socket.log");
+    log_enhanced_init("socket-worker", NULL);
     log_set_console_level(LOGLEVEL_INFO);
     log_set_file_level(LOGLEVEL_DEBUG);
 

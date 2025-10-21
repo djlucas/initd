@@ -203,6 +203,9 @@ int ensure_component_runtime_dir(const char *component_name,
 
     int parent_fd = open(runtime_dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (parent_fd < 0) {
+        log_msg(LOG_ERR, "runtime",
+                "open runtime dir %s failed: %s",
+                runtime_dir, strerror(errno));
         return -1;
     }
 
@@ -210,6 +213,9 @@ int ensure_component_runtime_dir(const char *component_name,
     if (mkdirat(parent_fd, component_name, 0755) < 0 && errno != EEXIST) {
         int saved = errno;
         close(parent_fd);
+        log_msg(LOG_ERR, "runtime",
+                "mkdir %s/%s failed: %s",
+                runtime_dir, component_name, strerror(saved));
         errno = saved;
         return -1;
     }
@@ -217,12 +223,18 @@ int ensure_component_runtime_dir(const char *component_name,
     if (fstatat(parent_fd, component_name, &st, AT_SYMLINK_NOFOLLOW) < 0) {
         int saved = errno;
         close(parent_fd);
+        log_msg(LOG_ERR, "runtime",
+                "stat %s/%s failed: %s",
+                runtime_dir, component_name, strerror(saved));
         errno = saved;
         return -1;
     }
 
     if (!S_ISDIR(st.st_mode)) {
         close(parent_fd);
+        log_msg(LOG_ERR, "runtime",
+                "path %s/%s is not a directory",
+                runtime_dir, component_name);
         errno = ENOTDIR;
         return -1;
     }
@@ -235,6 +247,11 @@ int ensure_component_runtime_dir(const char *component_name,
                      AT_SYMLINK_NOFOLLOW) < 0) {
             int saved = errno;
             close(parent_fd);
+            log_msg(LOG_ERR, "runtime",
+                    "chown %s/%s to %u:%u failed: %s",
+                    runtime_dir, component_name,
+                    (unsigned)desired_uid, (unsigned)desired_gid,
+                    strerror(saved));
             errno = saved;
             return -1;
         }
@@ -244,6 +261,9 @@ int ensure_component_runtime_dir(const char *component_name,
         if (fchmodat(parent_fd, component_name, 0755, 0) < 0) {
             int saved = errno;
             close(parent_fd);
+            log_msg(LOG_ERR, "runtime",
+                    "chmod %s/%s failed: %s",
+                    runtime_dir, component_name, strerror(saved));
             errno = saved;
             return -1;
         }
@@ -328,6 +348,8 @@ int initd_validate_runtime_dir(const char *path, bool user_mode) {
 
     char resolved_parent[PATH_MAX];
     if (!realpath(parent_path, resolved_parent)) {
+        log_msg(LOG_ERR, "runtime", "realpath(%s) failed: %s",
+                parent_path, strerror(errno));
         return -1;
     }
 

@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Initialize enhanced logging */
-    log_enhanced_init("initd-timer", "/var/log/initd/timer.log");
+    log_enhanced_init("initd-timer", NULL);
     log_set_console_level(LOGLEVEL_INFO);
     log_set_file_level(LOGLEVEL_DEBUG);
 
