@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include "control.h"
 
 static char runtime_dir_buf[PATH_MAX];
@@ -112,16 +113,34 @@ int initd_default_user_runtime_dir(char *buf, size_t len) {
         return -1;
     }
 
-    const char *xdg = getenv("XDG_RUNTIME_DIR");
-    int written;
-    if (xdg && xdg[0] != '\0') {
-        written = snprintf(buf, len, "%s/initd", xdg);
-    } else {
-        unsigned int uid = (unsigned int)getuid();
-        written = snprintf(buf, len, "/run/user/%u/initd", uid);
+    int written = -1;
+
+#ifdef __linux__
+    /* On Linux, check if /run/user/$UID exists */
+    unsigned int uid = (unsigned int)getuid();
+    char run_user_dir[PATH_MAX];
+    snprintf(run_user_dir, sizeof(run_user_dir), "/run/user/%u", uid);
+    struct stat st;
+    if (stat(run_user_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
+        written = snprintf(buf, len, "%s/initd", run_user_dir);
+    }
+#endif
+
+    /* Fallback to XDG_RUNTIME_DIR if set */
+    if (written < 0) {
+        const char *xdg = getenv("XDG_RUNTIME_DIR");
+        if (xdg && xdg[0] != '\0') {
+            written = snprintf(buf, len, "%s/initd", xdg);
+        }
     }
 
-    if (written < 0 || (size_t)written >= len) {
+    /* No suitable runtime directory found */
+    if (written < 0) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if ((size_t)written >= len) {
         errno = ENAMETOOLONG;
         return -1;
     }

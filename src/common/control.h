@@ -16,12 +16,12 @@
 #define INITD_RUNTIME_DEFAULT "/run/initd"
 #endif
 
-#define CONTROL_SOCKET_NAME "supervisor.sock"
-#define CONTROL_STATUS_SOCKET_NAME "supervisor.status.sock"
-#define TIMER_SOCKET_NAME "timer.sock"
-#define TIMER_STATUS_SOCKET_NAME "timer.status.sock"
-#define SOCKET_ACTIVATOR_SOCKET_NAME "socket-activator.sock"
-#define SOCKET_ACTIVATOR_STATUS_SOCKET_NAME "socket-activator.status.sock"
+#define CONTROL_SOCKET_NAME "supervisor/supervisor.sock"
+#define CONTROL_STATUS_SOCKET_NAME "supervisor/supervisor.status.sock"
+#define TIMER_SOCKET_NAME "timer/timer.sock"
+#define TIMER_STATUS_SOCKET_NAME "timer/timer.status.sock"
+#define SOCKET_ACTIVATOR_SOCKET_NAME "socket/socket-activator.sock"
+#define SOCKET_ACTIVATOR_STATUS_SOCKET_NAME "socket/socket-activator.status.sock"
 
 /* Control socket default paths (system scope) */
 #define CONTROL_SOCKET_PATH INITD_RUNTIME_DEFAULT "/" CONTROL_SOCKET_NAME

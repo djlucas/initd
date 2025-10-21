@@ -103,6 +103,19 @@ running in standalone mode, it executes native shutdown commands (halt,
 shutdown -h).
 .SH OPTIONS
 .TP
+.B \-\-user
+Operate on the per-user instance of initd (if running). Uses the runtime
+directory from /run/user/$UID/initd, $XDG_RUNTIME_DIR/initd, or INITD_RUNTIME_DIR.
+.TP
+.B \-\-system
+Operate on the system instance of initd (default). Uses /run/initd as the runtime directory.
+.TP
+.B \-\-runtime-dir=\fIPATH\fR
+Specify an explicit runtime directory path. When provided, bypasses automatic
+runtime directory detection. This is the preferred method on systems without
+/run/user or elogind. Example:
+.BR "initctl \-\-runtime-dir=/tmp/myinitd \-\-user start myservice.service" .
+.TP
 .B \-\-all
 When listing units, show all units regardless of state (including inactive).
 .TP

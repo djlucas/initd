@@ -88,7 +88,8 @@ static int configure_runtime_dir(enum runtime_scope scope) {
     if (scope != SCOPE_SYSTEM) {
         if (initd_default_user_runtime_dir(user_dir, sizeof(user_dir)) < 0) {
             if (scope == SCOPE_USER) {
-                fprintf(stderr, "Error: unable to determine per-user runtime directory\n");
+                fprintf(stderr, "Error: unable to determine per-user runtime directory.\n");
+                fprintf(stderr, "Please use --runtime-dir or set INITD_RUNTIME_DIR.\n");
                 return -1;
             }
         } else {
@@ -856,6 +857,7 @@ int main(int argc, char *argv[]) {
     }
 
     enum runtime_scope scope = SCOPE_AUTO;
+    const char *runtime_dir_arg = NULL;
     int cmd_index = 1;
     while (cmd_index < argc) {
         const char *arg = argv[cmd_index];
@@ -864,6 +866,16 @@ int main(int argc, char *argv[]) {
             cmd_index++;
         } else if (strcmp(arg, "--system") == 0) {
             scope = SCOPE_SYSTEM;
+            cmd_index++;
+        } else if (strncmp(arg, "--runtime-dir=", 14) == 0) {
+            runtime_dir_arg = arg + 14;
+            cmd_index++;
+        } else if (strcmp(arg, "--runtime-dir") == 0) {
+            if (cmd_index + 1 >= argc) {
+                fprintf(stderr, "Error: --runtime-dir requires a value\n");
+                return 1;
+            }
+            runtime_dir_arg = argv[++cmd_index];
             cmd_index++;
         } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
             print_usage(progname);
@@ -882,8 +894,22 @@ int main(int argc, char *argv[]) {
         return handle_user_command(argc, argv, cmd_index);
     }
 
-    if (configure_runtime_dir(scope) < 0) {
-        return 1;
+    /* Configure runtime directory */
+    if (runtime_dir_arg) {
+        /* Explicit --runtime-dir provided, use it directly */
+        if (setenv(INITD_RUNTIME_DIR_ENV, runtime_dir_arg, 1) < 0) {
+            perror("setenv");
+            return 1;
+        }
+        if (initd_set_runtime_dir(runtime_dir_arg) < 0) {
+            perror("initd_set_runtime_dir");
+            return 1;
+        }
+    } else {
+        /* Auto-detect based on scope */
+        if (configure_runtime_dir(scope) < 0) {
+            return 1;
+        }
     }
 
     const char *cmd_str = argv[cmd_index];

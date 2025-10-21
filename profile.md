@@ -26,7 +26,7 @@ Each component is a **separate, independent daemon** that can be installed and r
 **Independence Requirements:**
 - Each daemon has a clearly defined purpose
 - Each can function without others being present
-- Each manages its own control (write) and status (read-only) sockets
+- Each manages its own control (write) and status (read-only) sockets in dedicated subdirectories
 - Each can be packaged/installed separately
 - Cross-daemon communication is optional, not required
 
@@ -140,8 +140,8 @@ enum priv_request_type {
 
 **Independence:**
 - Runs standalone without supervisor
-- Own control socket: `/run/initd/socket-activator.sock`
-- Own status socket: `/run/initd/socket-activator.status.sock`
+- Own control socket: `/run/initd/socket/socket-activator.sock`
+- Own status socket: `/run/initd/socket/socket-activator.status.sock`
 - Manages its own .socket unit files
 - Can activate services via supervisor OR exec directly
 
@@ -155,7 +155,7 @@ enum priv_request_type {
 **Unique feature:** Idle timeout (systemd doesn't have this!)
 
 **Service Activation:**
-1. Check if supervisor control socket exists (`/run/initd/supervisor.sock`)
+1. Check if supervisor control socket exists (`/run/initd/supervisor/supervisor.sock`)
 2. If yes: send activation request to supervisor
 3. If no: exec service directly or use native init commands
 
@@ -171,8 +171,8 @@ enum priv_request_type {
 
 **Independence:**
 - Runs standalone without supervisor
-- Own control socket: `/run/initd/timer.sock`
-- Own status socket: `/run/initd/timer.status.sock`
+- Own control socket: `/run/initd/timer/timer.sock`
+- Own status socket: `/run/initd/timer/timer.status.sock`
 - Manages its own .timer unit files
 - Can activate services via supervisor OR exec directly
 
@@ -187,7 +187,7 @@ enum priv_request_type {
 
 **Service Activation:**
 1. Timer expires
-2. Check if supervisor control socket exists (`/run/initd/supervisor.sock`)
+2. Check if supervisor control socket exists (`/run/initd/supervisor/supervisor.sock`)
 3. If yes: send activation request to supervisor
 4. If no: exec service directly or use `systemctl start foo`
 
@@ -205,14 +205,14 @@ enum priv_request_type {
 
 **IPC Sockets:**
 - Supervisor
-  - Control: `/run/initd/supervisor.sock` (privileged commands)
-  - Status: `/run/initd/supervisor.status.sock` (read-only queries; 0666)
+  - Control: `/run/initd/supervisor/supervisor.sock` (privileged commands)
+  - Status: `/run/initd/supervisor/supervisor.status.sock` (read-only queries; 0666)
 - Timer daemon
-  - Control: `/run/initd/timer.sock`
-  - Status: `/run/initd/timer.status.sock`
+  - Control: `/run/initd/timer/timer.sock`
+  - Status: `/run/initd/timer/timer.status.sock`
 - Socket activator
-  - Control: `/run/initd/socket-activator.sock`
-  - Status: `/run/initd/socket-activator.status.sock`
+  - Control: `/run/initd/socket/socket-activator.sock`
+  - Status: `/run/initd/socket/socket-activator.status.sock`
 
 **Protocol:**
 ```c
@@ -235,16 +235,16 @@ bool readonly = command in {
 // initctl determines unit type and routes to correct daemon
 if (unit ends with ".service" || no extension) {
     socket = readonly
-        ? "/run/initd/supervisor.status.sock"
-        : "/run/initd/supervisor.sock";
+        ? "/run/initd/supervisor/supervisor.status.sock"
+        : "/run/initd/supervisor/supervisor.sock";
 } else if (unit ends with ".timer") {
     socket = readonly
-        ? "/run/initd/timer.status.sock"
-        : "/run/initd/timer.sock";
+        ? "/run/initd/timer/timer.status.sock"
+        : "/run/initd/timer/timer.sock";
 } else if (unit ends with ".socket") {
     socket = readonly
-        ? "/run/initd/socket-activator.status.sock"
-        : "/run/initd/socket-activator.sock";
+        ? "/run/initd/socket/socket-activator.status.sock"
+        : "/run/initd/socket/socket-activator.sock";
 }
 
 // If daemon not running, provide helpful error
@@ -269,7 +269,15 @@ if (connect(socket) fails) {
 
 **User Mode Architecture:**
 - Per-user supervisor and timer daemons run entirely unprivileged.
-- Sockets live in `/run/user/$UID/initd/` (`supervisor.sock`, `supervisor.status.sock`, `timer.sock`, `timer.status.sock`, etc.) with `0600` perms.
+- Sockets live in daemon-specific subdirectories under `/run/user/$UID/initd/`:
+  - Supervisor: `/run/user/$UID/initd/supervisor/{supervisor.sock,supervisor.status.sock}`
+  - Timer: `/run/user/$UID/initd/timer/{timer.sock,timer.status.sock}`
+  - Socket: `/run/user/$UID/initd/socket/{socket-activator.sock,socket-activator.status.sock}`
+  - All sockets have `0600` perms.
+- Runtime directory detection:
+  - On Linux: checks `/run/user/$UID/` first (elogind/systemd-logind)
+  - Fallback: `$XDG_RUNTIME_DIR/initd`
+  - Explicit override: `--runtime-dir=/path` or `INITD_RUNTIME_DIR` env var
 - Unit file roots default to `~/.config/initd/user/`; no system directories are consulted.
 - `initctl` auto-detects the per-user sockets; `initctl --user` forces user scope, `--system` forces the system instance.
 - `initctl user enable/disable` (root-only) populates per-user daemon settings in `~/.config/initd/user-daemons.conf`.
@@ -313,7 +321,7 @@ When timer-daemon or socket-activator needs to start a service:
 ```c
 // Optional activation via supervisor
 int try_activate_via_supervisor(const char *unit) {
-    int fd = connect("/run/initd/supervisor.sock");
+    int fd = connect("/run/initd/supervisor/supervisor.sock");
     if (fd < 0) {
         // Supervisor not running - use fallback
         return activate_directly(unit);
@@ -353,11 +361,13 @@ units += query_socket_activator();
 
 | Daemon | Control Socket | Status Socket | Purpose |
 |--------|---------------|---------------|----------|
-| supervisor-slave | `/run/initd/supervisor.sock` | `/run/initd/supervisor.status.sock` | Service management |
-| timer-daemon | `/run/initd/timer.sock` | `/run/initd/timer.status.sock` | Timer control |
-| socket-activator | `/run/initd/socket-activator.sock` | `/run/initd/socket-activator.status.sock` | Socket control |
+| supervisor-slave | `/run/initd/supervisor/supervisor.sock` | `/run/initd/supervisor/supervisor.status.sock` | Service management |
+| timer-daemon | `/run/initd/timer/timer.sock` | `/run/initd/timer/timer.status.sock` | Timer control |
+| socket-activator | `/run/initd/socket/socket-activator.sock` | `/run/initd/socket/socket-activator.status.sock` | Socket control |
 
 > **Total:** six IPC sockets (three read/write control endpoints plus three read-only status endpoints) when all daemons are running.
+>
+> **Directory structure:** Each daemon uses its own subdirectory under `/run/initd/` to avoid permission conflicts. The base directory remains owned by root, while each subdirectory is owned by the respective daemon's unprivileged user.
 
 ### Shared Protocol
 

@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <errno.h>
 #include <string.h>
 #include <pwd.h>
@@ -315,7 +316,8 @@ int main(int argc, char *argv[]) {
         if (!current || current[0] == '\0') {
             char user_dir[PATH_MAX];
             if (initd_default_user_runtime_dir(user_dir, sizeof(user_dir)) < 0) {
-                perror("initd_default_user_runtime_dir");
+                fprintf(stderr, "initd-timer: cannot determine user runtime directory.\n");
+                fprintf(stderr, "Please set INITD_RUNTIME_DIR or use --runtime-dir.\n");
                 return 1;
             }
             if (setenv(INITD_RUNTIME_DIR_ENV, user_dir, 1) < 0) {
@@ -328,6 +330,36 @@ int main(int argc, char *argv[]) {
     if (initd_set_runtime_dir(NULL) < 0) {
         perror("initd_set_runtime_dir");
         return 1;
+    }
+
+    /* Create runtime directory (owned by root) */
+    if (initd_ensure_runtime_dir() < 0) {
+        perror("initd_ensure_runtime_dir");
+        return 1;
+    }
+
+    /* Create timer-specific subdirectory */
+    const char *runtime_dir = getenv(INITD_RUNTIME_DIR_ENV);
+    if (!runtime_dir || runtime_dir[0] == '\0') {
+        runtime_dir = INITD_RUNTIME_DEFAULT;
+    }
+    char timer_dir[PATH_MAX];
+    snprintf(timer_dir, sizeof(timer_dir), "%s/timer", runtime_dir);
+    if (mkdir(timer_dir, 0755) < 0 && errno != EEXIST) {
+        perror("mkdir timer directory");
+        return 1;
+    }
+
+    /* Set ownership for worker in system mode */
+    if (!user_mode) {
+        uid_t worker_uid;
+        gid_t worker_gid;
+        if (lookup_timer_user(&worker_uid, &worker_gid) == 0) {
+            if (chown(timer_dir, worker_uid, worker_gid) < 0) {
+                perror("chown timer directory");
+                return 1;
+            }
+        }
     }
 
     /* Initialize enhanced logging */
