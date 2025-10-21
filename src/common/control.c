@@ -5,6 +5,7 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -333,7 +334,7 @@ int initd_validate_runtime_dir(const char *path, bool user_mode) {
     uid_t expected_parent_owner = user_mode ? getuid() : 0;
     bool allow_sticky = true;
     if (check_directory_safety(resolved_parent, expected_parent_owner, allow_sticky) < 0) {
-        log_error("runtime", "invalid parent directory %s", resolved_parent);
+        log_msg(LOG_ERR, "runtime", "invalid parent directory %s", resolved_parent);
         return -1;
     }
 
@@ -341,7 +342,7 @@ int initd_validate_runtime_dir(const char *path, bool user_mode) {
     if (lstat(target_path, &st) == 0) {
         uid_t expected_owner = user_mode ? getuid() : 0;
         if (check_directory_safety(target_path, expected_owner, false) < 0) {
-            log_error("runtime", "invalid runtime directory %s", target_path);
+            log_msg(LOG_ERR, "runtime", "invalid runtime directory %s", target_path);
             return -1;
         }
     } else if (errno != ENOENT) {

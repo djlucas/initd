@@ -63,7 +63,7 @@ static pid_t worker_pid = 0;
 static int ipc_socket = -1;
 static bool user_mode = false;
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(UNIT_TEST)
 #ifndef TMPFS_MAGIC
 #define TMPFS_MAGIC 0x01021994
 #endif
@@ -1257,7 +1257,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(UNIT_TEST)
     if (!user_mode && initd_is_running_as_init()) {
         if (ensure_run_tmpfs() < 0) {
             fprintf(stderr, "initd-supervisor: failed to mount tmpfs at /run: %s\n",
