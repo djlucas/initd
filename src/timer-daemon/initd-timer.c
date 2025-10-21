@@ -307,8 +307,14 @@ int main(int argc, char *argv[]) {
     }
 
     if (runtime_dir_arg) {
+        if (initd_validate_runtime_dir(runtime_dir_arg, user_mode) < 0) {
+            fprintf(stderr, "initd-timer: runtime dir '%s' invalid: %s\n",
+                    runtime_dir_arg, strerror(errno));
+            return 1;
+        }
         if (setenv(INITD_RUNTIME_DIR_ENV, runtime_dir_arg, 1) < 0) {
-            perror("setenv");
+            fprintf(stderr, "initd-timer: setenv(%s) failed: %s\n",
+                    INITD_RUNTIME_DIR_ENV, strerror(errno));
             return 1;
         }
     } else if (user_mode) {
@@ -321,44 +327,43 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             if (setenv(INITD_RUNTIME_DIR_ENV, user_dir, 1) < 0) {
-                perror("setenv");
+                fprintf(stderr, "initd-timer: setenv(%s) failed: %s\n",
+                        INITD_RUNTIME_DIR_ENV, strerror(errno));
                 return 1;
             }
         }
     }
 
     if (initd_set_runtime_dir(NULL) < 0) {
-        perror("initd_set_runtime_dir");
+        fprintf(stderr, "initd-timer: initd_set_runtime_dir failed: %s\n",
+                strerror(errno));
         return 1;
     }
 
-    /* Create runtime directory (owned by root) */
+    /* Create runtime directory (owned by root or current user) */
     if (initd_ensure_runtime_dir() < 0) {
-        perror("initd_ensure_runtime_dir");
+        fprintf(stderr, "initd-timer: initd_ensure_runtime_dir failed: %s\n",
+                strerror(errno));
         return 1;
     }
 
-    /* Create timer-specific subdirectory */
-    const char *runtime_dir = getenv(INITD_RUNTIME_DIR_ENV);
-    if (!runtime_dir || runtime_dir[0] == '\0') {
-        runtime_dir = INITD_RUNTIME_DEFAULT;
-    }
-    char timer_dir[PATH_MAX];
-    snprintf(timer_dir, sizeof(timer_dir), "%s/timer", runtime_dir);
-    if (mkdir(timer_dir, 0755) < 0 && errno != EEXIST) {
-        perror("mkdir timer directory");
-        return 1;
-    }
-
-    /* Set ownership for worker in system mode */
     if (!user_mode) {
         uid_t worker_uid;
         gid_t worker_gid;
         if (lookup_timer_user(&worker_uid, &worker_gid) == 0) {
-            if (chown(timer_dir, worker_uid, worker_gid) < 0) {
-                perror("chown timer directory");
+            if (ensure_component_runtime_dir("timer", worker_uid, worker_gid, false) < 0) {
+                fprintf(stderr, "initd-timer: ensure runtime dir failed: %s\n",
+                        strerror(errno));
                 return 1;
             }
+        } else {
+            return 1;
+        }
+    } else {
+        if (ensure_component_runtime_dir("timer", 0, 0, true) < 0) {
+            fprintf(stderr, "initd-timer: ensure runtime dir failed: %s\n",
+                    strerror(errno));
+            return 1;
         }
     }
 

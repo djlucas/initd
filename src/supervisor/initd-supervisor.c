@@ -28,6 +28,9 @@
 #include <limits.h>
 #ifdef __linux__
 #include <sys/reboot.h>
+#include <sys/mount.h>
+#include <sys/statfs.h>
+#include <linux/magic.h>
 #endif
 #include "../common/ipc.h"
 #include "../common/privileged-ops.h"
@@ -59,6 +62,44 @@ static enum shutdown_type shutdown_type = SHUTDOWN_NONE;
 static pid_t worker_pid = 0;
 static int ipc_socket = -1;
 static bool user_mode = false;
+
+#ifdef __linux__
+#ifndef TMPFS_MAGIC
+#define TMPFS_MAGIC 0x01021994
+#endif
+
+static int ensure_run_tmpfs(void) {
+    struct statfs fs;
+    if (statfs("/run", &fs) == 0 && fs.f_type == TMPFS_MAGIC) {
+        return 0; /* already tmpfs */
+    }
+
+    struct stat st;
+    if (stat("/run", &st) < 0) {
+        if (errno == ENOENT) {
+            if (mkdir("/run", 0755) < 0 && errno != EEXIST) {
+                return -1;
+            }
+        } else {
+            return -1;
+        }
+    }
+
+    if (mount("tmpfs", "/run", "tmpfs",
+              MS_NOSUID | MS_NODEV | MS_STRICTATIME,
+              "mode=0755") < 0) {
+        if (errno != EBUSY) {
+            return -1;
+        }
+
+        if (statfs("/run", &fs) < 0 || fs.f_type != TMPFS_MAGIC) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+#endif
 
 static int build_exec_argv(const char *command, char ***argv_out) {
     if (!command || command[0] == '\0' || !argv_out) {
@@ -1216,9 +1257,25 @@ int main(int argc, char *argv[]) {
         }
     }
 
+#ifdef __linux__
+    if (!user_mode && initd_is_running_as_init()) {
+        if (ensure_run_tmpfs() < 0) {
+            fprintf(stderr, "initd-supervisor: failed to mount tmpfs at /run: %s\n",
+                    strerror(errno));
+            return 1;
+        }
+    }
+#endif
+
     if (runtime_dir_arg) {
+        if (initd_validate_runtime_dir(runtime_dir_arg, user_mode) < 0) {
+            fprintf(stderr, "initd-supervisor: runtime dir '%s' invalid: %s\n",
+                    runtime_dir_arg, strerror(errno));
+            return 1;
+        }
         if (setenv(INITD_RUNTIME_DIR_ENV, runtime_dir_arg, 1) < 0) {
-            perror("setenv");
+            fprintf(stderr, "initd-supervisor: setenv(%s) failed: %s\n",
+                    INITD_RUNTIME_DIR_ENV, strerror(errno));
             return 1;
         }
     } else if (user_mode) {
@@ -1231,44 +1288,43 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             if (setenv(INITD_RUNTIME_DIR_ENV, user_dir, 1) < 0) {
-                perror("setenv");
+                fprintf(stderr, "initd-supervisor: setenv(%s) failed: %s\n",
+                        INITD_RUNTIME_DIR_ENV, strerror(errno));
                 return 1;
             }
         }
     }
 
     if (initd_set_runtime_dir(NULL) < 0) {
-        perror("initd_set_runtime_dir");
+        fprintf(stderr, "initd-supervisor: initd_set_runtime_dir failed: %s\n",
+                strerror(errno));
         return 1;
     }
 
-    /* Create runtime directory (owned by root) */
+    /* Create runtime directory (owned by root or current user) */
     if (initd_ensure_runtime_dir() < 0) {
-        perror("initd_ensure_runtime_dir");
+        fprintf(stderr, "initd-supervisor: initd_ensure_runtime_dir failed: %s\n",
+                strerror(errno));
         return 1;
     }
 
-    /* Create supervisor-specific subdirectory */
-    const char *runtime_dir = getenv(INITD_RUNTIME_DIR_ENV);
-    if (!runtime_dir || runtime_dir[0] == '\0') {
-        runtime_dir = INITD_RUNTIME_DEFAULT;
-    }
-    char supervisor_dir[PATH_MAX];
-    snprintf(supervisor_dir, sizeof(supervisor_dir), "%s/supervisor", runtime_dir);
-    if (mkdir(supervisor_dir, 0755) < 0 && errno != EEXIST) {
-        perror("mkdir supervisor directory");
-        return 1;
-    }
-
-    /* Set ownership for worker in system mode */
     if (!user_mode) {
         uid_t worker_uid;
         gid_t worker_gid;
         if (lookup_supervisor_user(&worker_uid, &worker_gid) == 0) {
-            if (chown(supervisor_dir, worker_uid, worker_gid) < 0) {
-                perror("chown supervisor directory");
+            if (ensure_component_runtime_dir("supervisor", worker_uid, worker_gid, false) < 0) {
+                fprintf(stderr, "initd-supervisor: ensure runtime dir failed: %s\n",
+                        strerror(errno));
                 return 1;
             }
+        } else {
+            return 1;
+        }
+    } else {
+        if (ensure_component_runtime_dir("supervisor", 0, 0, true) < 0) {
+            fprintf(stderr, "initd-supervisor: ensure runtime dir failed: %s\n",
+                    strerror(errno));
+            return 1;
         }
     }
 

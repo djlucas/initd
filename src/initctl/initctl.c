@@ -896,6 +896,11 @@ int main(int argc, char *argv[]) {
 
     /* Configure runtime directory */
     if (runtime_dir_arg) {
+        if (initd_validate_runtime_dir(runtime_dir_arg, scope == SCOPE_USER) < 0) {
+            fprintf(stderr, "Error: runtime directory '%s' invalid: %s\n",
+                    runtime_dir_arg, strerror(errno));
+            return 1;
+        }
         /* Explicit --runtime-dir provided, use it directly */
         if (setenv(INITD_RUNTIME_DIR_ENV, runtime_dir_arg, 1) < 0) {
             perror("setenv");

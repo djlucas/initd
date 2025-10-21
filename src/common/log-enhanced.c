@@ -50,6 +50,9 @@ int log_enhanced_init(const char *ident, const char *log_file_path) {
         strncpy(enhanced_log_state.ident, ident, sizeof(enhanced_log_state.ident) - 1);
     }
 
+    /* Initialize basic syslog buffering first so we can log failures */
+    log_init(ident);
+
     /* Check if stderr is a TTY for color support */
     enhanced_log_state.use_colors = isatty(STDERR_FILENO);
 
@@ -57,15 +60,13 @@ int log_enhanced_init(const char *ident, const char *log_file_path) {
     if (log_file_path) {
         enhanced_log_state.log_file = fopen(log_file_path, "a");
         if (!enhanced_log_state.log_file) {
-            fprintf(stderr, "Warning: Could not open log file %s\n", log_file_path);
+            log_debug(ident, "log file %s not available yet: %s",
+                      log_file_path, strerror(errno));
             return -1;
         }
         /* Unbuffered for real-time logging */
         setbuf(enhanced_log_state.log_file, NULL);
     }
-
-    /* Also initialize the original log system for syslog */
-    log_init(ident);
 
     return 0;
 }

@@ -152,6 +152,8 @@ int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count);
 int initd_set_runtime_dir(const char *path);
 int initd_ensure_runtime_dir(void);
 int initd_default_user_runtime_dir(char *buf, size_t len);
+int initd_validate_runtime_dir(const char *path, bool user_mode);
+int ensure_component_runtime_dir(const char *component_name, uid_t target_uid, gid_t target_gid, bool user_mode);
 const char *control_socket_path(bool status);
 const char *timer_socket_path(bool status);
 const char *socket_activator_socket_path(bool status);

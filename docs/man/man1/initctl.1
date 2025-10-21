@@ -111,10 +111,14 @@ directory from /run/user/$UID/initd, $XDG_RUNTIME_DIR/initd, or INITD_RUNTIME_DI
 Operate on the system instance of initd (default). Uses /run/initd as the runtime directory.
 .TP
 .B \-\-runtime-dir=\fIPATH\fR
-Specify an explicit runtime directory path. When provided, bypasses automatic
-runtime directory detection. This is the preferred method on systems without
-/run/user or elogind. Example:
-.BR "initctl \-\-runtime-dir=/tmp/myinitd \-\-user start myservice.service" .
+Specify an explicit absolute runtime directory path. The parent directory
+must already exist and be owned by root (system scope) or the invoking user
+(user scope). Existing runtime directories must also be owned by the
+appropriate user and not be world-writable (unless the parent is a sticky
+directory such as /tmp). When provided, bypasses automatic runtime directory
+detection. This is the preferred method on systems without /run/user or
+elogind. Example:
+.BR "initctl \-\-runtime-dir=/var/run/initd-test \-\-user start myservice.service" .
 .TP
 .B \-\-all
 When listing units, show all units regardless of state (including inactive).
