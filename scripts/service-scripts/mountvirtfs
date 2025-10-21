@@ -12,17 +12,11 @@
 
 failed=0
 
-# Mount /run first (needed for logging)
-if ! mountpoint /run >/dev/null 2>&1; then
-   echo "Mounting /run"
-   mount /run || failed=1
-   [ "${failed}" = 0 ] && echo "Mounted /run"
-fi
-
+# Prepare /run hierarchy (supervisor mounts tmpfs when running as init)
+mkdir -p /run
 mkdir -p   /run/lock
 chmod 1777 /run/lock
 
-# Create /run/utmp
 : > /run/utmp
 if grep -q '^utmp:' /etc/group 2>/dev/null; then
    chmod 664 /run/utmp
