@@ -302,7 +302,7 @@ static void test_system_socket_start(void) {
 
 static void test_user_service_status(void) {
     TEST("user scope service status routes to per-user supervisor.status.sock");
-    char *argv[] = {"initctl", "--user", "status", "demo", NULL};
+    char *argv[] = {"initctl", "--runtime-dir", NULL, "--user", "status", "demo", NULL};
     struct routing_expectation expect = {
         .socket_name = "supervisor/supervisor.status.sock",
         .expected_command = CMD_STATUS,
@@ -310,7 +310,8 @@ static void test_user_service_status(void) {
         .response_state = UNIT_STATE_ACTIVE,
         .response_pid = 2121,
     };
-    run_initctl(argv, 4, &expect, user_runtime_dir, true);
+    argv[2] = user_runtime_dir;
+    run_initctl(argv, 6, &expect, user_runtime_dir, true);
     PASS();
 }
 
