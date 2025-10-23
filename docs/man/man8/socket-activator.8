@@ -147,6 +147,14 @@ Enable a socket to start at boot
 .TP
 .B disable <socket>
 Disable a socket from starting at boot
+.SH ENVIRONMENT
+.TP
+.B INITD_DEBUG_SOCKET
+When set to any value other than "0", enables debug-level logging to both
+console and file outputs. Useful for troubleshooting socket activator startup,
+socket binding, connection handling, service activation, and idle timeout
+management. Set before starting the socket activator to capture all debug
+output from initialization onward.
 .SH FILES
 .TP
 .I /run/initd/socket-activator.sock

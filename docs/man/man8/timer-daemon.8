@@ -145,6 +145,14 @@ Enable a timer to start at boot
 .TP
 .B disable <timer>
 Disable a timer from starting at boot
+.SH ENVIRONMENT
+.TP
+.B INITD_DEBUG_TIMER
+When set to any value other than "0", enables debug-level logging to both
+console and file outputs. Useful for troubleshooting timer daemon startup,
+calendar expression parsing, timer scheduling, and service activation. Set
+before starting the timer daemon to capture all debug output from
+initialization onward.
 .SH FILES
 .TP
 .I /run/initd/timer.sock

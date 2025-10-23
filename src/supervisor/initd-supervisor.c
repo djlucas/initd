@@ -1279,7 +1279,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    const char *debug_env = getenv("INITD_DEBUG_BOOT");
+    const char *debug_env = getenv("INITD_DEBUG_SUPERVISOR");
     debug_mode = (debug_env && strcmp(debug_env, "0") != 0);
 
     if (runtime_dir_arg) {
@@ -1354,40 +1354,43 @@ int main(int argc, char *argv[]) {
         log_set_file_level(LOGLEVEL_DEBUG);
     } else {
         log_set_console_level(LOGLEVEL_INFO);
-        log_set_file_level(LOGLEVEL_DEBUG);
+        log_set_file_level(LOGLEVEL_INFO);
     }
 
     if (debug_mode) {
-        log_info("supervisor", "Boot debug mode enabled (INITD_DEBUG_BOOT)");
+        log_info("supervisor", "Debug mode enabled (INITD_DEBUG_SUPERVISOR)");
     }
     log_info("supervisor", "Starting%s", user_mode ? " (user mode)" : "");
 
     /* Initialize service registry */
+    log_debug("supervisor", "Initializing service registry");
     service_registry_init();
 
     /* Setup signals */
+    log_debug("supervisor", "Setting up signal handlers");
     if (setup_signals() < 0) {
         return 1;
     }
 
     /* Create IPC socket */
+    log_debug("supervisor", "Creating IPC socket pair");
     int master_fd, worker_fd;
     if (create_ipc_socket(&master_fd, &worker_fd) < 0) {
         return 1;
     }
-    if (debug_mode) {
-        log_debug("supervisor", "Created IPC socket pair (master_fd=%d, worker_fd=%d)",
-                  master_fd, worker_fd);
-    }
+    log_debug("supervisor", "Created IPC socket pair (master_fd=%d, worker_fd=%d)",
+              master_fd, worker_fd);
     ipc_socket = master_fd;
 
     /* Fork and exec worker */
+    log_debug("supervisor", "Starting worker process");
     worker_pid = start_worker(worker_fd);
     if (worker_pid < 0) {
         return 1;
     }
 
     /* Main loop */
+    log_debug("supervisor", "Entering main loop");
     main_loop();
 
     /* Cleanup */

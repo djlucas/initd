@@ -376,8 +376,17 @@ int main(int argc, char *argv[]) {
 
     /* Initialize enhanced logging */
     log_enhanced_init("initd-socket", NULL);
-    log_set_console_level(LOGLEVEL_INFO);
-    log_set_file_level(LOGLEVEL_DEBUG);
+
+    const char *debug_env = getenv("INITD_DEBUG_SOCKET");
+    bool debug_mode = (debug_env && strcmp(debug_env, "0") != 0);
+    if (debug_mode) {
+        log_set_console_level(LOGLEVEL_DEBUG);
+        log_set_file_level(LOGLEVEL_DEBUG);
+        log_info("socket", "Debug mode enabled (INITD_DEBUG_SOCKET)");
+    } else {
+        log_set_console_level(LOGLEVEL_INFO);
+        log_set_file_level(LOGLEVEL_INFO);
+    }
 
     log_info("socket", "Starting%s", user_mode ? " (user mode)" : "");
 
@@ -388,17 +397,20 @@ int main(int argc, char *argv[]) {
     }
 
     /* Setup signals */
+    log_debug("socket", "Setting up signal handlers");
     if (setup_signals() < 0) {
         return 1;
     }
 
     /* Spawn worker */
+    log_debug("socket", "Starting worker process");
     int worker_fd = spawn_worker();
     if (worker_fd < 0) {
         return 1;
     }
 
     /* Main loop: handle IPC requests from worker */
+    log_debug("socket", "Entering main loop");
     while (!shutdown_requested && worker_pid > 0) {
         fd_set rfds;
         struct timeval tv;

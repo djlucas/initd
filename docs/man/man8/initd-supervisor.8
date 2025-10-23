@@ -87,6 +87,13 @@ Same as SIGTERM.
 Monitors child processes. If initd-supervisor-worker exits, initd-supervisor
 will restart it unless shutdown was requested. Also tracks service process
 exits and notifies initd-supervisor-worker.
+.SH ENVIRONMENT
+.TP
+.B INITD_DEBUG_SUPERVISOR
+When set to any value other than "0", enables debug-level logging to both
+console and file outputs. Useful for troubleshooting supervisor startup,
+service activation, and daemon operation. Set before starting the supervisor
+to capture all debug output from initialization onward.
 .SH FILES
 .TP
 .I /usr/sbin/initd-supervisor

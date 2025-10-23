@@ -1151,8 +1151,17 @@ int main(int argc, char *argv[]) {
 
     /* Initialize enhanced logging */
     log_enhanced_init("timer-worker", "/var/log/initd/timer.log");
-    log_set_console_level(LOGLEVEL_INFO);
-    log_set_file_level(LOGLEVEL_DEBUG);
+
+    const char *debug_env = getenv("INITD_DEBUG_TIMER");
+    bool debug_mode = (debug_env && strcmp(debug_env, "0") != 0);
+    if (debug_mode) {
+        log_set_console_level(LOGLEVEL_DEBUG);
+        log_set_file_level(LOGLEVEL_DEBUG);
+        log_info("timer-worker", "Debug mode enabled (INITD_DEBUG_TIMER)");
+    } else {
+        log_set_console_level(LOGLEVEL_INFO);
+        log_set_file_level(LOGLEVEL_INFO);
+    }
 
     log_info("timer-worker", "Starting (ipc_fd=%d)", daemon_socket);
 
@@ -1165,16 +1174,19 @@ int main(int argc, char *argv[]) {
               boot_time, daemon_start_time);
 
     /* Setup signals */
+    log_debug("timer-worker", "Setting up signal handlers");
     if (setup_signals() < 0) {
         return 1;
     }
 
     /* Create control socket */
+    log_debug("timer-worker", "Creating control socket");
     control_socket = create_control_socket();
     if (control_socket < 0) {
         return 1;
     }
 
+    log_debug("timer-worker", "Creating status socket");
     status_socket = create_status_socket();
     if (status_socket < 0) {
         close(control_socket);
@@ -1186,6 +1198,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Load timer units */
+    log_debug("timer-worker", "Loading timer units");
     if (load_timers() < 0) {
         log_error("timer-worker", "failed to load timers");
         close(control_socket);

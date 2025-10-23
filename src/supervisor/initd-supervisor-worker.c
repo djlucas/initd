@@ -1515,25 +1515,28 @@ int main(int argc, char *argv[]) {
     /* Initialize logging */
     log_init("supervisor-worker");
     log_enhanced_init("worker", NULL);
+    log_debug("worker", "Logging initialized, IPC socket fd=%d", master_socket);
 
-    const char *debug_env = getenv("INITD_DEBUG_BOOT");
+    const char *debug_env = getenv("INITD_DEBUG_SUPERVISOR");
     debug_mode = (debug_env && strcmp(debug_env, "0") != 0);
     if (debug_mode) {
         log_set_console_level(LOGLEVEL_DEBUG);
         log_set_file_level(LOGLEVEL_DEBUG);
     } else {
         log_set_console_level(LOGLEVEL_INFO);
-        log_set_file_level(LOGLEVEL_DEBUG);
+        log_set_file_level(LOGLEVEL_INFO);
     }
 
     log_info("worker", "Starting (ipc_fd=%d)", master_socket);
 
     /* Setup signals */
+    log_debug("worker", "Setting up signal handlers");
     if (setup_signals() < 0) {
         return 1;
     }
 
     /* Create control socket */
+    log_debug("worker", "Creating control socket");
     control_socket = create_control_socket();
     if (control_socket < 0) {
         log_error("worker", "failed to create control socket");
@@ -1545,6 +1548,7 @@ int main(int argc, char *argv[]) {
                   control_socket, ctrl_path_dbg ? ctrl_path_dbg : "<null>");
     }
 
+    log_debug("worker", "Creating status socket");
     status_socket = create_status_socket();
     if (status_socket < 0) {
         log_error("worker", "failed to create status socket");
@@ -1574,16 +1578,19 @@ int main(int argc, char *argv[]) {
         }
         return 1;
     }
+    log_debug("worker", "Found %zu units", unit_count);
 
     /* Start default.target */
     log_info("worker", "Starting default.target");
     struct unit_file *default_target = find_unit("default.target");
     if (!default_target) {
         /* Fallback to multi-user.target */
+        log_debug("worker", "default.target not found, falling back to multi-user.target");
         default_target = find_unit("multi-user.target");
     }
 
     if (default_target) {
+        log_debug("worker", "Activating target: %s", default_target->name);
         if (start_unit_recursive(default_target) < 0) {
             log_error("worker", "failed to start default target");
         }
@@ -1592,6 +1599,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Main loop */
+    log_debug("worker", "Entering main loop");
     main_loop();
 
     /* Cleanup */
