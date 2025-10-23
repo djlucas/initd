@@ -26,6 +26,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <limits.h>
+#include <fcntl.h>
 #ifdef __linux__
 #include <sys/reboot.h>
 #include <sys/mount.h>
@@ -451,6 +452,12 @@ static pid_t start_worker(int worker_fd) {
         }
 
         log_debug("worker", "running as uid=%d, gid=%d", getuid(), getgid());
+
+        /* Clear FD_CLOEXEC flag so worker_fd survives exec */
+        int flags = fcntl(worker_fd, F_GETFD);
+        if (flags >= 0) {
+            fcntl(worker_fd, F_SETFD, flags & ~FD_CLOEXEC);
+        }
 
         execl(WORKER_PATH, "initd-supervisor-worker", fd_str, NULL);
         log_error("supervisor", "exec worker: %s", strerror(errno));

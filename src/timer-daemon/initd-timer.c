@@ -25,6 +25,7 @@
 #include <grp.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <fcntl.h>
 #include "../common/timer-ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
@@ -267,6 +268,12 @@ static int spawn_worker(void) {
 
         log_debug("timer-worker", "running as uid=%d, gid=%d",
                   getuid(), getgid());
+
+        /* Clear FD_CLOEXEC flag so worker_fd survives exec */
+        int flags = fcntl(sockets[1], F_GETFD);
+        if (flags >= 0) {
+            fcntl(sockets[1], F_SETFD, flags & ~FD_CLOEXEC);
+        }
 
         execl(WORKER_PATH, "initd-timer-worker", fd_str, NULL);
         log_error("timer", "exec worker: %s", strerror(errno));
