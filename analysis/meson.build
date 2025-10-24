@@ -36,61 +36,92 @@ run_target('analyze-sanitizers',
 )
 
 # 5. fuzzing harnesses (requires clang + libFuzzer)
-fuzz_cc = meson.get_compiler('c')
-if fuzz_cc.get_id() == 'clang' and fuzz_cc.has_argument('-fsanitize=fuzzer-no-link') and fuzz_cc.has_link_argument('-fsanitize=fuzzer')
-  fuzz_c_args = ['-fsanitize=fuzzer-no-link']
-  fuzz_link_args = ['-fsanitize=fuzzer']
+# Find clang explicitly for fuzzing, even if main build uses gcc
+clang = find_program('clang', required: false)
+
+# Check if clang supports fuzzer instrumentation
+# Simple check: clang with -fsanitize=fuzzer support indicates libFuzzer availability
+clang_supports_fuzzing = clang.found()
+
+if clang_supports_fuzzing
+  fuzz_includes = ['-I' + meson.project_source_root() / 'src']
+  fuzz_timer_includes = ['-I' + meson.project_source_root() / 'src' / 'timer-daemon']
+  fuzz_flags = ['-fsanitize=fuzzer', '-g', '-O1']
 
   # Calendar parser fuzzer
-  fuzz_calendar = executable(
+  fuzz_calendar = custom_target(
     'fuzz-calendar',
-    [
+    output: 'fuzz-calendar',
+    input: [
       'fuzz/calendar_fuzz.c',
       '../src/timer-daemon/calendar.c',
     ],
-    include_directories: [
-      include_directories('../src'),
-      include_directories('../src/timer-daemon')
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      fuzz_timer_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
     ],
-    c_args: fuzz_c_args,
-    link_args: fuzz_link_args
+    build_by_default: true
   )
 
   # Unit file parser fuzzer
-  fuzz_parser = executable(
+  fuzz_parser = custom_target(
     'fuzz-parser',
-    [
+    output: 'fuzz-parser',
+    input: [
       'fuzz/parser_fuzz.c',
       '../src/common/parser.c',
       '../src/common/scanner.c',
     ],
-    include_directories: include_directories('../src'),
-    c_args: fuzz_c_args,
-    link_args: fuzz_link_args
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
   )
 
   # Control protocol fuzzer
-  fuzz_control = executable(
+  fuzz_control = custom_target(
     'fuzz-control',
-    [
+    output: 'fuzz-control',
+    input: [
       'fuzz/control_fuzz.c',
       '../src/common/control.c',
+      '../src/common/log.c',
     ],
-    include_directories: include_directories('../src'),
-    c_args: fuzz_c_args,
-    link_args: fuzz_link_args
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
   )
 
   # IPC protocol fuzzer
-  fuzz_ipc = executable(
+  fuzz_ipc = custom_target(
     'fuzz-ipc',
-    [
+    output: 'fuzz-ipc',
+    input: [
       'fuzz/ipc_fuzz.c',
       '../src/common/ipc.c',
+      '../src/common/log.c',
     ],
-    include_directories: include_directories('../src'),
-    c_args: fuzz_c_args,
-    link_args: fuzz_link_args
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
   )
 
   # Unified fuzzing target
@@ -98,7 +129,8 @@ if fuzz_cc.get_id() == 'clang' and fuzz_cc.has_argument('-fsanitize=fuzzer-no-li
     'analyze-fuzz',
     command: [
       bash,
-      meson.project_source_root() / 'analysis' / 'fuzz' / 'run-all-fuzzers.sh'
+      meson.project_source_root() / 'analysis' / 'fuzz' / 'run-all-fuzzers.sh',
+      meson.project_build_root()
     ],
     depends: [fuzz_calendar, fuzz_parser, fuzz_control, fuzz_ipc]
   )

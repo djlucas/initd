@@ -85,10 +85,10 @@ function get_args(){
       # Handle getopt style short args
       -+([a-z,A-Z]))
         arg="${1}"
-        newargs=$( echo "${1}" | sed 's@-@@' | \
+        newargs=$( echo "${1}" | sed 's/-//' | \
                                  sed 's/.\{1\}/& /g' | \
                                  sed 's/[^ ]* */-&/g')
-        newargs="${newargs} $(echo "${@}" | sed "s@${arg}@@")"
+        newargs="${newargs} $(echo "${@}" | sed "s/${arg}//")"
         get_args "${newargs}"
         break;
       ;;

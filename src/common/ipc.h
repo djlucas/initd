@@ -7,6 +7,7 @@
 #ifndef IPC_H
 #define IPC_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
 

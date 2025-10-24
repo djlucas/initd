@@ -343,27 +343,26 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Run all tests (18 non-privileged suites)
+# Run all tests (23 test suites total: 20 non-privileged, 3 privileged)
 ninja -C build test
 
-# Run privileged tests (requires root for privileged-ops suite)
+# Run privileged tests (requires root)
 sudo ninja -C build test-privileged
 ```
 
-**Privileged Test Suite:**
-The privileged operations test suite validates critical root-only functionality:
-- Converting systemd unit files to initd format
-- Enabling units (WantedBy and RequiredBy)
-- Disabling units
-- Checking if units are enabled
-- Handling units without Install sections
+**Privileged Test Suites (3 total):**
+The privileged test suites validate critical functionality:
+
+1. **offline enable/disable** - Unit enable/disable without running daemons
+2. **Exec lifecycle** - ExecStartPre/Post/Stop/Reload execution paths
+3. **privileged operations** - Converting systemd units, creating symlinks in system directories
 
 These tests require root privileges because they:
 - Create files in system directories (`/lib/initd/system/`, `/etc/initd/system/`)
-- Create symlinks for unit dependencies
+- Create symlinks for unit dependencies (`*.wants`, `*.requires`)
 - Validate real-world privilege separation scenarios
 
-When run without root, the privileged test properly skips with exit code 77 (meson skip).
+When run without root, privileged tests properly skip with exit code 77 (meson skip).
 
 **Static & Dynamic Analysis:**
 - **cppcheck** - Static code analysis

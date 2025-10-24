@@ -82,7 +82,7 @@ FUZZ_STATUS=${PIPESTATUS[0]}
 set -e
 if [ "$FUZZ_STATUS" -eq 0 ]; then
     echo "✓ fuzzing suite completed (4 fuzzers, 5,000 runs each)" | tee -a "$SUMMARY_FILE"
-elif grep -qi "unknown target" "$OUTPUT_DIR/fuzz.log" || grep -qi "Unknown target" "$OUTPUT_DIR/fuzz.log"; then
+elif grep -qi "unknown target\|target not found" "$OUTPUT_DIR/fuzz.log"; then
     echo "∙ fuzzing suite skipped (clang/libFuzzer unavailable)" | tee -a "$SUMMARY_FILE"
     SKIPPED_TESTS+=("fuzz")
 else

@@ -1212,23 +1212,31 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**15 test suites with 102 individual tests - all passing**
+**23 test suites - all passing**
 
-1. **calendar parser** (7 tests) - Calendar expression parsing
-2. **unit file parser** (7 tests) - Unit file parsing & validation
-3. **control protocol** (9 tests) - IPC protocol serialization
-4. **socket activator** (10 tests) - Socket creation & activation
-5. **IPC protocol** (15 tests) - Master/worker IPC communication with malformed input validation
-6. **unit scanner** (10 tests) - Directory scanning & priority
-7. **dependency resolution** (10 tests) - Unit dependency handling
-8. **state machine** (11 tests) - Unit state transitions
-9. **logging system** (10 tests) - Log buffering & syslog
-10. **integration** (10 tests) - End-to-end workflows
-11. **timer IPC protocol** (5 tests) - Timer daemon IPC communication
-12. **socket IPC protocol** (5 tests) - Socket daemon IPC communication
-13. **service features** (4 tests) - PrivateTmp, LimitNOFILE, KillMode parsing
-14. **service registry** (5 tests) - DoS prevention and rate limiting (includes 62s timing test)
-15. **privileged operations** (6 tests) - Root-only operations (requires sudo)
+1. **calendar parser** - Calendar expression parsing
+2. **unit file parser** - Unit file parsing & validation
+3. **control protocol** - IPC protocol serialization
+4. **socket activator** - Socket creation & activation
+5. **IPC protocol** - Master/worker IPC communication with malformed input validation
+6. **unit scanner** - Directory scanning & priority
+7. **dependency resolution** - Unit dependency handling
+8. **state machine** - Unit state transitions
+9. **logging system** - Log buffering & syslog
+10. **integration** - End-to-end workflows
+11. **timer IPC protocol** - Timer daemon IPC communication
+12. **socket IPC protocol** - Socket daemon IPC communication
+13. **service features** - PrivateTmp, LimitNOFILE, KillMode parsing
+14. **service registry** - DoS prevention and rate limiting (includes 62s timing test)
+15. **timer inactivity notify** - OnUnitInactiveSec rescheduling
+16. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
+17. **supervisor socket IPC** - CMD_SOCKET_ADOPT control path
+18. **isolate closure** - Target isolation and dependency closure
+19. **initctl routing** - Command routing to correct daemon sockets
+20. **user persistence** - Per-user reboot persistence helpers
+21. **offline enable/disable** (privileged) - Unit enable/disable without running daemons
+22. **Exec lifecycle** (privileged) - ExecStartPre/Post/Stop/Reload execution
+23. **privileged operations** (privileged) - Root-only operations (systemd conversion, symlinks)
 
 **Coverage:**
 - ✅ Unit file parsing (all types)
@@ -1251,24 +1259,22 @@ To avoid writing ourselves into a corner, the following must be considered durin
 # Build all tests
 ninja -C build
 
-# Run all non-privileged tests (14 test suites)
+# Run all non-privileged tests (20 test suites)
 ninja -C build test
 
-# Run privileged tests (requires root - 1 test suite with 6 sub-tests)
+# Run privileged tests (requires root - 3 test suites)
 sudo ninja -C build test-privileged
 
 # Run all tests with verbose output (using meson for individual control)
 meson test -C build -v
 ```
 
-**Privileged Test Suite:**
-The privileged operations test suite validates critical functionality that requires root:
-- Converting systemd unit files to initd format (file creation in `/lib/initd/system/`)
-- Enabling units with WantedBy (symlink creation in `/etc/initd/system/*.wants/`)
-- Enabling units with RequiredBy (symlink creation in `/etc/initd/system/*.requires/`)
-- Disabling units (symlink removal)
-- Checking if units are enabled
-- Handling units without Install sections
+**Privileged Test Suites (3 total):**
+These tests validate critical functionality that requires root:
+
+1. **offline enable/disable** - Unit enable/disable without running daemons
+2. **Exec lifecycle** - ExecStartPre/Post/Stop/Reload execution paths
+3. **privileged operations** - Converting systemd units, creating symlinks in system directories
 
 These tests properly skip with exit code 77 when run without root privileges.
 

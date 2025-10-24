@@ -7,14 +7,14 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (19 test suites; 2 marked privileged)
+# Build and run all tests (23 test suites; 3 marked privileged)
 ninja -C build
 ninja -C build test
 
-# Run only non-privileged tests (17 test suites)
+# Run only non-privileged tests (20 test suites)
 ninja -C build test --suite initd
 
-# Run privileged tests (covers Exec* lifecycle and privileged ops)
+# Run privileged tests (covers offline enable, Exec* lifecycle, and privileged ops)
 sudo ninja -C build test-privileged
 
 # Run specific test (using meson for individual tests)
@@ -35,8 +35,12 @@ meson test -C build "socket worker"
 meson test -C build "supervisor socket IPC"
 meson test -C build "service features"
 meson test -C build "service registry"
+meson test -C build "isolate closure"
+meson test -C build "initctl routing"
+meson test -C build "user persistence"
+meson test -C build "offline enable/disable"  # Privileged suite
 meson test -C build "Exec lifecycle"          # Privileged suite
-meson test -C build "privileged operations"  # Requires root
+meson test -C build "privileged operations"   # Privileged suite
 
 # Verbose output
 meson test -C build -v
@@ -287,27 +291,46 @@ Uses UNIT_TEST hooks in the socket worker to verify:
 - IdleTimeout kills idle services exactly once
 - RuntimeMaxSec enforcement triggers as expected
 
-### test-supervisor-socket
+### test-supervisor-socket (supervisor socket IPC)
 Exercises the supervisor/worker control path:
 - Sends `CMD_SOCKET_ADOPT` over the control socket
 - Confirms the supervisor marks services active or inactive accordingly
 
-### test-initctl-routing
+### test-isolate (isolate closure)
+Tests the isolate command and dependency closure:
+- Validates target isolation stops services not wanted by the target
+- Verifies dependency closure calculation for target isolation
+- Confirms services required by the target remain running
+
+### test-initctl-routing (initctl routing)
 Validates `initctl` command routing logic:
 - Verifies service, timer, and socket commands connect to the correct daemon sockets
 - Confirms `--user` scope targets the per-user runtime directory and sockets
+- Tests routing based on unit type (.service, .timer, .socket)
 
-### test-user-persistence
+### test-user-persistence (user persistence)
 Checks per-user reboot-persistence helpers:
 - Exercises `initctl user enable/disable/status` logic in a sandboxed environment
 - Verifies config files under `~/.config/initd/` and marker files in `/etc/initd/users-enabled/`
+- Validates user daemon configuration persistence across reboots
+
+### test-offline-enable (offline enable/disable) - PRIVILEGED
+Tests offline unit enable/disable without running daemons:
+- Validates enabling units when supervisor is not running
+- Tests symlink creation in .wants and .requires directories
+- Confirms disable removes symlinks correctly
+- Verifies WantedBy and RequiredBy handling without IPC
+
+**Note:** This test requires root privileges to create symlinks in system directories.
+
+Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 20 test suites, 106 individual tests - all passing ✅**
+**Total: 23 test suites - all passing ✅**
 
-**Regular tests:** 18 suites, 98 tests (no root required)
-**Privileged tests:** 2 suites, 8 tests (Exec lifecycle runs unprivileged, privileged ops requires root)
+**Regular tests:** 20 suites (no root required)
+**Privileged tests:** 3 suites (offline enable/disable, Exec lifecycle, privileged operations)
 
 ## CI Integration
 
