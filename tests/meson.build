@@ -142,6 +142,32 @@ test_isolate = executable(
   c_args: ['-DUNIT_TEST']
 )
 
+cc = meson.get_compiler('c')
+
+initctl_route_lib = static_library(
+  'initctl-route-lib',
+  '../src/initctl/initctl.c',
+  dependencies: [common_dep, privileged_ops_dep],
+  c_args: [
+    '-Dmain=initd_test_initctl_main',
+    '-DUSER_MARKER_DIR="/tmp/initd-user-persist-markers"',
+    '-DINITD_RUNTIME_DEFAULT="/tmp/initd-routing-system"',
+  ],
+)
+
+test_offline_enable = executable(
+  'test-offline-enable',
+  'test-offline-enable.c',
+  dependencies: [common_dep, privileged_ops_dep],
+  link_with: initctl_route_lib,
+)
+
+# Privileged tests MUST run first (tests 1-3) or be skipped together
+test('offline enable/disable', test_offline_enable, suite: 'privileged', priority: 1000)
+test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged', priority: 1000)
+test('privileged operations', test_privileged_ops, suite: 'privileged', priority: 1000)
+
+# Unprivileged tests start here
 test('calendar parser', test_calendar)
 test('unit file parser', test_parser)
 test('control protocol', test_control)
@@ -160,19 +186,6 @@ test('socket worker', test_socket_worker)
 test('isolate closure', test_isolate)
 test('supervisor socket IPC', test_supervisor_socket)
 test('timer inactivity notify', test_timer_notify)
-
-cc = meson.get_compiler('c')
-
-initctl_route_lib = static_library(
-  'initctl-route-lib',
-  '../src/initctl/initctl.c',
-  dependencies: [common_dep, privileged_ops_dep],
-  c_args: [
-    '-Dmain=initd_test_initctl_main',
-    '-DUSER_MARKER_DIR="/tmp/initd-user-persist-markers"',
-    '-DINITD_RUNTIME_DEFAULT="/tmp/initd-routing-system"',
-  ],
-)
 
 initctl_reboot_lib = static_library(
   'initctl-reboot-lib',
@@ -211,17 +224,7 @@ test_user_persistence = executable(
 
 test('user persistence', test_user_persistence)
 
-test_offline_enable = executable(
-  'test-offline-enable',
-  'test-offline-enable.c',
-  dependencies: [common_dep, privileged_ops_dep],
-  link_with: initctl_route_lib,
-)
-
-# Privileged tests - run separately with: meson test --suite privileged
-test('offline enable/disable', test_offline_enable, suite: 'privileged', priority: 1000)
-test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged', priority: 1000)
-test('privileged operations', test_privileged_ops, suite: 'privileged', priority: 1000)
+# Privileged tests are defined at the top of the file to ensure they run as tests 1-3
 
 # Create a ninja target for privileged tests
 bash = find_program('bash')
