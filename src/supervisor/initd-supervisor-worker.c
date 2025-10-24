@@ -326,7 +326,7 @@ static int stop_service(struct unit_file *unit) {
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
     strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
-    fprintf(stderr, "worker: stopping %s (pid %d)\n", unit->name, unit->pid);
+    /* fprintf(stderr, "worker: stopping %s (pid %d)\n", unit->name, unit->pid); */
 
     /* Send request to master */
     if (send_request(master_socket, &req) < 0) {
@@ -358,7 +358,7 @@ static int stop_service(struct unit_file *unit) {
         }
 
         /* Timeout - send SIGKILL */
-        fprintf(stderr, "worker: %s stop timeout, sending SIGKILL\n", unit->name);
+        /* fprintf(stderr, "worker: %s stop timeout, sending SIGKILL\n", unit->name); */
         kill(unit->pid, SIGKILL);
         sleep(1); /* Give it a moment */
         unit->pid = 0;
@@ -789,8 +789,8 @@ static void handle_control_command(int client_fd, bool read_only) {
         return;
     }
 
-    fprintf(stderr, "worker: received command %s for unit %s\n",
-            command_to_string(req.header.command), req.unit_name);
+    /* fprintf(stderr, "worker: received command %s for unit %s\n",
+            command_to_string(req.header.command), req.unit_name); */
 
     /* Set default response */
     resp.header.length = sizeof(resp);
@@ -1187,7 +1187,7 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
     }
 
     if (depth > MAX_RECURSION_DEPTH) {
-        fprintf(stderr, "worker: maximum recursion depth exceeded stopping %s\n", unit->name);
+        /* fprintf(stderr, "worker: maximum recursion depth exceeded stopping %s\n", unit->name); */
         log_msg(LOG_ERR, unit->name, "maximum recursion depth exceeded (possible circular dependency)");
         return -1;
     }
@@ -1202,7 +1202,7 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
     }
 
     if (unit->stop_visit_state == DEP_VISIT_IN_PROGRESS) {
-        fprintf(stderr, "worker: circular dependency detected stopping %s\n", unit->name);
+        /* fprintf(stderr, "worker: circular dependency detected stopping %s\n", unit->name); */
         log_msg(LOG_ERR, unit->name, "circular dependency detected during shutdown");
         return 0;
     }
@@ -1216,7 +1216,7 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
 
     /* Mark as deactivating to detect cycles */
     unit->state = STATE_DEACTIVATING;
-    fprintf(stderr, "worker: stopping %s\n", unit->name);
+    /* fprintf(stderr, "worker: stopping %s\n", unit->name); */
 
     for (int i = 0; i < unit_count; i++) {
         struct unit_file *other = units[i];
@@ -1297,7 +1297,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     }
 
     if (depth > MAX_RECURSION_DEPTH) {
-        fprintf(stderr, "worker: maximum recursion depth exceeded starting %s\n", unit->name);
+        /* fprintf(stderr, "worker: maximum recursion depth exceeded starting %s\n", unit->name); */
         log_msg(LOG_ERR, unit->name, "maximum recursion depth exceeded (possible circular dependency)");
         return -1;
     }
@@ -1513,7 +1513,7 @@ static int main_loop(void) {
 #ifndef UNIT_TEST
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "supervisor-worker: usage: %s <ipc_fd>\n", argv[0]);
+        /* fprintf(stderr, "supervisor-worker: usage: %s <ipc_fd>\n", argv[0]); */
         return 1;
     }
 

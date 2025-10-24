@@ -27,6 +27,8 @@
 #include <grp.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <time.h>
+#include <syslog.h>
 #ifdef __linux__
 #include <sys/reboot.h>
 #include <sys/mount.h>
@@ -1262,7 +1264,11 @@ static void read_service_output(int fd, const char *unit_name) {
                 color = COLOR_YELLOW;
                 log_msg(LOG_WARNING, unit_name, "[%s] %s %s", short_name, timestamp, line);
             } else {
-                log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+                log_msg_silent(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+                /* In debug mode, also show normal output on console */
+                if (debug_mode) {
+                    fprintf(stderr, "[%s] %s\n", short_name, line);
+                }
             }
 
             /* Also write to console if it's an error/warning */
@@ -1285,7 +1291,11 @@ static void read_service_output(int fd, const char *unit_name) {
             color = COLOR_YELLOW;
             log_msg(LOG_WARNING, unit_name, "[%s] %s %s", short_name, timestamp, line);
         } else {
-            log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+            log_msg_silent(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+            /* In debug mode, also show normal output on console */
+            if (debug_mode) {
+                fprintf(stderr, "[%s] %s\n", short_name, line);
+            }
         }
 
         if (to_console) {

@@ -228,6 +228,29 @@ void log_msg(int priority, const char *unit, const char *fmt, ...) {
     }
 }
 
+/* Log a message silently (no stderr output during early boot) */
+void log_msg_silent(int priority, const char *unit, const char *fmt, ...) {
+    char message[MAX_MESSAGE_LEN];
+    va_list ap;
+
+    /* Format message */
+    va_start(ap, fmt);
+    vsnprintf(message, sizeof(message), fmt, ap);
+    va_end(ap);
+
+    if (log_state.syslog_ready) {
+        /* Direct to syslog */
+        if (unit && unit[0]) {
+            syslog(priority, "[%s] %s", unit, message);
+        } else {
+            syslog(priority, "%s", message);
+        }
+    } else {
+        /* Buffer for later - no stderr printing */
+        buffer_log(priority, unit, message);
+    }
+}
+
 /* Get buffer statistics */
 void log_get_stats(size_t *buffered, size_t *dropped, bool *syslog_ready) {
     if (buffered) *buffered = log_state.count;

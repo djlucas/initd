@@ -33,6 +33,9 @@ void log_check_syslog(void);
 /* Log a message (with printf formatting) */
 void log_msg(int priority, const char *unit, const char *fmt, ...);
 
+/* Log a message silently (no stderr during early boot, only buffer/syslog) */
+void log_msg_silent(int priority, const char *unit, const char *fmt, ...);
+
 /* Notify that syslog service has started */
 void log_syslog_ready(void);
 
