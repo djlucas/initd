@@ -184,14 +184,17 @@ void log_error(const char *unit, const char *fmt, ...) {
 }
 
 /* Service status logging (clean console output) */
-void log_service_starting(const char *unit_name) {
-    /* Console: [  INFO  ] Starting foo.service */
+void log_service_starting(const char *unit_name, const char *description) {
+    /* Use description if available, otherwise unit name */
+    const char *display = (description && description[0]) ? description : unit_name;
+
+    /* Console: [  INFO  ] Starting Create files and directories... */
     if (LOGLEVEL_INFO <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
             fprintf(stderr, "%s[%s  INFO  %s]%s Starting %s...\n",
-                    COLOR_BLUE, COLOR_CYAN, COLOR_BLUE, COLOR_RESET, unit_name);
+                    COLOR_BLUE, COLOR_CYAN, COLOR_BLUE, COLOR_RESET, display);
         } else {
-            fprintf(stderr, "[  INFO  ] Starting %s...\n", unit_name);
+            fprintf(stderr, "[  INFO  ] Starting %s...\n", display);
         }
     }
 
@@ -199,19 +202,25 @@ void log_service_starting(const char *unit_name) {
     if (enhanced_log_state.log_file && LOGLEVEL_INFO <= enhanced_log_state.file_level) {
         char timestamp[32];
         format_timestamp(timestamp, sizeof(timestamp));
-        fprintf(enhanced_log_state.log_file, "[%s] [INFO] Starting %s\n",
-                timestamp, unit_name);
+        fprintf(enhanced_log_state.log_file, "[%s] [INFO] [%s] Starting %s\n",
+                timestamp, unit_name, display);
     }
+
+    /* Also send to syslog buffer */
+    log_msg(LOG_INFO, unit_name, "Starting %s", display);
 }
 
-void log_service_started(const char *unit_name) {
-    /* Console: [   OK   ] Started foo.service */
+void log_service_started(const char *unit_name, const char *description) {
+    /* Use description if available, otherwise unit name */
+    const char *display = (description && description[0]) ? description : unit_name;
+
+    /* Console: [   OK   ] Started Create files and directories */
     if (LOGLEVEL_INFO <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
             fprintf(stderr, "%s[%s   OK   %s]%s Started %s\n",
-                    COLOR_BLUE, COLOR_GREEN, COLOR_BLUE, COLOR_RESET, unit_name);
+                    COLOR_BLUE, COLOR_GREEN, COLOR_BLUE, COLOR_RESET, display);
         } else {
-            fprintf(stderr, "[   OK   ] Started %s\n", unit_name);
+            fprintf(stderr, "[   OK   ] Started %s\n", display);
         }
     }
 
@@ -219,27 +228,33 @@ void log_service_started(const char *unit_name) {
     if (enhanced_log_state.log_file && LOGLEVEL_INFO <= enhanced_log_state.file_level) {
         char timestamp[32];
         format_timestamp(timestamp, sizeof(timestamp));
-        fprintf(enhanced_log_state.log_file, "[%s] [INFO] Started %s\n",
-                timestamp, unit_name);
+        fprintf(enhanced_log_state.log_file, "[%s] [INFO] [%s] Started %s\n",
+                timestamp, unit_name, display);
     }
+
+    /* Also send to syslog buffer */
+    log_msg(LOG_INFO, unit_name, "Started %s", display);
 }
 
-void log_service_failed(const char *unit_name, const char *reason) {
-    /* Console: [ FAILED ] Failed to start foo.service - reason */
+void log_service_failed(const char *unit_name, const char *description, const char *reason) {
+    /* Use description if available, otherwise unit name */
+    const char *display = (description && description[0]) ? description : unit_name;
+
+    /* Console: [ FAILED ] Failed to start Create files and directories - reason */
     if (LOGLEVEL_ERROR <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
             if (reason && reason[0]) {
                 fprintf(stderr, "%s[%s FAILED %s]%s Failed to start %s - %s\n",
-                        COLOR_BLUE, COLOR_RED, COLOR_BLUE, COLOR_RESET, unit_name, reason);
+                        COLOR_BLUE, COLOR_RED, COLOR_BLUE, COLOR_RESET, display, reason);
             } else {
                 fprintf(stderr, "%s[%s FAILED %s]%s Failed to start %s\n",
-                        COLOR_BLUE, COLOR_RED, COLOR_BLUE, COLOR_RESET, unit_name);
+                        COLOR_BLUE, COLOR_RED, COLOR_BLUE, COLOR_RESET, display);
             }
         } else {
             if (reason && reason[0]) {
-                fprintf(stderr, "[ FAILED ] Failed to start %s - %s\n", unit_name, reason);
+                fprintf(stderr, "[ FAILED ] Failed to start %s - %s\n", display, reason);
             } else {
-                fprintf(stderr, "[ FAILED ] Failed to start %s\n", unit_name);
+                fprintf(stderr, "[ FAILED ] Failed to start %s\n", display);
             }
         }
     }
@@ -249,23 +264,33 @@ void log_service_failed(const char *unit_name, const char *reason) {
         char timestamp[32];
         format_timestamp(timestamp, sizeof(timestamp));
         if (reason && reason[0]) {
-            fprintf(enhanced_log_state.log_file, "[%s] [ERROR] Failed to start %s - %s\n",
-                    timestamp, unit_name, reason);
+            fprintf(enhanced_log_state.log_file, "[%s] [ERROR] [%s] Failed to start %s - %s\n",
+                    timestamp, unit_name, display, reason);
         } else {
-            fprintf(enhanced_log_state.log_file, "[%s] [ERROR] Failed to start %s\n",
-                    timestamp, unit_name);
+            fprintf(enhanced_log_state.log_file, "[%s] [ERROR] [%s] Failed to start %s\n",
+                    timestamp, unit_name, display);
         }
+    }
+
+    /* Also send to syslog buffer */
+    if (reason && reason[0]) {
+        log_msg(LOG_ERR, unit_name, "Failed to start %s - %s", display, reason);
+    } else {
+        log_msg(LOG_ERR, unit_name, "Failed to start %s", display);
     }
 }
 
-void log_service_stopped(const char *unit_name) {
-    /* Console: [   OK   ] Stopped foo.service */
+void log_service_stopped(const char *unit_name, const char *description) {
+    /* Use description if available, otherwise unit name */
+    const char *display = (description && description[0]) ? description : unit_name;
+
+    /* Console: [   OK   ] Stopped Create files and directories */
     if (LOGLEVEL_INFO <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
             fprintf(stderr, "%s[%s   OK   %s]%s Stopped %s\n",
-                    COLOR_BLUE, COLOR_GREEN, COLOR_BLUE, COLOR_RESET, unit_name);
+                    COLOR_BLUE, COLOR_GREEN, COLOR_BLUE, COLOR_RESET, display);
         } else {
-            fprintf(stderr, "[   OK   ] Stopped %s\n", unit_name);
+            fprintf(stderr, "[   OK   ] Stopped %s\n", display);
         }
     }
 
@@ -273,19 +298,25 @@ void log_service_stopped(const char *unit_name) {
     if (enhanced_log_state.log_file && LOGLEVEL_INFO <= enhanced_log_state.file_level) {
         char timestamp[32];
         format_timestamp(timestamp, sizeof(timestamp));
-        fprintf(enhanced_log_state.log_file, "[%s] [INFO] Stopped %s\n",
-                timestamp, unit_name);
+        fprintf(enhanced_log_state.log_file, "[%s] [INFO] [%s] Stopped %s\n",
+                timestamp, unit_name, display);
     }
+
+    /* Also send to syslog buffer */
+    log_msg(LOG_INFO, unit_name, "Stopped %s", display);
 }
 
-void log_target_reached(const char *target_name) {
-    /* Console: [   OK   ] Reached sysinit.target */
+void log_target_reached(const char *target_name, const char *description) {
+    /* Use description if available, otherwise target name */
+    const char *display = (description && description[0]) ? description : target_name;
+
+    /* Console: [   OK   ] Reached System Initialization */
     if (LOGLEVEL_INFO <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
             fprintf(stderr, "%s[%s   OK   %s]%s Reached %s\n",
-                    COLOR_BLUE, COLOR_GREEN, COLOR_BLUE, COLOR_RESET, target_name);
+                    COLOR_BLUE, COLOR_GREEN, COLOR_BLUE, COLOR_RESET, display);
         } else {
-            fprintf(stderr, "[   OK   ] Reached %s\n", target_name);
+            fprintf(stderr, "[   OK   ] Reached %s\n", display);
         }
     }
 
@@ -293,7 +324,10 @@ void log_target_reached(const char *target_name) {
     if (enhanced_log_state.log_file && LOGLEVEL_INFO <= enhanced_log_state.file_level) {
         char timestamp[32];
         format_timestamp(timestamp, sizeof(timestamp));
-        fprintf(enhanced_log_state.log_file, "[%s] [INFO] Reached %s\n",
-                timestamp, target_name);
+        fprintf(enhanced_log_state.log_file, "[%s] [INFO] [%s] Reached %s\n",
+                timestamp, target_name, display);
     }
+
+    /* Also send to syslog buffer */
+    log_msg(LOG_INFO, target_name, "Reached %s", display);
 }

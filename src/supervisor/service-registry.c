@@ -25,13 +25,16 @@ void service_registry_init(void) {
 }
 
 /* Add a service to the registry */
-int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode) {
+int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode,
+                    int stdout_fd, int stderr_fd) {
     for (int i = 0; i < MAX_SERVICES; i++) {
         if (!service_registry[i].in_use) {
             service_registry[i].pid = pid;
             service_registry[i].pgid = pid;  /* Child calls setsid(), so pgid == pid */
             service_registry[i].kill_mode = kill_mode;
             service_registry[i].in_use = 1;
+            service_registry[i].stdout_fd = stdout_fd;
+            service_registry[i].stderr_fd = stderr_fd;
             strncpy(service_registry[i].unit_name, unit_name, sizeof(service_registry[i].unit_name) - 1);
             service_registry[i].unit_name[sizeof(service_registry[i].unit_name) - 1] = '\0';
             if (unit_path) {
@@ -69,6 +72,17 @@ void unregister_service(pid_t pid) {
             char unit_name_copy[sizeof(service_registry[i].unit_name)];
             strncpy(unit_name_copy, service_registry[i].unit_name, sizeof(unit_name_copy));
             unit_name_copy[sizeof(unit_name_copy) - 1] = '\0';
+
+            /* Close output pipes if open */
+            if (service_registry[i].stdout_fd >= 0) {
+                close(service_registry[i].stdout_fd);
+                service_registry[i].stdout_fd = -1;
+            }
+            if (service_registry[i].stderr_fd >= 0) {
+                close(service_registry[i].stderr_fd);
+                service_registry[i].stderr_fd = -1;
+            }
+
             service_registry[i].unit_path[0] = '\0';
             service_registry[i].in_use = 0;
             release_restart_tracker(unit_name_copy);
@@ -170,6 +184,14 @@ static void release_restart_tracker(const char *unit_name) {
 /* DoS Prevention: Check if registry has capacity for new service */
 int has_registry_capacity(void) {
     return service_registry_count() < MAX_SERVICES;
+}
+
+/* Get all service records for iteration */
+struct service_record *get_all_services(int *count) {
+    if (count) {
+        *count = MAX_SERVICES;
+    }
+    return service_registry;
 }
 
 /* DoS Prevention: Check if a service restart should be allowed

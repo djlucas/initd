@@ -41,6 +41,8 @@ struct service_record {
     char unit_path[1024];
     int kill_mode;      /* KillMode from unit file */
     int in_use;         /* 1 if slot is active */
+    int stdout_fd;      /* stdout pipe for output capture (-1 if none) */
+    int stderr_fd;      /* stderr pipe for output capture (-1 if none) */
     struct restart_tracker restart_info;  /* DoS prevention: restart rate limiting */
 #ifdef __linux__
     char cgroup_path[256];  /* Linux-only: cgroup v2 path (future use) */
@@ -51,8 +53,11 @@ struct service_record {
 void service_registry_init(void);
 
 /* Add a service to the registry
- * Returns 0 on success, -1 if registry is full (DoS prevention) */
-int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode);
+ * Returns 0 on success, -1 if registry is full (DoS prevention)
+ * stdout_fd and stderr_fd are pipe file descriptors for output capture (-1 if not used)
+ */
+int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode,
+                    int stdout_fd, int stderr_fd);
 
 /* Lookup a service in the registry */
 struct service_record *lookup_service(pid_t pid);
@@ -85,5 +90,10 @@ void record_restart_attempt(const char *unit_name);
  * Returns 1 if space available, 0 if at MAX_SERVICES limit
  */
 int has_registry_capacity(void);
+
+/* Get all service records (for pipe monitoring in main loop)
+ * Returns pointer to internal registry array
+ */
+struct service_record *get_all_services(int *count);
 
 #endif /* SERVICE_REGISTRY_H */

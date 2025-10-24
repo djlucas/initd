@@ -25,7 +25,7 @@ void test_register_service(void) {
     service_registry_init();
 
     /* Register a service */
-    int result = register_service(1234, "test.service", NULL, KILL_CONTROL_GROUP);
+    int result = register_service(1234, "test.service", NULL, KILL_CONTROL_GROUP, -1, -1);
     assert(result == 0);
 
     /* Verify count */
@@ -40,7 +40,7 @@ void test_lookup_service(void) {
     service_registry_init();
 
     /* Register a service */
-    register_service(5678, "lookup-test.service", NULL, KILL_PROCESS);
+    register_service(5678, "lookup-test.service", NULL, KILL_PROCESS, -1, -1);
 
     /* Lookup the service */
     struct service_record *svc = lookup_service(5678);
@@ -59,7 +59,7 @@ void test_lookup_nonexistent(void) {
     service_registry_init();
 
     /* Register a service */
-    register_service(1111, "exists.service", NULL, KILL_PROCESS);
+    register_service(1111, "exists.service", NULL, KILL_PROCESS, -1, -1);
 
     /* Lookup a different PID */
     struct service_record *svc = lookup_service(9999);
@@ -74,8 +74,8 @@ void test_unregister_service(void) {
     service_registry_init();
 
     /* Register two services */
-    register_service(1000, "service1.service", NULL, KILL_PROCESS);
-    register_service(2000, "service2.service", NULL, KILL_CONTROL_GROUP);
+    register_service(1000, "service1.service", NULL, KILL_PROCESS, -1, -1);
+    register_service(2000, "service2.service", NULL, KILL_CONTROL_GROUP, -1, -1);
     assert(service_registry_count() == 2);
 
     /* Unregister the first one */
@@ -116,7 +116,7 @@ void test_multiple_services(void) {
     for (int i = 0; i < 10; i++) {
         char name[64];
         snprintf(name, sizeof(name), "service%d.service", i);
-        int result = register_service(1000 + i, name, NULL, KILL_PROCESS);
+        int result = register_service(1000 + i, name, NULL, KILL_PROCESS, -1, -1);
         assert(result == 0);
     }
 
@@ -155,14 +155,14 @@ void test_registry_full(void) {
     for (i = 0; i < MAX_SERVICES; i++) {
         char name[64];
         snprintf(name, sizeof(name), "service%d.service", i);
-        int result = register_service(10000 + i, name, NULL, KILL_PROCESS);
+        int result = register_service(10000 + i, name, NULL, KILL_PROCESS, -1, -1);
         assert(result == 0);
     }
 
     assert(service_registry_count() == MAX_SERVICES);
 
     /* Try to add one more - should fail */
-    int result = register_service(99999, "overflow.service", NULL, KILL_PROCESS);
+    int result = register_service(99999, "overflow.service", NULL, KILL_PROCESS, -1, -1);
     assert(result == -1);
 
     /* Count should still be MAX_SERVICES */
@@ -173,7 +173,7 @@ void test_registry_full(void) {
     assert(service_registry_count() == MAX_SERVICES - 1);
 
     /* Now we should be able to add one */
-    result = register_service(99999, "now-fits.service", NULL, KILL_PROCESS);
+    result = register_service(99999, "now-fits.service", NULL, KILL_PROCESS, -1, -1);
     assert(result == 0);
     assert(service_registry_count() == MAX_SERVICES);
 
@@ -186,11 +186,11 @@ void test_reregister_same_pid(void) {
     service_registry_init();
 
     /* Register a service */
-    register_service(3000, "original.service", NULL, KILL_PROCESS);
+    register_service(3000, "original.service", NULL, KILL_PROCESS, -1, -1);
 
     /* Try to register with the same PID - will create a second entry
      * (this is intentional - PIDs can be reused by OS) */
-    register_service(3000, "duplicate.service", NULL, KILL_CONTROL_GROUP);
+    register_service(3000, "duplicate.service", NULL, KILL_CONTROL_GROUP, -1, -1);
 
     /* Should have 2 entries */
     assert(service_registry_count() == 2);
@@ -209,10 +209,10 @@ void test_kill_modes(void) {
     service_registry_init();
 
     /* Register services with different kill modes */
-    register_service(4001, "none.service", NULL, KILL_NONE);
-    register_service(4002, "process.service", NULL, KILL_PROCESS);
-    register_service(4003, "group.service", NULL, KILL_CONTROL_GROUP);
-    register_service(4004, "mixed.service", NULL, KILL_MIXED);
+    register_service(4001, "none.service", NULL, KILL_NONE, -1, -1);
+    register_service(4002, "process.service", NULL, KILL_PROCESS, -1, -1);
+    register_service(4003, "group.service", NULL, KILL_CONTROL_GROUP, -1, -1);
+    register_service(4004, "mixed.service", NULL, KILL_MIXED, -1, -1);
 
     /* Verify kill modes are preserved */
     assert(lookup_service(4001)->kill_mode == KILL_NONE);
@@ -234,7 +234,7 @@ void test_long_unit_name(void) {
     long_name[sizeof(long_name) - 1] = '\0';
 
     /* Register with long name */
-    register_service(5000, long_name, NULL, KILL_PROCESS);
+    register_service(5000, long_name, NULL, KILL_PROCESS, -1, -1);
 
     /* Lookup and verify it was truncated but still stored */
     struct service_record *svc = lookup_service(5000);
@@ -253,8 +253,8 @@ void test_lookup_by_name(void) {
     service_registry_init();
 
     /* Register some services */
-    register_service(6001, "webapp.service", NULL, KILL_PROCESS);
-    register_service(6002, "database.service", NULL, KILL_CONTROL_GROUP);
+    register_service(6001, "webapp.service", NULL, KILL_PROCESS, -1, -1);
+    register_service(6002, "database.service", NULL, KILL_CONTROL_GROUP, -1, -1);
 
     /* Lookup by name */
     struct service_record *svc = lookup_service_by_name("webapp.service");
@@ -285,7 +285,7 @@ void test_has_registry_capacity(void) {
     for (int i = 0; i < MAX_SERVICES - 1; i++) {
         char name[64];
         snprintf(name, sizeof(name), "service%d.service", i);
-        register_service(7000 + i, name, NULL, KILL_PROCESS);
+        register_service(7000 + i, name, NULL, KILL_PROCESS, -1, -1);
     }
 
     /* Should still have capacity for one more */
@@ -293,7 +293,7 @@ void test_has_registry_capacity(void) {
     assert(service_registry_count() == MAX_SERVICES - 1);
 
     /* Add the last one */
-    register_service(7999, "last.service", NULL, KILL_PROCESS);
+    register_service(7999, "last.service", NULL, KILL_PROCESS, -1, -1);
     assert(service_registry_count() == MAX_SERVICES);
 
     /* Now registry is full - no capacity */

@@ -470,25 +470,67 @@ static pid_t start_worker(int worker_fd) {
     return pid;
 }
 
-/* Start a service process with privilege dropping */
+/* Start a service process with privilege dropping
+ * Returns PID on success, -1 on error
+ * On success, *stdout_pipe_fd and *stderr_pipe_fd are set to pipe read ends
+ */
 static pid_t start_service_process(const struct service_section *service,
                                    const char *exec_path,
                                    char *const argv[],
                                    uid_t validated_uid,
-                                   gid_t validated_gid) {
+                                   gid_t validated_gid,
+                                   int *stdout_pipe_fd,
+                                   int *stderr_pipe_fd) {
     if (!service || !exec_path || !argv || !argv[0]) {
         errno = EINVAL;
+        return -1;
+    }
+
+    /* Create pipes for stdout/stderr capture */
+    int stdout_pipe[2] = {-1, -1};
+    int stderr_pipe[2] = {-1, -1};
+
+    if (pipe(stdout_pipe) < 0) {
+        log_error("supervisor", "pipe(stdout): %s", strerror(errno));
+        return -1;
+    }
+    if (pipe(stderr_pipe) < 0) {
+        log_error("supervisor", "pipe(stderr): %s", strerror(errno));
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
         return -1;
     }
 
     pid_t pid = fork();
 
     if (pid < 0) {
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
+        close(stderr_pipe[0]);
+        close(stderr_pipe[1]);
         return -1;
     }
 
     if (pid == 0) {
         /* Child: will become service */
+
+        /* Close read ends of pipes */
+        close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
+
+        /* Redirect stdout and stderr to pipes */
+        if (dup2(stdout_pipe[1], STDOUT_FILENO) < 0) {
+            log_error("supervisor", "dup2(stdout): %s", strerror(errno));
+            _exit(1);
+        }
+        if (dup2(stderr_pipe[1], STDERR_FILENO) < 0) {
+            log_error("supervisor", "dup2(stderr): %s", strerror(errno));
+            _exit(1);
+        }
+
+        /* Close write ends after dup2 */
+        close(stdout_pipe[1]);
+        close(stderr_pipe[1]);
 
         /* Create new process group so we can kill all children with killpg() */
         if (process_tracking_setup_child() < 0) {
@@ -549,7 +591,13 @@ static pid_t start_service_process(const struct service_section *service,
         _exit(1);
     }
 
-    /* Parent */
+    /* Parent: close write ends, return read ends */
+    close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
+
+    *stdout_pipe_fd = stdout_pipe[0];
+    *stderr_pipe_fd = stderr_pipe[0];
+
     return pid;
 }
 
@@ -715,8 +763,10 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
 
         /* Start service with validated credentials */
         int kill_mode = unit.config.service.kill_mode;
+        int stdout_fd = -1, stderr_fd = -1;
         pid_t pid = start_service_process(&unit.config.service, exec_path, exec_argv,
-                                          validated_uid, validated_gid);
+                                          validated_uid, validated_gid,
+                                          &stdout_fd, &stderr_fd);
         int saved_errno = errno;
 
         /* exec_argv is guaranteed non-NULL here (validated at line 580) */
@@ -731,8 +781,10 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         }
 
         /* Register service in the registry to prevent arbitrary kill() attacks */
-        if (register_service(pid, req->unit_name, unit.path, kill_mode) < 0) {
+        if (register_service(pid, req->unit_name, unit.path, kill_mode, stdout_fd, stderr_fd) < 0) {
             /* Registry full - kill the service we just started */
+            close(stdout_fd);
+            close(stderr_fd);
             process_tracking_signal_process(pid, SIGKILL);
             waitpid(pid, NULL, 0);
             resp->type = RESP_ERROR;
@@ -1158,6 +1210,56 @@ int supervisor_handle_request_for_test(struct priv_request *req, struct priv_res
 }
 #endif
 
+/* Read and log output from a service pipe
+ * Format: [unitname] timestamp message
+ */
+static void read_service_output(int fd, const char *unit_name) {
+    char buffer[4096];
+    ssize_t n = read(fd, buffer, sizeof(buffer) - 1);
+
+    if (n <= 0) {
+        return;  /* EOF or error - pipe will be closed by unregister_service() */
+    }
+
+    buffer[n] = '\0';
+
+    /* Get unitname without extension */
+    char short_name[256];
+    strncpy(short_name, unit_name, sizeof(short_name) - 1);
+    short_name[sizeof(short_name) - 1] = '\0';
+
+    /* Strip extension (.service, .socket, .timer, .target) */
+    char *dot = strrchr(short_name, '.');
+    if (dot && (strcmp(dot, ".service") == 0 || strcmp(dot, ".socket") == 0 ||
+                strcmp(dot, ".timer") == 0 || strcmp(dot, ".target") == 0)) {
+        *dot = '\0';
+    }
+
+    /* Get timestamp */
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    char timestamp[64];  /* Increased buffer size to avoid truncation warning */
+    snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02d %02d:%02d:%02d",
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+    /* Split buffer by newlines and log each line */
+    char *line = buffer;
+    char *newline;
+    while ((newline = strchr(line, '\n')) != NULL) {
+        *newline = '\0';
+        if (line[0] != '\0') {  /* Skip empty lines */
+            log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+        }
+        line = newline + 1;
+    }
+    /* Log remaining partial line if any */
+    if (line[0] != '\0') {
+        log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+    }
+}
+
 /* Reap zombie processes and notify worker */
 static void reap_zombies(void) {
     pid_t pid;
@@ -1190,7 +1292,7 @@ static void reap_zombies(void) {
     }
 }
 
-/* Main loop: handle IPC from worker */
+/* Main loop: handle IPC from worker and service output */
 #ifdef UNIT_TEST
 __attribute__((unused))
 #endif
@@ -1204,11 +1306,32 @@ static int main_loop(void) {
         /* Set up select */
         FD_ZERO(&readfds);
         FD_SET(ipc_socket, &readfds);
+        int max_fd = ipc_socket;
+
+        /* Add all service output pipes to readfds */
+        int service_count = 0;
+        struct service_record *services = get_all_services(&service_count);
+        for (int i = 0; i < service_count; i++) {
+            if (services[i].in_use) {
+                if (services[i].stdout_fd >= 0) {
+                    FD_SET(services[i].stdout_fd, &readfds);
+                    if (services[i].stdout_fd > max_fd) {
+                        max_fd = services[i].stdout_fd;
+                    }
+                }
+                if (services[i].stderr_fd >= 0) {
+                    FD_SET(services[i].stderr_fd, &readfds);
+                    if (services[i].stderr_fd > max_fd) {
+                        max_fd = services[i].stderr_fd;
+                    }
+                }
+            }
+        }
 
         tv.tv_sec = 1;
         tv.tv_usec = 0;
 
-        int ret = select(ipc_socket + 1, &readfds, NULL, NULL, &tv);
+        int ret = select(max_fd + 1, &readfds, NULL, NULL, &tv);
 
         if (ret < 0) {
             if (errno == EINTR) continue;
@@ -1235,6 +1358,20 @@ static int main_loop(void) {
 
             /* Free dynamically allocated request fields */
             free_request(&req);
+        }
+
+        /* Read service output from pipes */
+        if (ret > 0) {
+            for (int i = 0; i < service_count; i++) {
+                if (services[i].in_use) {
+                    if (services[i].stdout_fd >= 0 && FD_ISSET(services[i].stdout_fd, &readfds)) {
+                        read_service_output(services[i].stdout_fd, services[i].unit_name);
+                    }
+                    if (services[i].stderr_fd >= 0 && FD_ISSET(services[i].stderr_fd, &readfds)) {
+                        read_service_output(services[i].stderr_fd, services[i].unit_name);
+                    }
+                }
+            }
         }
 
         /* Reap zombies */

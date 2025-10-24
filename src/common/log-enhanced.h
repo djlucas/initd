@@ -49,12 +49,12 @@ void log_warn(const char *unit, const char *fmt, ...);
 void log_error(const char *unit, const char *fmt, ...);
 
 /* Service status logging (clean console output) */
-void log_service_starting(const char *unit_name);
-void log_service_started(const char *unit_name);
-void log_service_failed(const char *unit_name, const char *reason);
-void log_service_stopped(const char *unit_name);
+void log_service_starting(const char *unit_name, const char *description);
+void log_service_started(const char *unit_name, const char *description);
+void log_service_failed(const char *unit_name, const char *description, const char *reason);
+void log_service_stopped(const char *unit_name, const char *description);
 
 /* Target status logging */
-void log_target_reached(const char *target_name);
+void log_target_reached(const char *target_name, const char *description);
 
 #endif /* LOG_ENHANCED_H */

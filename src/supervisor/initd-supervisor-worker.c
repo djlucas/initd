@@ -423,7 +423,7 @@ static pid_t start_service(struct unit_file *unit) {
 
         /* Lookup user/group */
         if (lookup_user(unit->config.service.user, &req.run_uid, &req.run_gid) < 0) {
-            fprintf(stderr, "worker: failed to lookup user %s\n", unit->config.service.user);
+            log_error("worker", "Failed to lookup user %s", unit->config.service.user);
             return -1;
         }
 
@@ -592,8 +592,12 @@ static void handle_service_exit(pid_t pid, int exit_status) {
     /* Update state based on exit status */
     if (success) {
         unit->state = STATE_INACTIVE;
+        log_service_stopped(unit->name, unit->unit.description);
     } else {
         unit->state = STATE_FAILED;
+        char reason[128];
+        snprintf(reason, sizeof(reason), "exited with status %d", exit_status);
+        log_service_failed(unit->name, unit->unit.description, reason);
     }
 
     if (success && unit->type == UNIT_SERVICE) {
@@ -619,16 +623,17 @@ static void handle_service_exit(pid_t pid, int exit_status) {
         int restart_sec = unit->config.service.restart_sec;
         if (restart_sec <= 0) restart_sec = 1; /* Default 1 second */
 
-        fprintf(stderr, "worker: restarting %s in %d seconds (restart count: %d)\n",
-                unit->name, restart_sec, unit->restart_count + 1);
+        log_info("worker", "Restarting %s in %d seconds (restart count: %d)",
+                 unit->name, restart_sec, unit->restart_count + 1);
 
         sleep(restart_sec);
 
         unit->restart_count++;
+        log_service_starting(unit->name, unit->unit.description);
         if (start_service(unit) > 0) {
-            fprintf(stderr, "worker: successfully restarted %s\n", unit->name);
+            log_service_started(unit->name, unit->unit.description);
         } else {
-            fprintf(stderr, "worker: failed to restart %s\n", unit->name);
+            log_service_failed(unit->name, unit->unit.description, "restart failed");
         }
     }
 }
@@ -1304,8 +1309,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     }
 
     if (unit->start_visit_state == DEP_VISIT_IN_PROGRESS) {
-        fprintf(stderr, "worker: circular dependency detected starting %s\n", unit->name);
-        log_msg(LOG_ERR, unit->name, "circular dependency detected");
+        log_service_failed(unit->name, unit->unit.description, "circular dependency detected");
         unit->state = STATE_FAILED;
         return -1;
     }
@@ -1318,13 +1322,14 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     unit->start_visit_state = DEP_VISIT_IN_PROGRESS;
 
     unit->state = STATE_ACTIVATING;
-    fprintf(stderr, "worker: starting %s\n", unit->name);
+    log_service_starting(unit->name, unit->unit.description);
 
     for (int i = 0; i < unit->unit.requires_count; i++) {
         struct unit_file *dep = find_unit(unit->unit.requires[i]);
         if (dep && start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-            fprintf(stderr, "worker: failed to start required dependency %s\n", unit->unit.requires[i]);
-            log_msg(LOG_ERR, unit->name, "failed to start required dependency %s", unit->unit.requires[i]);
+            char reason[256];
+            snprintf(reason, sizeof(reason), "failed to start required dependency %s", unit->unit.requires[i]);
+            log_service_failed(unit->name, unit->unit.description, reason);
             unit->state = STATE_FAILED;
             unit->start_visit_state = DEP_VISIT_NONE;
             return -1;
@@ -1343,8 +1348,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         if (dep && dep->state != STATE_ACTIVE && dep->state != STATE_FAILED) {
             if (dep->state == STATE_INACTIVE) {
                 if (start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-                    fprintf(stderr, "worker: After= dependency %s failed\n", unit->unit.after[i]);
-                    log_msg(LOG_WARNING, unit->name, "After= dependency %s failed", unit->unit.after[i]);
+                    log_warn(unit->name, "After= dependency %s failed", unit->unit.after[i]);
                 }
             }
         }
@@ -1352,15 +1356,16 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
 
     if (unit->type == UNIT_SERVICE) {
         if (start_service(unit) < 0) {
-            fprintf(stderr, "worker: failed to start %s\n", unit->name);
-            log_msg(LOG_ERR, unit->name, "failed to start service");
+            log_service_failed(unit->name, unit->unit.description, "failed to start service");
             unit->state = STATE_FAILED;
             unit->start_visit_state = DEP_VISIT_NONE;
             return -1;
         }
+        /* Service started successfully - log it */
+        log_service_started(unit->name, unit->unit.description);
     } else if (unit->type == UNIT_TARGET) {
         unit->state = STATE_ACTIVE;
-        log_msg(LOG_INFO, unit->name, "target activated");
+        log_target_reached(unit->name, unit->unit.description);
     }
 
     unit->start_visit_state = DEP_VISIT_DONE;

@@ -300,7 +300,7 @@ void test_service_registry_prevents_arbitrary_kill(void) {
 
     /* Register a test service with a known PID */
     pid_t test_pid = 12345;
-    assert(register_service(test_pid, "test.service", NULL, KILL_PROCESS) == 0);
+    assert(register_service(test_pid, "test.service", NULL, KILL_PROCESS, -1, -1) == 0);
 
     /* Verify we can lookup the registered service */
     struct service_record *svc = lookup_service(test_pid);
