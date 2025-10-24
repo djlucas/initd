@@ -214,13 +214,16 @@ void log_service_started(const char *unit_name, const char *description) {
     /* Use description if available, otherwise unit name */
     const char *display = (description && description[0]) ? description : unit_name;
 
-    /* Console: [   OK   ] Started Create files and directories */
+    /* Console: Replace "Starting" line with "Started" */
     if (LOGLEVEL_INFO <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
-            fprintf(stderr, "%s[%s   OK   %s]%s Started %s\n",
+            /* Move up one line, clear it, then print "Started" */
+            fprintf(stderr, "%s\r%s%s[%s   OK   %s]%s Started %s\n",
+                    CURSOR_UP, CLEAR_LINE,
                     COLOR_BLUE, COLOR_GREEN, COLOR_BLUE, COLOR_RESET, display);
         } else {
-            fprintf(stderr, "[   OK   ] Started %s\n", display);
+            fprintf(stderr, "%s\r%s[   OK   ] Started %s\n",
+                    CURSOR_UP, CLEAR_LINE, display);
         }
     }
 
@@ -240,21 +243,25 @@ void log_service_failed(const char *unit_name, const char *description, const ch
     /* Use description if available, otherwise unit name */
     const char *display = (description && description[0]) ? description : unit_name;
 
-    /* Console: [ FAILED ] Failed to start Create files and directories - reason */
+    /* Console: Replace "Starting" line with "Failed" */
     if (LOGLEVEL_ERROR <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
             if (reason && reason[0]) {
-                fprintf(stderr, "%s[%s FAILED %s]%s Failed to start %s - %s\n",
+                fprintf(stderr, "%s\r%s%s[%s FAILED %s]%s Failed to start %s - %s\n",
+                        CURSOR_UP, CLEAR_LINE,
                         COLOR_BLUE, COLOR_RED, COLOR_BLUE, COLOR_RESET, display, reason);
             } else {
-                fprintf(stderr, "%s[%s FAILED %s]%s Failed to start %s\n",
+                fprintf(stderr, "%s\r%s%s[%s FAILED %s]%s Failed to start %s\n",
+                        CURSOR_UP, CLEAR_LINE,
                         COLOR_BLUE, COLOR_RED, COLOR_BLUE, COLOR_RESET, display);
             }
         } else {
             if (reason && reason[0]) {
-                fprintf(stderr, "[ FAILED ] Failed to start %s - %s\n", display, reason);
+                fprintf(stderr, "%s\r%s[ FAILED ] Failed to start %s - %s\n",
+                        CURSOR_UP, CLEAR_LINE, display, reason);
             } else {
-                fprintf(stderr, "[ FAILED ] Failed to start %s\n", display);
+                fprintf(stderr, "%s\r%s[ FAILED ] Failed to start %s\n",
+                        CURSOR_UP, CLEAR_LINE, display);
             }
         }
     }

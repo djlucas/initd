@@ -592,7 +592,10 @@ static void handle_service_exit(pid_t pid, int exit_status) {
     /* Update state based on exit status */
     if (success) {
         unit->state = STATE_INACTIVE;
-        log_service_stopped(unit->name, unit->unit.description);
+        /* Only show "Stopped" for long-running services, not oneshot */
+        if (unit->config.service.type != SERVICE_ONESHOT) {
+            log_service_stopped(unit->name, unit->unit.description);
+        }
     } else {
         unit->state = STATE_FAILED;
         char reason[128];

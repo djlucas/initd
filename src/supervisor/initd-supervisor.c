@@ -1250,13 +1250,47 @@ static void read_service_output(int fd, const char *unit_name) {
     while ((newline = strchr(line, '\n')) != NULL) {
         *newline = '\0';
         if (line[0] != '\0') {  /* Skip empty lines */
-            log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+            /* Check for special prefixes that should also go to console */
+            bool to_console = false;
+            const char *color = "";
+            if (strncmp(line, "ERROR:", 6) == 0 || strncmp(line, "CRITICAL:", 9) == 0) {
+                to_console = true;
+                color = COLOR_RED;
+                log_msg(LOG_ERR, unit_name, "[%s] %s %s", short_name, timestamp, line);
+            } else if (strncmp(line, "WARNING:", 8) == 0 || strncmp(line, "WARN:", 5) == 0) {
+                to_console = true;
+                color = COLOR_YELLOW;
+                log_msg(LOG_WARNING, unit_name, "[%s] %s %s", short_name, timestamp, line);
+            } else {
+                log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+            }
+
+            /* Also write to console if it's an error/warning */
+            if (to_console) {
+                fprintf(stderr, "%s[%s] %s%s\n", color, short_name, line, COLOR_RESET);
+            }
         }
         line = newline + 1;
     }
     /* Log remaining partial line if any */
     if (line[0] != '\0') {
-        log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+        bool to_console = false;
+        const char *color = "";
+        if (strncmp(line, "ERROR:", 6) == 0 || strncmp(line, "CRITICAL:", 9) == 0) {
+            to_console = true;
+            color = COLOR_RED;
+            log_msg(LOG_ERR, unit_name, "[%s] %s %s", short_name, timestamp, line);
+        } else if (strncmp(line, "WARNING:", 8) == 0 || strncmp(line, "WARN:", 5) == 0) {
+            to_console = true;
+            color = COLOR_YELLOW;
+            log_msg(LOG_WARNING, unit_name, "[%s] %s %s", short_name, timestamp, line);
+        } else {
+            log_msg(LOG_INFO, unit_name, "[%s] %s %s", short_name, timestamp, line);
+        }
+
+        if (to_console) {
+            fprintf(stderr, "%s[%s] %s%s\n", color, short_name, line, COLOR_RESET);
+        }
     }
 }
 

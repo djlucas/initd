@@ -32,6 +32,10 @@ typedef enum {
 #define COLOR_CYAN      "\033[1;36m"    /* Bright cyan for INFO */
 #define COLOR_GREY      "\033[2;37m"    /* Dim grey for DEBUG */
 
+/* ANSI cursor control */
+#define CURSOR_UP       "\033[A"        /* Move cursor up one line */
+#define CLEAR_LINE      "\033[K"        /* Clear from cursor to end of line */
+
 /* Initialize enhanced logging */
 int log_enhanced_init(const char *ident, const char *log_file_path);
 
