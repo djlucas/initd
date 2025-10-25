@@ -276,6 +276,25 @@ That said, a sample reference implementation is provided:
 sudo ninja -C build install-reference
 ```
 
+**⚠️ WARNING: install-reference OVERWRITES EXISTING CONFIGURATIONS ⚠️**
+
+The `install-reference` target will **overwrite all files** in `/lib/initd/system/` including:
+- All `.target` files
+- All `.service` files
+- Network configuration scripts in `/usr/libexec/initd/network-services/`
+- Service helper scripts in `/usr/libexec/initd/service-scripts/`
+
+**Any local modifications to these files will be lost.**
+
+If you have customized reference units, use the individual install targets instead:
+```bash
+# Install only reference units (targets + services)
+sudo ninja -C build install-reference-units
+
+# Install only network scripts
+sudo ninja -C build install-reference-network
+```
+
 **Reference Implementation Includes:**
 - All system targets (basic, multi-user, graphical, network, etc.)
 - Core system services (getty, udev, syslog, network, etc.)

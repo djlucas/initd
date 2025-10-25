@@ -544,13 +544,13 @@ static int activate_direct(const char *service_name) {
 
     /* Parent */
     free_unit_file(&unit);
-    fprintf(stderr, "timer-daemon: started %s directly (pid %d)\n", service_name, pid);
+    log_debug("timer", "started %s directly (pid %d)", service_name, pid);
     return 0;
 }
 
 /* Activate a service (try supervisor, fall back to direct) */
 static int activate_service(const char *service_name) {
-    fprintf(stderr, "timer-daemon: activating %s\n", service_name);
+    log_debug("timer", "activating %s", service_name);
 
     /* Try supervisor first */
     if (activate_via_supervisor(service_name) == 0) {
@@ -558,7 +558,7 @@ static int activate_service(const char *service_name) {
     }
 
     /* Fall back to direct activation */
-    fprintf(stderr, "timer-daemon: supervisor unavailable, activating directly\n");
+    log_debug("timer", "supervisor unavailable, activating directly");
     return activate_direct(service_name);
 }
 
@@ -592,7 +592,7 @@ static int fire_timer(struct timer_instance *timer) {
     char service_name[MAX_UNIT_NAME + 16];
     timer_service_name(timer, service_name, sizeof(service_name));
 
-    fprintf(stderr, "timer-daemon: timer %s fired\n", timer->unit->name);
+    log_debug("timer", "timer %s fired", timer->unit->name);
 
     int result = activate_service(service_name);
     if (result == 0) {
@@ -603,8 +603,7 @@ static int fire_timer(struct timer_instance *timer) {
 
     /* Calculate next run */
     timer->next_run = calculate_next_run(timer);
-    fprintf(stderr, "timer-daemon: next run for %s at %ld\n",
-            timer->unit->name, timer->next_run);
+    log_debug("timer", "next run for %s at %ld", timer->unit->name, timer->next_run);
     return result;
 }
 
@@ -678,8 +677,7 @@ static int load_timers(void) {
         if (!instance->enabled) {
             instance->next_run = 0;
         } else if (should_run_on_startup(instance)) {
-            fprintf(stderr, "timer-daemon: %s has persistent missed run, scheduling immediate activation\n",
-                    units[i]->name);
+            log_debug("timer", "%s has persistent missed run, scheduling immediate activation", units[i]->name);
             instance->next_run = time(NULL) + 5;  /* Run in 5 seconds */
         } else {
             /* Calculate initial next run */
@@ -690,8 +688,7 @@ static int load_timers(void) {
         instance->next = timers;
         timers = instance;
 
-        fprintf(stderr, "timer-daemon: loaded %s, next run at %ld\n",
-                units[i]->name, instance->next_run);
+        log_debug("timer", "loaded %s, next run at %ld", units[i]->name, instance->next_run);
     }
 
     free(units);
@@ -747,8 +744,7 @@ static void handle_control_command(int client_fd, bool read_only) {
         return;
     }
 
-    fprintf(stderr, "timer-daemon: received command %s for unit %s\n",
-            command_to_string(req.header.command), req.unit_name);
+    log_debug("timer", "received command %s for unit %s", command_to_string(req.header.command), req.unit_name);
 
     /* Set default response */
     resp.header.length = sizeof(resp);

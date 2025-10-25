@@ -182,9 +182,81 @@ foreach script : reference_network_scripts
   )
 endforeach
 
-# Build install script for reference installation
+# Create individual install targets for each reference service
 install_sh = find_program('install')
 bash = find_program('bash')
+
+# Mapping of services to their helper scripts (if any)
+service_helpers = {
+  'checkfs.service': 'checkfs',
+  'console.service': 'console',
+  'createfiles.service': 'createfiles',
+  'localnet.service': 'localnet',
+  'modules-load.service': 'modules-load',
+  'mountvirtfs.service': 'mountvirtfs',
+  'netfs.service': 'netfs',
+  'network@.service': 'network-configure',
+  'network-wait-online.service': 'network-wait-online',
+  'udev-retry.service': 'udev-retry',
+  'udev-trigger.service': 'udev-trigger',
+}
+
+# Create install target for each reference service
+builddir = meson.current_build_dir()
+reference_service_targets = []
+
+foreach service : reference_services
+  service_base = service.replace('.service', '')
+
+  # Build install script for this service
+  install_script = '''#!/bin/bash
+set -e
+
+DESTDIR="${DESTDIR:-}"
+UNIT_DIR="@0@"
+SERVICE_SCRIPT_DIR="@1@"
+
+# Install service file
+install -D -v -m 0644 "@2@" "${DESTDIR}@0@/@3@"
+'''.format(
+    libdir / 'initd' / 'system',
+    libexecdir / 'initd' / 'service-scripts',
+    builddir / service,
+    service
+  )
+
+  # Add helper script if this service has one
+  if service in service_helpers
+    helper_script = service_helpers[service]
+    install_script += '''
+# Install service helper script
+install -D -v -m 0755 "@0@" "${DESTDIR}@1@/@2@"
+'''.format(
+      builddir / ('servicescript-' + helper_script),
+      libexecdir / 'initd' / 'service-scripts',
+      helper_script
+    )
+  endif
+
+  install_script += '''
+echo "@0@ installation complete"
+'''.format(service_base)
+
+  # Create custom target
+  target_name = 'install-' + service_base + '-stamp'
+  install_target = custom_target(target_name,
+    output: target_name.replace('-stamp', '.stamp'),
+    command: [bash, '-c', install_script + '\ntouch @OUTPUT@'],
+    build_by_default: false,
+    console: true,
+  )
+
+  # Create phony alias
+  alias_target('install-' + service_base, install_target)
+  reference_service_targets += install_target
+endforeach
+
+# Build install script for reference installation
 
 install_reference_script = '''#!/bin/bash
 set -e
@@ -297,13 +369,151 @@ fi
 echo "Reference installation complete"
 '''
 
-# Create ninja target for install-reference
+# Create separate script for units only (targets + services + service scripts + sbin + libexec)
+install_units_script = '''#!/bin/bash
+set -e
+
+DESTDIR="${DESTDIR:-}"
+LIBDIR="@0@"
+SBINDIR="@1@"
+LIBEXECDIR="@2@"
+SERVICESCRIPTDIR="@3@"
+SYSCONFIGDIR="@4@"
+MANDIR="@5@"
+BINDIR="@6@"
+INITCTL="${DESTDIR}@6@/initctl"
+
+# Install target files
+'''.format(
+  libdir / 'initd' / 'system',
+  sbindir,
+  libexecdir / 'initd',
+  libexecdir / 'initd' / 'service-scripts',
+  sysconfdir / 'sysconfig',
+  get_option('mandir') / 'man8',
+  bindir,
+)
+
+foreach target : reference_targets
+  install_units_script += 'install -D -v -m 0644 "@0@" "${DESTDIR}@1@/@2@"\n'.format(
+    meson.current_source_dir() / target,
+    libdir / 'initd' / 'system',
+    target
+  )
+endforeach
+
+install_units_script += '\n# Install service files\n'
+builddir = meson.current_build_dir()
+foreach i : range(reference_services.length())
+  src_path = builddir / reference_services[i]
+  install_units_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + libdir / 'initd' / 'system' / reference_services[i] + '"\n'
+endforeach
+
+install_units_script += '\n# Install sbin scripts\n'
+foreach i : range(reference_script_helpers.length())
+  src_path = builddir / ('sbin-' + reference_script_helpers[i])
+  install_units_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + sbindir / reference_script_helpers[i] + '"\n'
+endforeach
+
+install_units_script += '\n# Install libexec scripts\n'
+src_path = builddir / 'libexec-initd-user-manager'
+install_units_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + libexecdir / 'initd' / 'initd-user-manager' + '"\n'
+
+install_units_script += '\n# Install service scripts\n'
+foreach i : range(reference_service_scripts.length())
+  src_path = builddir / ('servicescript-' + reference_service_scripts[i])
+  install_units_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + libexecdir / 'initd' / 'service-scripts' / reference_service_scripts[i] + '"\n'
+endforeach
+
+install_units_script += '\n# Install config files\n'
+foreach config : reference_configs
+  src_path = sysconfigdir / 'reference' / config
+  dest_path = sysconfdir / 'sysconfig' / config
+  install_units_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + dest_path + '"\n'
+endforeach
+
+install_units_script += '\n# Install man pages\n'
+src_path = meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifup.8'
+dest_path = get_option('mandir') / 'man8' / 'ifup.8'
+install_units_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + dest_path + '"\n'
+
+src_path = meson.project_source_root() / 'docs' / 'man' / 'man8' / 'ifdown.8'
+dest_path = get_option('mandir') / 'man8' / 'ifdown.8'
+install_units_script += 'install -D -v -m 0644 "' + src_path + '" "${DESTDIR}' + dest_path + '"\n'
+
+# Enable services if not using DESTDIR
+install_units_script += '''
+# Enable services if not using DESTDIR
+if [ -z "${DESTDIR}" ]; then
+  if [ ! -x "$INITCTL" ]; then
+    INITCTL="$(command -v initctl 2>/dev/null || true)"
+  fi
+  if [ -n "$INITCTL" ] && [ -x "$INITCTL" ]; then
+'''
+
+foreach service : reference_enable_services
+  install_units_script += '    "$INITCTL" enable @0@ || true\n'.format(service)
+endforeach
+
+install_units_script += '''    for tty in 1 2 3 4 5 6; do
+      "$INITCTL" enable "getty@tty${tty}" || true
+    done
+  else
+    echo "Warning: initctl not found, skipping service enablement" >&2
+  fi
+fi
+
+echo "Reference units installation complete"
+'''
+
+# Create separate script for network scripts only
+install_network_script = '''#!/bin/bash
+set -e
+
+DESTDIR="${DESTDIR:-}"
+NETWORKSERVICEDIR="@0@"
+
+# Install network scripts
+'''.format(
+  libexecdir / 'initd' / 'network-services'
+)
+
+builddir = meson.current_build_dir()
+foreach i : range(reference_network_scripts.length())
+  src_path = builddir / ('networkscript-' + reference_network_scripts[i])
+  install_network_script += 'install -D -v -m 0755 "' + src_path + '" "${DESTDIR}' + libexecdir / 'initd' / 'network-services' / reference_network_scripts[i] + '"\n'
+endforeach
+
+install_network_script += '''
+echo "Reference network scripts installation complete"
+'''
+
+# Create ninja targets
+install_units_target = custom_target('install-reference-units-stamp',
+  output: 'install-reference-units.stamp',
+  command: [bash, '-c', install_units_script + '\ntouch @OUTPUT@'],
+  build_by_default: false,
+  console: true,
+  depends: reference_service_targets,
+)
+
+install_network_target = custom_target('install-reference-network-stamp',
+  output: 'install-reference-network.stamp',
+  command: [bash, '-c', install_network_script + '\ntouch @OUTPUT@'],
+  build_by_default: false,
+  console: true,
+)
+
+# Create ninja target for install-reference (runs both)
 install_reference_target = custom_target('install-reference-stamp',
   output: 'install-reference.stamp',
   command: [bash, '-c', install_reference_script + '\ntouch @OUTPUT@'],
   build_by_default: false,
   console: true,
+  depends: [install_units_target, install_network_target],
 )
 
-# Create phony alias for convenience
+# Create phony aliases for convenience
+alias_target('install-reference-units', install_units_target)
+alias_target('install-reference-network', install_network_target)
 alias_target('install-reference', install_reference_target)
