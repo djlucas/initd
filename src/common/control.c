@@ -680,6 +680,10 @@ const char *command_to_string(enum control_command cmd) {
     case CMD_ISOLATE:       return "isolate";
     case CMD_NOTIFY_INACTIVE:return "notify-inactive";
     case CMD_SOCKET_ADOPT:  return "socket-adopt";
+    case CMD_POWEROFF:      return "poweroff";
+    case CMD_REBOOT:        return "reboot";
+    case CMD_HALT:          return "halt";
+    case CMD_DUMP_LOGS:     return "dump-logs";
     default:                return "unknown";
     }
 }

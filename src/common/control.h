@@ -51,7 +51,8 @@ enum control_command {
     CMD_SOCKET_ADOPT,
     CMD_POWEROFF,
     CMD_REBOOT,
-    CMD_HALT
+    CMD_HALT,
+    CMD_DUMP_LOGS
 };
 
 /* Response codes */

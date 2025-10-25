@@ -192,7 +192,7 @@ Tests service state transitions:
 - Restart policies (always, on-failure, no)
 - Timer/socket/target unit states
 
-### test-log (10 tests)
+### test-log (13 tests)
 Tests logging system:
 - Log initialization
 - Early boot log buffering
@@ -204,6 +204,9 @@ Tests logging system:
 - Syslog detection
 - Log message formatting
 - Multiple init/close cycles
+- Dump empty log buffer (log_dump_buffer with no messages)
+- Dump log buffer with messages (verifies format, timestamps, priorities)
+- Dump log buffer after syslog ready (tests empty buffer handling)
 
 ### test-integration (10 tests)
 Tests end-to-end workflows:
@@ -280,10 +283,10 @@ Tests service registry and DoS prevention mechanisms:
 - Minimum 1-second interval between restart attempts
 - Sliding 60-second window limiting restarts to 5 per service
 - Independent tracking for each service
+- Uses CLOCK_MONOTONIC for immunity to system clock changes
 
-**Note:** The restart window test includes a 62-second sleep to validate
-the sliding time window. The test displays a user-friendly notice during
-this delay. Test timeout is set to 90 seconds.
+**Note:** The restart window test sleeps for ~16 seconds total (4 restarts × 4s).
+Test runs in 22 seconds, down from 81 seconds after optimization.
 
 ### test-socket-worker
 Uses UNIT_TEST hooks in the socket worker to verify:

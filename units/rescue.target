@@ -1,0 +1,4 @@
+[Unit]
+Description=Rescue Mode
+Wants=sysinit.target rescue.service
+After=sysinit.target rescue.service

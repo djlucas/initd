@@ -1170,6 +1170,14 @@ static void handle_control_command(int client_fd, bool read_only) {
         break;
     }
 
+    case CMD_DUMP_LOGS: {
+        /* Dump buffered logs to console */
+        log_dump_buffer();
+        resp.code = RESP_SUCCESS;
+        snprintf(resp.message, sizeof(resp.message), "Log buffer dumped to console");
+        break;
+    }
+
     default:
         resp.code = RESP_INVALID_COMMAND;
         snprintf(resp.message, sizeof(resp.message), "Unknown command");
@@ -1588,22 +1596,51 @@ int main(int argc, char *argv[]) {
     }
     log_debug("worker", "Found %zu units", unit_count);
 
-    /* Start default.target */
-    log_info("worker", "Starting default.target");
-    struct unit_file *default_target = find_unit("default.target");
-    if (!default_target) {
-        /* Fallback to multi-user.target */
-        log_debug("worker", "default.target not found, falling back to multi-user.target");
-        default_target = find_unit("multi-user.target");
+    /* Determine target to boot */
+    const char *target_name = getenv("INITD_TARGET");
+    if (!target_name || target_name[0] == '\0') {
+        target_name = "default.target";
     }
 
-    if (default_target) {
-        log_debug("worker", "Activating target: %s", default_target->name);
-        if (start_unit_recursive(default_target) < 0) {
-            log_error("worker", "failed to start default target");
+    log_info("worker", "Starting %s", target_name);
+    struct unit_file *boot_target = find_unit(target_name);
+
+    if (!boot_target && strcmp(target_name, "default.target") == 0) {
+        /* Fallback to multi-user.target if default.target not found */
+        log_debug("worker", "default.target not found, falling back to multi-user.target");
+        boot_target = find_unit("multi-user.target");
+        target_name = "multi-user.target";
+    }
+
+    if (boot_target) {
+        log_debug("worker", "Activating target: %s", boot_target->name);
+        if (start_unit_recursive(boot_target) < 0) {
+            log_error("worker", "failed to start %s", target_name);
+
+            /* Automatic fallback for critical targets */
+            struct unit_file *fallback = NULL;
+            const char *fallback_name = NULL;
+
+            if (strcmp(target_name, "sysinit.target") == 0 ||
+                strcmp(target_name, "basic.target") == 0) {
+                fallback_name = "rescue.target";
+                fallback = find_unit(fallback_name);
+            } else if (strcmp(target_name, "graphical.target") == 0) {
+                fallback_name = "multi-user.target";
+                fallback = find_unit(fallback_name);
+            }
+
+            if (fallback) {
+                log_warn("worker", "Attempting fallback to %s", fallback_name);
+                if (start_unit_recursive(fallback) < 0) {
+                    log_error("worker", "fallback to %s also failed", fallback_name);
+                } else {
+                    log_info("worker", "Successfully started fallback %s", fallback_name);
+                }
+            }
         }
     } else {
-        log_warn("worker", "no default target found");
+        log_error("worker", "%s not found", target_name);
     }
 
     /* Main loop */

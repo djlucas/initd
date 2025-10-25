@@ -296,8 +296,9 @@ sudo ninja -C build install-reference-network
 ```
 
 **Reference Implementation Includes:**
-- All system targets (basic, multi-user, graphical, network, etc.)
+- All system targets (basic, multi-user, graphical, network, rescue, emergency, etc.)
 - Core system services (getty, udev, syslog, network, etc.)
+- Recovery targets and services (rescue.target, emergency.target)
 - Enabled symlinks for automatic boot
 
 You can use the reference implementation as-is, modify it, or ignore it

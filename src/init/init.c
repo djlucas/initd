@@ -38,6 +38,7 @@ static pid_t supervisor_pid = 0;
 static char supervisor_path[MAX_PATH] = SUPERVISOR_PATH;
 static int supervisor_timeout = DEFAULT_TIMEOUT;
 static int supervisor_restart_count = 0;
+static char target_name[MAX_PATH] = "";  /* Target to boot (e.g., "rescue.target") */
 
 /* Signal handlers */
 static void sigchld_handler(int sig) {
@@ -69,25 +70,36 @@ static void parse_args(int argc, char *argv[]) {
         char *arg = argv[i];
         char *eq = strchr(arg, '=');
 
-        if (!eq) {
-            continue; /* Skip malformed args */
-        }
+        if (eq) {
+            /* key=value format */
+            *eq = '\0'; /* Split into key and value */
+            char *key = arg;
+            char *value = eq + 1;
 
-        *eq = '\0'; /* Split into key and value */
-        char *key = arg;
-        char *value = eq + 1;
-
-        if (strcmp(key, "supervisor") == 0) {
-            strncpy(supervisor_path, value, MAX_PATH - 1);
-            supervisor_path[MAX_PATH - 1] = '\0';
-        } else if (strcmp(key, "timeout") == 0) {
-            supervisor_timeout = atoi(value);
-            if (supervisor_timeout <= 0) {
-                supervisor_timeout = DEFAULT_TIMEOUT;
+            if (strcmp(key, "supervisor") == 0) {
+                strncpy(supervisor_path, value, MAX_PATH - 1);
+                supervisor_path[MAX_PATH - 1] = '\0';
+            } else if (strcmp(key, "timeout") == 0) {
+                supervisor_timeout = atoi(value);
+                if (supervisor_timeout <= 0) {
+                    supervisor_timeout = DEFAULT_TIMEOUT;
+                }
             }
-        }
 
-        *eq = '='; /* Restore for safety */
+            *eq = '='; /* Restore for safety */
+        } else {
+            /* Simple argument - check for target names or runlevels */
+            if (strcmp(arg, "rescue") == 0 || strcmp(arg, "single") == 0 || strcmp(arg, "1") == 0 || strcmp(arg, "s") == 0 || strcmp(arg, "S") == 0) {
+                strncpy(target_name, "rescue.target", MAX_PATH - 1);
+            } else if (strcmp(arg, "emergency") == 0) {
+                strncpy(target_name, "emergency.target", MAX_PATH - 1);
+            } else if (strcmp(arg, "multi-user") == 0 || strcmp(arg, "3") == 0) {
+                strncpy(target_name, "multi-user.target", MAX_PATH - 1);
+            } else if (strcmp(arg, "graphical") == 0 || strcmp(arg, "5") == 0) {
+                strncpy(target_name, "graphical.target", MAX_PATH - 1);
+            }
+            /* Ignore other simple arguments */
+        }
     }
 }
 
@@ -103,6 +115,11 @@ static pid_t start_supervisor(void) {
     if (pid == 0) {
         /* Child: Set environment to indicate we're running as init */
         setenv("INITD_MODE", "init", 1);
+
+        /* Set target if specified */
+        if (target_name[0] != '\0') {
+            setenv("INITD_TARGET", target_name, 1);
+        }
 
         /* Extract basename for argv[0] so ps shows correct process name */
         char *name = strrchr(supervisor_path, '/');

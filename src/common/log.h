@@ -42,4 +42,7 @@ void log_syslog_ready(void);
 /* Get buffer statistics (for debugging) */
 void log_get_stats(size_t *buffered, size_t *dropped, bool *syslog_ready);
 
+/* Dump buffered logs to console (for rescue/emergency modes) */
+void log_dump_buffer(void);
+
 #endif /* LOG_H */

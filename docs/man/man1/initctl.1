@@ -80,6 +80,13 @@ each timer will fire next.
 .B list-sockets \fR[\fIPATTERN\fR]
 List socket units with their listening addresses and associated services.
 .TP
+.B dump-logs
+Dump buffered log messages to the console. During early boot, before syslog
+is available, log messages are buffered in memory (up to 1000 entries). This
+command displays all buffered messages with timestamps and priority levels.
+Useful for troubleshooting boot failures when syslog never becomes available,
+particularly in rescue or emergency modes.
+.TP
 .B isolate \fITARGET\fR
 Start the specified target and its dependencies, stopping all other units.
 Used to switch system states (e.g., rescue mode).

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _POSIX_C_SOURCE 199309L
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -15,6 +16,17 @@ static struct service_record service_registry[MAX_SERVICES];
 /* Restart tracking per unit (indexed by unit name hash, simple approach) */
 static struct restart_tracker restart_trackers[MAX_SERVICES];
 static time_t service_registry_boot_time;
+
+/* Get monotonic time in seconds for restart tracking
+ * Uses CLOCK_MONOTONIC which is unaffected by system clock changes */
+static time_t get_monotonic_time(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
+        /* Fallback to wall clock if monotonic not available */
+        return time(NULL);
+    }
+    return ts.tv_sec;
+}
 
 static void release_restart_tracker(const char *unit_name);
 /* Initialize the service registry */
@@ -148,7 +160,7 @@ static struct restart_tracker *get_restart_tracker(const char *unit_name) {
         /* Claim unused slot */
         tracker->in_use = 1;
         tracker->attempt_count = 0;
-        tracker->last_attempt = service_registry_boot_time ? service_registry_boot_time - MIN_RESTART_INTERVAL_SEC - 1 : 0;
+        tracker->last_attempt = 0;  /* No prior attempts, allow immediate start */
         memset(tracker->attempts, 0, sizeof(tracker->attempts));
         strncpy(tracker->unit_name, unit_name, sizeof(tracker->unit_name) - 1);
         tracker->unit_name[sizeof(tracker->unit_name) - 1] = '\0';
@@ -203,7 +215,7 @@ int can_restart_service(const char *unit_name) {
                 unit_name ? unit_name : "<null>");
         return 0;
     }
-    time_t now = time(NULL);
+    time_t now = get_monotonic_time();
 
     /* Check minimum interval since last attempt */
     if (tracker->last_attempt > 0) {
@@ -250,7 +262,7 @@ void record_restart_attempt(const char *unit_name) {
                 unit_name ? unit_name : "<null>");
         return;
     }
-    time_t now = time(NULL);
+    time_t now = get_monotonic_time();
 
     /* Record this attempt */
     if (tracker->attempt_count < MAX_RESTARTS_PER_WINDOW) {

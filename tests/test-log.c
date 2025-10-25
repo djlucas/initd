@@ -218,6 +218,79 @@ void test_log_multiple_init(void) {
     PASS();
 }
 
+void test_log_dump_buffer_empty(void) {
+    TEST("dump empty log buffer");
+
+    assert(log_init("test-initd") == 0);
+
+    /* Dump with no buffered messages - should not crash */
+    printf("\n    "); /* Indent output */
+    log_dump_buffer();
+
+    /* Should still be empty after dump */
+    size_t buffered;
+    log_get_stats(&buffered, NULL, NULL);
+    assert(buffered == 0);
+
+    log_close();
+    PASS();
+}
+
+void test_log_dump_buffer_with_messages(void) {
+    TEST("dump log buffer with messages");
+
+    assert(log_init("test-initd") == 0);
+
+    /* Buffer messages with various priorities and units */
+    log_msg(LOG_ERR, "unit1", "Error message");
+    log_msg(LOG_WARNING, "unit2", "Warning message");
+    log_msg(LOG_INFO, "unit3", "Info message");
+    log_msg(LOG_DEBUG, "unit4", "Debug message");
+    log_msg(LOG_INFO, NULL, "Message with no unit");
+
+    size_t buffered_before;
+    log_get_stats(&buffered_before, NULL, NULL);
+    assert(buffered_before == 5);
+
+    /* Dump should output to stderr - we can't easily capture it,
+     * but we verify it doesn't crash and doesn't clear the buffer */
+    printf("\n    Expected output below:\n    "); /* Indent output */
+    log_dump_buffer();
+
+    /* Buffer should remain unchanged (dump is read-only) */
+    size_t buffered_after;
+    log_get_stats(&buffered_after, NULL, NULL);
+    assert(buffered_after == buffered_before);
+
+    log_close();
+    PASS();
+}
+
+void test_log_dump_buffer_after_syslog_ready(void) {
+    TEST("dump buffer after syslog ready");
+
+    assert(log_init("test-initd") == 0);
+
+    /* Buffer some messages */
+    log_msg(LOG_INFO, "early-unit", "Early boot message");
+
+    /* Mark syslog ready (flushes buffer) */
+    log_syslog_ready();
+
+    size_t buffered;
+    bool syslog_ready;
+    log_get_stats(&buffered, NULL, &syslog_ready);
+    assert(buffered == 0);
+    assert(syslog_ready == true);
+
+    /* Dump should handle empty buffer gracefully */
+    printf("\n    "); /* Indent output */
+    log_dump_buffer();
+
+    log_close();
+    PASS();
+}
+
 int main(void) {
     printf("=== Logging System Tests ===\n\n");
 
@@ -231,6 +304,9 @@ int main(void) {
     test_log_check_syslog();
     test_log_message_formatting();
     test_log_multiple_init();
+    test_log_dump_buffer_empty();
+    test_log_dump_buffer_with_messages();
+    test_log_dump_buffer_after_syslog_ready();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

@@ -1,0 +1,9 @@
+[Unit]
+Description=Emergency Shell
+Documentation=man:sulogin(8)
+
+[Service]
+Type=simple
+ExecStart=/sbin/sulogin
+Restart=always
+RestartSec=0

@@ -1,0 +1,13 @@
+[Unit]
+Description=Rescue Shell
+Documentation=man:sulogin(8)
+After=sysinit.target
+
+[Service]
+Type=simple
+ExecStart=/sbin/sulogin
+Restart=always
+RestartSec=0
+
+[Install]
+WantedBy=rescue.target

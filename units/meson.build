@@ -62,6 +62,8 @@ reference_targets = [
   'sockets.target',
   'time-sync.target',
   'umount.target',
+  'emergency.target',
+  'rescue.target',
 ]
 
 # Service files (need templating)
@@ -69,6 +71,7 @@ reference_services = [
   'checkfs.service',
   'console.service',
   'createfiles.service',
+  'emergency.service',
   'getty@.service',
   'initd-socket.service',
   'initd-timer.service',
@@ -82,6 +85,7 @@ reference_services = [
   'network@.service',
   'network-wait-online.service',
   'remount-root.service',
+  'rescue.service',
   'swap.service',
   'sysctl.service',
   'syslogd.service',

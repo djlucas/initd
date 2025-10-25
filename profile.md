@@ -598,10 +598,27 @@ graphical.target
 
 ### Failure Handling
 
+**Automatic Fallback (Implemented):**
 - `sysinit.target` fails → `rescue.target`
 - `basic.target` fails → `rescue.target`
 - `graphical.target` fails → fallback to `multi-user.target`
 - initramfs fails → shell in initramfs (existing behavior)
+
+**Implementation:** supervisor-worker.c:1617-1641
+- After `start_unit_recursive()` fails for boot target, check target name
+- For critical targets (sysinit, basic), attempt `rescue.target` fallback
+- For graphical.target, attempt `multi-user.target` fallback
+- Log warnings/errors for fallback attempts and results
+
+### Rescue/Emergency Log Dumping
+
+When booting into rescue or emergency modes due to boot failures, buffered log messages may be the only diagnostic information available. If syslog never becomes available (e.g., sysinit.target fails before syslog starts), buffered logs remain in memory and are lost on shutdown.
+
+**Solution:**
+- `initctl dump-logs` command available for manual troubleshooting
+- Dumps all buffered log entries to console with boot-time timestamps and priority levels
+- Allows administrators to see what failed during early boot when in rescue/emergency shell
+- Buffered logs include priority (ERROR, WARN, INFO, DEBUG) and unit names for context
 
 ## Shutdown Sequence
 

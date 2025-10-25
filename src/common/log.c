@@ -257,3 +257,59 @@ void log_get_stats(size_t *buffered, size_t *dropped, bool *syslog_ready) {
     if (dropped) *dropped = log_state.dropped;
     if (syslog_ready) *syslog_ready = log_state.syslog_ready;
 }
+
+/* Dump buffered logs to console */
+void log_dump_buffer(void) {
+    if (!log_state.head) {
+        fprintf(stderr, "initd: No buffered logs (syslog %s)\n",
+                log_state.syslog_ready ? "ready" : "not ready");
+        return;
+    }
+
+    fprintf(stderr, "\n");
+    fprintf(stderr, "========================================\n");
+    fprintf(stderr, "INITD BUFFERED LOGS (syslog not ready)\n");
+    fprintf(stderr, "========================================\n");
+    if (log_state.dropped > 0) {
+        fprintf(stderr, "WARNING: %zu log entries were dropped (buffer full)\n\n",
+                log_state.dropped);
+    }
+
+    /* Dump all buffered entries to stderr */
+    struct log_entry *entry = log_state.head;
+    size_t count = 0;
+    while (entry) {
+        const char *priority_str;
+        switch (entry->priority) {
+        case LOG_EMERG:   priority_str = "EMERG  "; break;
+        case LOG_ALERT:   priority_str = "ALERT  "; break;
+        case LOG_CRIT:    priority_str = "CRIT   "; break;
+        case LOG_ERR:     priority_str = "ERROR  "; break;
+        case LOG_WARNING: priority_str = "WARN   "; break;
+        case LOG_NOTICE:  priority_str = "NOTICE "; break;
+        case LOG_INFO:    priority_str = "INFO   "; break;
+        case LOG_DEBUG:   priority_str = "DEBUG  "; break;
+        default:          priority_str = "UNKNOWN"; break;
+        }
+
+        /* Format: [boot+123.456s] [PRIORITY] [unit] message */
+        fprintf(stderr, "[boot+%3ld.%03lds] [%s] ",
+                entry->boot_time.tv_sec,
+                entry->boot_time.tv_nsec / 1000000,
+                priority_str);
+
+        if (entry->unit[0]) {
+            fprintf(stderr, "[%s] ", entry->unit);
+        }
+
+        fprintf(stderr, "%s\n", entry->message);
+
+        entry = entry->next;
+        count++;
+    }
+
+    fprintf(stderr, "========================================\n");
+    fprintf(stderr, "Total: %zu buffered log entries\n", count);
+    fprintf(stderr, "========================================\n");
+    fprintf(stderr, "\n");
+}

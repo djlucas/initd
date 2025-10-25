@@ -166,6 +166,8 @@ static int parse_command(const char *cmd_str, enum control_command *cmd) {
         *cmd = CMD_REBOOT;
     } else if (strcmp(cmd_str, "halt") == 0) {
         *cmd = CMD_HALT;
+    } else if (strcmp(cmd_str, "dump-logs") == 0) {
+        *cmd = CMD_DUMP_LOGS;
     } else {
         return -1;
     }
@@ -180,6 +182,7 @@ static bool command_is_read_only(enum control_command cmd) {
     case CMD_LIST_UNITS:
     case CMD_LIST_TIMERS:
     case CMD_LIST_SOCKETS:
+    case CMD_DUMP_LOGS:
         return true;
     default:
         return false;
