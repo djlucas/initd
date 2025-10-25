@@ -305,6 +305,49 @@ void test_empty_socket_list(void) {
     PASS();
 }
 
+void test_dump_logs_command(void) {
+    TEST("CMD_DUMP_LOGS command");
+
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    /* Send dump-logs request */
+    struct control_request req = {0};
+    req.header.length = sizeof(req);
+    req.header.command = CMD_DUMP_LOGS;
+    req.header.flags = 0;
+
+    assert(send_control_request(sv[0], &req) == 0);
+
+    /* Receive request */
+    struct control_request recv_req = {0};
+    assert(recv_control_request(sv[1], &recv_req) == 0);
+
+    assert(recv_req.header.command == CMD_DUMP_LOGS);
+
+    /* Send response */
+    struct control_response resp = {0};
+    resp.header.length = sizeof(resp);
+    resp.header.command = CMD_DUMP_LOGS;
+    resp.code = RESP_SUCCESS;
+    strncpy(resp.message, "Log buffer dumped to console", sizeof(resp.message) - 1);
+
+    assert(send_control_response(sv[1], &resp) == 0);
+
+    /* Receive response */
+    struct control_response recv_resp = {0};
+    assert(recv_control_response(sv[0], &recv_resp) == 0);
+
+    assert(recv_resp.header.command == CMD_DUMP_LOGS);
+    assert(recv_resp.code == RESP_SUCCESS);
+    assert(strcmp(recv_resp.message, "Log buffer dumped to console") == 0);
+
+    close(sv[0]);
+    close(sv[1]);
+
+    PASS();
+}
+
 int main(void) {
     printf("=== Control Protocol Tests ===\n\n");
 
@@ -317,6 +360,7 @@ int main(void) {
     test_socket_list();
     test_empty_timer_list();
     test_empty_socket_list();
+    test_dump_logs_command();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

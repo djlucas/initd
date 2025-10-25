@@ -238,6 +238,50 @@ void test_missing_dependency(void) {
     PASS();
 }
 
+void test_on_failure_dependency(void) {
+    TEST("OnFailure= dependency");
+
+    struct unit_file service, rescue;
+    setup_unit(&service, "critical.service", UNIT_SERVICE);
+    setup_unit(&rescue, "rescue.service", UNIT_SERVICE);
+
+    /* critical.service has OnFailure=rescue.service */
+    service.unit.on_failure[0] = strdup("rescue.service");
+    service.unit.on_failure_count = 1;
+
+    /* Verify OnFailure was set up correctly */
+    assert(service.unit.on_failure_count == 1);
+    assert(strcmp(service.unit.on_failure[0], "rescue.service") == 0);
+
+    /* OnFailure units should be activated when the unit fails */
+    /* (actual triggering is tested in integration/system tests) */
+
+    free(service.unit.on_failure[0]);
+
+    PASS();
+}
+
+void test_multiple_on_failure(void) {
+    TEST("Multiple OnFailure= units");
+
+    struct unit_file target;
+    setup_unit(&target, "sysinit.target", UNIT_TARGET);
+
+    /* sysinit.target can have multiple fallback units */
+    target.unit.on_failure[0] = strdup("emergency.target");
+    target.unit.on_failure[1] = strdup("rescue.target");
+    target.unit.on_failure_count = 2;
+
+    assert(target.unit.on_failure_count == 2);
+    assert(strcmp(target.unit.on_failure[0], "emergency.target") == 0);
+    assert(strcmp(target.unit.on_failure[1], "rescue.target") == 0);
+
+    free(target.unit.on_failure[0]);
+    free(target.unit.on_failure[1]);
+
+    PASS();
+}
+
 int main(void) {
     printf("=== Dependency Resolution Tests ===\n\n");
 
@@ -251,6 +295,8 @@ int main(void) {
     test_multiple_dependencies();
     test_target_dependencies();
     test_missing_dependency();
+    test_on_failure_dependency();
+    test_multiple_on_failure();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

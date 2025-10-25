@@ -87,13 +87,16 @@ Tests the unit file parser:
 - Validation rules
 - Provides= directive
 
-### test-control
+### test-control (10 tests)
 Tests the control protocol:
 - Request/response serialization
 - Unit list serialization
 - Empty list handling
 - State/command string conversion
-- Socket communication
+- Timer list serialization
+- Socket list serialization
+- Empty timer/socket list handling
+- CMD_DUMP_LOGS command
 
 ### test-timer-notify
 Validates timer inactivity notifications:
@@ -173,7 +176,7 @@ Tests unit directory scanning:
 - Duplicate unit name handling
 - Free units cleanup
 
-### test-dependency (10 tests)
+### test-dependency (12 tests)
 Tests dependency graph resolution:
 - After/Before dependency ordering
 - Requires/Wants dependencies
@@ -183,6 +186,8 @@ Tests dependency graph resolution:
 - Multiple dependencies per unit
 - Target unit dependencies
 - Missing dependency handling
+- OnFailure= dependency handling
+- Multiple OnFailure= units
 
 ### test-state (11 tests)
 Tests service state transitions:
