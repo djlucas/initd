@@ -24,6 +24,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <poll.h>
 #include <stdbool.h>
 #include "../common/control.h"
@@ -515,6 +516,11 @@ static int activate_direct(const char *service_name) {
 
     if (pid == 0) {
         /* Child process */
+
+        if (daemon_socket >= 0) {
+            close(daemon_socket);
+        }
+
         /* Parse ExecStart into argv */
         char *argv[64];
         int argc = 0;
@@ -1143,7 +1149,22 @@ int main(int argc, char *argv[]) {
     }
 
     /* Get IPC socket FD from command line */
-    daemon_socket = atoi(argv[1]);
+    errno = 0;
+    char *endptr = NULL;
+    long parsed_fd = strtol(argv[1], &endptr, 10);
+    if (errno != 0 || endptr == argv[1] || *endptr != '\0' ||
+        parsed_fd < 0 || parsed_fd > INT_MAX) {
+        log_error("timer-worker", "invalid IPC fd argument '%s'", argv[1]);
+        return 1;
+    }
+
+    daemon_socket = (int)parsed_fd;
+
+    int fd_flags = fcntl(daemon_socket, F_GETFD);
+    if (fd_flags < 0 || fcntl(daemon_socket, F_SETFD, fd_flags | FD_CLOEXEC) < 0) {
+        log_error("timer-worker", "failed to reapply FD_CLOEXEC to IPC fd: %s", strerror(errno));
+        return 1;
+    }
 
     /* Initialize enhanced logging */
     log_enhanced_init("timer-worker", "/var/log/initd/timer.log");

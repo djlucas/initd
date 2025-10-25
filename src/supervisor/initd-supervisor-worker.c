@@ -33,6 +33,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <errno.h>
 #include <string.h>
@@ -1526,7 +1527,22 @@ int main(int argc, char *argv[]) {
     }
 
     /* Get IPC socket FD from command line */
-    master_socket = atoi(argv[1]);
+    errno = 0;
+    char *endptr = NULL;
+    long parsed_fd = strtol(argv[1], &endptr, 10);
+    if (errno != 0 || endptr == argv[1] || *endptr != '\0' ||
+        parsed_fd < 0 || parsed_fd > INT_MAX) {
+        log_error("worker", "invalid IPC fd argument '%s'", argv[1]);
+        return 1;
+    }
+
+    master_socket = (int)parsed_fd;
+
+    int fd_flags = fcntl(master_socket, F_GETFD);
+    if (fd_flags < 0 || fcntl(master_socket, F_SETFD, fd_flags | FD_CLOEXEC) < 0) {
+        log_error("worker", "failed to reapply FD_CLOEXEC to IPC fd: %s", strerror(errno));
+        return 1;
+    }
 
     /* Initialize logging */
     log_init("supervisor-worker");

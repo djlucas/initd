@@ -492,11 +492,11 @@ static pid_t start_service_process(const struct service_section *service,
     int stdout_pipe[2] = {-1, -1};
     int stderr_pipe[2] = {-1, -1};
 
-    if (pipe(stdout_pipe) < 0) {
+    if (pipe2(stdout_pipe, O_CLOEXEC) < 0) {
         log_error("supervisor", "pipe(stdout): %s", strerror(errno));
         return -1;
     }
-    if (pipe(stderr_pipe) < 0) {
+    if (pipe2(stderr_pipe, O_CLOEXEC) < 0) {
         log_error("supervisor", "pipe(stderr): %s", strerror(errno));
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
