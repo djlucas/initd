@@ -446,7 +446,7 @@ Standard systemd INI format
 
 **Platform Support:**
 - Linux: Full support via mount namespaces
-- BSD/Hurd: Stubbed with TODO (planned: create `/tmp/initd-<service>-<pid>` directory)
+- BSD/Hurd: Creates unique `/tmp/initd-privateXXXXXX` directory with secure ownership and TMPDIR override
 
 **Usage:**
 ```ini
@@ -1189,7 +1189,6 @@ To avoid writing ourselves into a corner, the following must be considered durin
 
 ### Pending Work / Known Gaps
 - Harden calendar parser (`strtol` with overflow checks) and expand fuzz/edge-case tests.
-- Optimise dependency resolver to avoid redundant traversals (explicit DONE markers, clearer visited semantics).
 - Audit remaining file handling for `FD_CLOEXEC`, TOCTOU-safe temp files, and consistent privilege drops.
 - Optional: introduce versioned/authenticated IPC for future protocol evolution.
 
