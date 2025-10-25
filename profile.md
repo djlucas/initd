@@ -591,24 +591,43 @@ graphical.target
 5. **Worker parses unit files**
 6. **Worker builds dependency graph**
 7. **Worker starts default.target**
+   - If default.target missing, falls back to emergency.target with warning
    - Resolves dependencies
    - Starts in topological order
    - Parallel where no ordering constraints
 8. **Services running, system ready**
 
+### Required Units
+
+The following units are hardcoded and must exist:
+
+- **default.target** - Primary boot target (typically symlinked to multi-user.target or graphical.target)
+- **emergency.target** - Minimal recovery target, used when default.target is missing or boot fails
+
 ### Failure Handling
 
-**Automatic Fallback (Implemented):**
-- `sysinit.target` fails → `rescue.target`
-- `basic.target` fails → `rescue.target`
-- `graphical.target` fails → fallback to `multi-user.target`
-- initramfs fails → shell in initramfs (existing behavior)
+**OnFailure= Directive (Implemented):**
 
-**Implementation:** supervisor-worker.c:1617-1641
-- After `start_unit_recursive()` fails for boot target, check target name
-- For critical targets (sysinit, basic), attempt `rescue.target` fallback
-- For graphical.target, attempt `multi-user.target` fallback
-- Log warnings/errors for fallback attempts and results
+Units can specify fallback units to activate when they fail using the `OnFailure=`
+directive in the `[Unit]` section. This applies to both services and targets.
+
+**Target Fallback Chain:**
+- `sysinit.target` → OnFailure=emergency.target
+- `basic.target` → OnFailure=rescue.target
+- `multi-user.target` → OnFailure=basic.target
+- `graphical.target` → OnFailure=multi-user.target
+
+**Implementation:**
+- `trigger_on_failure()` in supervisor-worker.c activates OnFailure units when any
+  unit enters STATE_FAILED
+- Called at all failure points: service exits with non-zero status, circular
+  dependencies, failed required dependencies, and start_service() failures
+- OnFailure units are started via `start_unit_recursive()`, allowing chained
+  fallbacks and full dependency resolution
+
+**Missing default.target Fallback:**
+- If `default.target` is missing, supervisor falls back to `emergency.target` with
+  a warning (hardcoded in supervisor-worker.c:1653-1658)
 
 ### Rescue/Emergency Log Dumping
 

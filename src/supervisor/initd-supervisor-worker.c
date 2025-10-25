@@ -71,6 +71,7 @@ static int start_unit_recursive(struct unit_file *unit);
 static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
 static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
 static void mark_isolate_closure(struct unit_file *unit, unsigned int generation);
+static void trigger_on_failure(struct unit_file *unit);
 
 /* Maximum recursion depth for dependency resolution */
 #define MAX_RECURSION_DEPTH 100
@@ -602,6 +603,7 @@ static void handle_service_exit(pid_t pid, int exit_status) {
         char reason[128];
         snprintf(reason, sizeof(reason), "exited with status %d", exit_status);
         log_service_failed(unit->name, unit->unit.description, reason);
+        trigger_on_failure(unit);
     }
 
     if (success && unit->type == UNIT_SERVICE) {
@@ -1323,6 +1325,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     if (unit->start_visit_state == DEP_VISIT_IN_PROGRESS) {
         log_service_failed(unit->name, unit->unit.description, "circular dependency detected");
         unit->state = STATE_FAILED;
+        trigger_on_failure(unit);
         return -1;
     }
 
@@ -1343,6 +1346,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
             snprintf(reason, sizeof(reason), "failed to start required dependency %s", unit->unit.requires[i]);
             log_service_failed(unit->name, unit->unit.description, reason);
             unit->state = STATE_FAILED;
+            trigger_on_failure(unit);
             unit->start_visit_state = DEP_VISIT_NONE;
             return -1;
         }
@@ -1370,6 +1374,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         if (start_service(unit) < 0) {
             log_service_failed(unit->name, unit->unit.description, "failed to start service");
             unit->state = STATE_FAILED;
+            trigger_on_failure(unit);
             unit->start_visit_state = DEP_VISIT_NONE;
             return -1;
         }
@@ -1417,6 +1422,30 @@ void supervisor_test_handle_status_fd(int fd) {
 static int start_unit_recursive(struct unit_file *unit) {
     unsigned int generation = next_start_generation();
     return start_unit_recursive_depth(unit, 0, generation);
+}
+
+/* Trigger OnFailure= units when a unit fails */
+static void trigger_on_failure(struct unit_file *unit) {
+    if (!unit || unit->unit.on_failure_count == 0) {
+        return;
+    }
+
+    log_info(unit->name, "triggering OnFailure units (%d)", unit->unit.on_failure_count);
+
+    for (int i = 0; i < unit->unit.on_failure_count; i++) {
+        const char *failure_unit_name = unit->unit.on_failure[i];
+        struct unit_file *failure_unit = find_unit(failure_unit_name);
+
+        if (!failure_unit) {
+            log_warn(unit->name, "OnFailure unit %s not found", failure_unit_name);
+            continue;
+        }
+
+        log_info(unit->name, "activating OnFailure unit: %s", failure_unit_name);
+        if (start_unit_recursive(failure_unit) < 0) {
+            log_warn(unit->name, "failed to activate OnFailure unit %s", failure_unit_name);
+        }
+    }
 }
 
 /* Main loop: manage services */
@@ -1622,38 +1651,16 @@ int main(int argc, char *argv[]) {
     struct unit_file *boot_target = find_unit(target_name);
 
     if (!boot_target && strcmp(target_name, "default.target") == 0) {
-        /* Fallback to multi-user.target if default.target not found */
-        log_debug("worker", "default.target not found, falling back to multi-user.target");
-        boot_target = find_unit("multi-user.target");
-        target_name = "multi-user.target";
+        /* Fallback to emergency.target if default.target not found */
+        log_warn("worker", "default.target not found (required unit missing), falling back to emergency.target");
+        boot_target = find_unit("emergency.target");
+        target_name = "emergency.target";
     }
 
     if (boot_target) {
         log_debug("worker", "Activating target: %s", boot_target->name);
         if (start_unit_recursive(boot_target) < 0) {
-            log_error("worker", "failed to start %s", target_name);
-
-            /* Automatic fallback for critical targets */
-            struct unit_file *fallback = NULL;
-            const char *fallback_name = NULL;
-
-            if (strcmp(target_name, "sysinit.target") == 0 ||
-                strcmp(target_name, "basic.target") == 0) {
-                fallback_name = "rescue.target";
-                fallback = find_unit(fallback_name);
-            } else if (strcmp(target_name, "graphical.target") == 0) {
-                fallback_name = "multi-user.target";
-                fallback = find_unit(fallback_name);
-            }
-
-            if (fallback) {
-                log_warn("worker", "Attempting fallback to %s", fallback_name);
-                if (start_unit_recursive(fallback) < 0) {
-                    log_error("worker", "fallback to %s also failed", fallback_name);
-                } else {
-                    log_info("worker", "Successfully started fallback %s", fallback_name);
-                }
-            }
+            log_error("worker", "failed to start %s (OnFailure units will be triggered)", target_name);
         }
     } else {
         log_error("worker", "%s not found", target_name);

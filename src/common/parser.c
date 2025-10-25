@@ -74,6 +74,8 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         unit->conflicts_count = parse_list(value, unit->conflicts, MAX_DEPS);
     } else if (strcmp(key, "Provides") == 0) {
         unit->provides_count = parse_list(value, unit->provides, MAX_DEPS);
+    } else if (strcmp(key, "OnFailure") == 0) {
+        unit->on_failure_count = parse_list(value, unit->on_failure, MAX_DEPS);
     } else {
         return -1; /* Unknown key */
     }

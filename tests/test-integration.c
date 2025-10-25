@@ -360,6 +360,43 @@ void test_timer_integration(void) {
     PASS();
 }
 
+void test_on_failure_parsing(void) {
+    TEST("OnFailure= directive parsing");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Test Unit with OnFailure\n"
+        "OnFailure=rescue.service emergency.service\n"
+        "\n"
+        "[Service]\n"
+        "Type=simple\n"
+        "ExecStart=/bin/true\n";
+
+    /* Create temp file */
+    char path[] = "/tmp/test-onfailure-XXXXXX.service";
+    int fd = mkstemps(path, 8);
+    assert(fd >= 0);
+
+    assert(write(fd, unit_content, strlen(unit_content)) == (ssize_t)strlen(unit_content));
+    close(fd);
+
+    /* Parse unit file */
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SERVICE);
+
+    /* Verify OnFailure was parsed */
+    assert(unit.unit.on_failure_count == 2);
+    assert(strcmp(unit.unit.on_failure[0], "rescue.service") == 0);
+    assert(strcmp(unit.unit.on_failure[1], "emergency.service") == 0);
+
+    /* Cleanup */
+    free_unit_file(&unit);
+    unlink(path);
+
+    PASS();
+}
+
 int main(void) {
     printf("=== Integration Tests ===\n\n");
 
@@ -373,6 +410,7 @@ int main(void) {
     test_service_types_integration();
     test_restart_policies_integration();
     test_timer_integration();
+    test_on_failure_parsing();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

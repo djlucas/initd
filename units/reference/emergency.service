@@ -4,6 +4,6 @@ Documentation=man:sulogin(8)
 
 [Service]
 Type=simple
-ExecStart=/sbin/sulogin
+ExecStart=/sbin/sulogin /dev/console
 Restart=always
 RestartSec=0

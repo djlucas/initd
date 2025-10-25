@@ -1,11 +1,10 @@
 [Unit]
 Description=Rescue Shell
 Documentation=man:sulogin(8)
-After=sysinit.target
 
 [Service]
 Type=simple
-ExecStart=/sbin/sulogin
+ExecStart=/sbin/sulogin /dev/console
 Restart=always
 RestartSec=0
 

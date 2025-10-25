@@ -55,7 +55,8 @@ Scan unit directories (/etc/initd/system, /lib/initd/system, etc.)
 .IP 2.
 Parse all unit files and build dependency graph
 .IP 3.
-Start default.target (which pulls in required services)
+Start default.target (which pulls in required services). If default.target
+is missing, falls back to emergency.target with a warning.
 .IP 4.
 Enter main event loop:
 .RS
@@ -171,6 +172,22 @@ go directly to syslog with the format:
 .RS
 .I timestamp hostname supervisor[pid]: [unit.service] message
 .RE
+.SH REQUIRED UNITS
+The following target units are hardcoded references and must exist for proper
+system operation:
+.TP
+.B default.target
+The primary boot target. Typically a symlink to multi-user.target or
+graphical.target. If missing, the supervisor falls back to emergency.target
+with a warning.
+.TP
+.B emergency.target
+Minimal recovery target with no dependencies. Used for boot failures and
+as a fallback when default.target is missing. Must provide a rescue shell
+via emergency.service.
+.PP
+These targets are referenced in supervisor code and cannot be renamed or
+removed without modifying the source.
 .SH SEE ALSO
 .BR init (8),
 .BR initd-supervisor (8),

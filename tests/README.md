@@ -208,7 +208,7 @@ Tests logging system:
 - Dump log buffer with messages (verifies format, timestamps, priorities)
 - Dump log buffer after syslog ready (tests empty buffer handling)
 
-### test-integration (10 tests)
+### test-integration (11 tests)
 Tests end-to-end workflows:
 - Parse and validate integration
 - State/command to string conversion
@@ -216,6 +216,7 @@ Tests end-to-end workflows:
 - Dependency/install/environment parsing
 - Service types and restart policies
 - Timer unit integration
+- OnFailure= directive parsing
 
 ### test-exec-lifecycle (2 tests)
 Exercises the privileged supervisor request handler directly:

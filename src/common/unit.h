@@ -63,12 +63,14 @@ struct unit_section {
     char *wants[MAX_DEPS];      /* Soft dependencies */
     char *conflicts[MAX_DEPS];  /* Conflicting units */
     char *provides[MAX_DEPS];   /* Virtual names this unit provides */
+    char *on_failure[MAX_DEPS]; /* Units to activate on failure */
     int after_count;
     int before_count;
     int requires_count;
     int wants_count;
     int conflicts_count;
     int provides_count;
+    int on_failure_count;
 };
 
 /* Kill mode for service termination */
