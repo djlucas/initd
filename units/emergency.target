@@ -2,3 +2,4 @@
 Description=Emergency Mode
 Wants=emergency.service
 After=emergency.service
+AllowIsolate=yes

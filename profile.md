@@ -1174,9 +1174,13 @@ Notes:
 9. ✅ Per-user daemon support with reboot persistence (independent of elogind)
 
 #### TODO: Full systemd directive parsing
+
+**TODO: DefaultDependencies shutdown behavior**
+DefaultDependencies currently only controls startup (implicit After=basic.target). Need to implement proper shutdown targets (poweroff.target, reboot.target, halt.target) and add implicit Conflicts=shutdown.target Before=shutdown.target for units with DefaultDependencies=yes. This ensures correct shutdown ordering for units with DefaultDependencies=no (e.g., random-seed.service must stop after services but before filesystem unmount).
+
 [Unit]
-  AllowIsolate=
-  DefaultDependencies=
+  AllowIsolate= (partial - parsing and basic logic done, shutdown targets needed)
+  DefaultDependencies= (partial - startup done, shutdown ordering needs proper targets)
   ConditionUser=
   ConditionGroup=
   ConditionControlGroupController=

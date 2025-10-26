@@ -336,6 +336,100 @@ void test_parse_provides(void) {
     PASS();
 }
 
+void test_parse_allow_isolate(void) {
+    TEST("AllowIsolate= directive");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Rescue Target\n"
+        "AllowIsolate=yes\n";
+
+    const char *path = create_temp_unit(unit_content, ".target");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.allow_isolate == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test with AllowIsolate=no */
+    const char *unit_content2 =
+        "[Unit]\n"
+        "Description=Network Target\n"
+        "AllowIsolate=no\n";
+
+    path = create_temp_unit(unit_content2, ".target");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.allow_isolate == false);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_default_dependencies(void) {
+    TEST("DefaultDependencies= directive");
+
+    /* Test DefaultDependencies=no (for sysinit services) */
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Mount Virtual Filesystems\n"
+        "DefaultDependencies=no\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/mount -t proc proc /proc\n";
+
+    const char *path = create_temp_unit(unit_content, ".service");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.default_dependencies == false);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test DefaultDependencies=yes (explicit, though it's the default) */
+    const char *unit_content2 =
+        "[Unit]\n"
+        "Description=Normal Service\n"
+        "DefaultDependencies=yes\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/true\n";
+
+    path = create_temp_unit(unit_content2, ".service");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.default_dependencies == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test default (should be true) */
+    const char *unit_content3 =
+        "[Unit]\n"
+        "Description=Service Without Explicit DefaultDependencies\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/true\n";
+
+    path = create_temp_unit(unit_content3, ".service");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.default_dependencies == true);  /* Should default to true */
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -348,6 +442,8 @@ int main(void) {
     test_parse_install_extras();
     test_validate_missing_execstart();
     test_parse_provides();
+    test_parse_allow_isolate();
+    test_parse_default_dependencies();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

@@ -184,6 +184,8 @@ Unit types **not supported** (use traditional alternatives):
 
 ### Supported Unit Directives
 
+- `AllowIsolate=` - permit isolation to this target (only meaningful for .target units)
+- `DefaultDependencies=` - add implicit After=basic.target for services/timers/sockets (default: yes)
 - `BindsTo=` / `PartOf=` lifecycle linkage for dependent units
 - `StopWhenUnneeded=` automatic teardown when no dependents remain
 - `RefuseManualStart=` / `RefuseManualStop=` guards for manual control

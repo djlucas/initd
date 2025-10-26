@@ -99,6 +99,8 @@ struct unit_section {
     bool stop_when_unneeded;
     bool refuse_manual_start;
     bool refuse_manual_stop;
+    bool allow_isolate;
+    bool default_dependencies;
     bool start_limit_interval_set;
     bool start_limit_burst_set;
     bool start_limit_action_set;

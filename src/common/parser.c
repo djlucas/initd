@@ -161,6 +161,10 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         unit->refuse_manual_start = parse_boolean(value);
     } else if (strcmp(key, "RefuseManualStop") == 0) {
         unit->refuse_manual_stop = parse_boolean(value);
+    } else if (strcmp(key, "AllowIsolate") == 0) {
+        unit->allow_isolate = parse_boolean(value);
+    } else if (strcmp(key, "DefaultDependencies") == 0) {
+        unit->default_dependencies = parse_boolean(value);
     } else if (strcmp(key, "StartLimitIntervalSec") == 0) {
         unit->start_limit_interval_sec = atoi(value);
         unit->start_limit_interval_set = true;
@@ -408,6 +412,7 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.limit_nofile = -1;         /* Default: not set (inherit system default) */
     unit->config.service.private_tmp = false;        /* Default: no private /tmp */
     unit->config.service.runtime_max_sec = 0;        /* Default: unlimited */
+    unit->unit.default_dependencies = true;          /* Default: implicit dependencies enabled */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

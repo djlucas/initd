@@ -1515,6 +1515,9 @@ static void handle_control_command(int client_fd, bool read_only) {
         } else if (unit->type != UNIT_TARGET) {
             resp.code = RESP_INVALID_COMMAND;
             snprintf(resp.message, sizeof(resp.message), "%s is not a target", req.unit_name);
+        } else if (!unit->unit.allow_isolate) {
+            resp.code = RESP_INVALID_COMMAND;
+            snprintf(resp.message, sizeof(resp.message), "Unit %s does not allow isolation", req.unit_name);
         } else {
             unsigned int generation = next_isolate_generation();
             mark_isolate_closure(unit, generation);
@@ -1773,6 +1776,19 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
 
     unit->state = STATE_ACTIVATING;
     log_service_starting(unit->name, unit->unit.description);
+
+    /* Apply implicit dependencies if DefaultDependencies=yes */
+    if (unit->unit.default_dependencies) {
+        /* Services, timers, and sockets with DefaultDependencies get implicit After=basic.target */
+        if (unit->type == UNIT_SERVICE || unit->type == UNIT_TIMER || unit->type == UNIT_SOCKET) {
+            struct unit_file *basic = resolve_unit("basic.target");
+            if (basic && basic->state != STATE_ACTIVE && basic->state != STATE_FAILED) {
+                if (basic->state == STATE_INACTIVE) {
+                    start_unit_recursive_depth(basic, depth + 1, generation);
+                }
+            }
+        }
+    }
 
     for (int i = 0; i < unit->unit.binds_to_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.binds_to[i]);
