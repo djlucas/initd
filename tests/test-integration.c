@@ -170,6 +170,7 @@ void test_dependency_parsing_integration(void) {
         "Requires=c.service\n"
         "Wants=d.service e.service f.service\n"
         "Conflicts=g.service\n"
+        "DefaultDependencies=no\n"
         "\n"
         "[Service]\n"
         "ExecStart=/bin/true\n";
@@ -183,7 +184,7 @@ void test_dependency_parsing_integration(void) {
     struct unit_file unit;
     assert(parse_unit_file(path, &unit) == 0);
 
-    /* Check all dependencies parsed correctly */
+    /* Check all dependencies parsed correctly (no implicit deps due to DefaultDependencies=no) */
     assert(unit.unit.after_count == 2);
     assert(unit.unit.requires_count == 1);
     assert(unit.unit.wants_count == 3);

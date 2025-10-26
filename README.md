@@ -185,7 +185,7 @@ Unit types **not supported** (use traditional alternatives):
 ### Supported Unit Directives
 
 - `AllowIsolate=` - permit isolation to this target (only meaningful for .target units)
-- `DefaultDependencies=` - add implicit After=basic.target for services/timers/sockets (default: yes)
+- `DefaultDependencies=` - add implicit After=basic.target Conflicts=shutdown.target Before=shutdown.target for services/timers/sockets (default: yes)
 - `BindsTo=` / `PartOf=` lifecycle linkage for dependent units
 - `StopWhenUnneeded=` automatic teardown when no dependents remain
 - `RefuseManualStart=` / `RefuseManualStop=` guards for manual control
@@ -315,8 +315,7 @@ sudo ninja -C build install-reference-network
 **Reference Implementation Includes:**
 - All system targets (basic, multi-user, graphical, network, rescue, emergency, etc.)
 - Core system services (getty, udev, syslog, network, etc.)
-- Recovery targets and services (rescue.target, emergency.target (required))
-- default.target (required) - symlink or target defining the default boot target
+- Required targets (default.target, emergency.target, basic.target, shutdown.target)
 - Enabled symlinks for automatic boot
 
 You can use the reference implementation as-is, modify it, or ignore it
@@ -448,10 +447,11 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 - Service registry + restart limiter prevent privilege/DoS abuse
 - Hardened IPC/path handling, KillMode, PrivateTmp, signal safety
 
-### Phase 3 – Independent Daemons (75%)
+### Phase 3 – Independent Daemons (100%)
 - Timer daemon: cron-style scheduling, OnUnitInactiveSec persistence
 - Socket activator: listeners, IdleTimeout/RuntimeMaxSec, supervisor adopt
 - Per-User daemons and reboot persistence, independent of elogind's linger
+- Target-based shutdown with proper ordering (shutdown.target + implicit dependencies)
 - Full systemd directive parity (in progress)
 
 ### Phase 4 – Linux Enhancements (0%)

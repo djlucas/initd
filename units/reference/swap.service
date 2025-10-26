@@ -1,8 +1,8 @@
 [Unit]
 Description=Activate Swap
 DefaultDependencies=no
-After=udev-settle.service
-Before=sysinit.target
+After=udev-settle.service shutdown.target
+Before=sysinit.target mountfs.service
 
 [Service]
 Type=oneshot

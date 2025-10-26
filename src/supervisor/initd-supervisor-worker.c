@@ -1553,17 +1553,60 @@ static void handle_control_command(int client_fd, bool read_only) {
     case CMD_HALT: {
         struct priv_request shutdown_req = {0};
         struct priv_response shutdown_resp = {0};
+        const char *action;
 
-        /* Map control command to IPC request type */
+        /* Map control command to IPC request type and action name */
         if (req.header.command == CMD_POWEROFF) {
             shutdown_req.type = REQ_POWEROFF;
+            action = "poweroff";
         } else if (req.header.command == CMD_REBOOT) {
             shutdown_req.type = REQ_REBOOT;
+            action = "reboot";
         } else {
             shutdown_req.type = REQ_HALT;
+            action = "halt";
         }
 
-        /* Send shutdown request to master */
+        /* Find shutdown.target */
+        struct unit_file *shutdown_target = find_unit("shutdown.target");
+        if (!shutdown_target) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "shutdown.target not found (required unit missing)");
+            break;
+        }
+
+        /* Isolate to shutdown.target - this stops all services in proper order */
+        log_info("worker", "Initiating %s via isolation to shutdown.target", action);
+        unsigned int generation = next_isolate_generation();
+        mark_isolate_closure(shutdown_target, generation);
+
+        bool stop_failed = false;
+        for (int i = 0; i < unit_count; i++) {
+            struct unit_file *other = units[i];
+            if (other->isolate_mark_generation == generation) {
+                continue;
+            }
+            if (other->state == STATE_ACTIVE || other->state == STATE_ACTIVATING) {
+                if (stop_unit_recursive(other) < 0) {
+                    stop_failed = true;
+                }
+            }
+        }
+
+        if (stop_failed) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to stop units during shutdown");
+            break;
+        }
+
+        /* Start shutdown.target - this runs After=shutdown.target units (swap, mountfs) */
+        if (start_unit_recursive(shutdown_target) < 0) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message), "Failed to reach shutdown.target");
+            break;
+        }
+
+        /* Shutdown sequence complete, now send final shutdown request to master */
         if (send_request(master_socket, &shutdown_req) < 0) {
             resp.code = RESP_FAILURE;
             snprintf(resp.message, sizeof(resp.message), "Failed to send shutdown request to master");
@@ -1572,8 +1615,6 @@ static void handle_control_command(int client_fd, bool read_only) {
             snprintf(resp.message, sizeof(resp.message), "Failed to receive response from master");
         } else if (shutdown_resp.type == RESP_OK) {
             resp.code = RESP_SUCCESS;
-            const char *action = (req.header.command == CMD_POWEROFF) ? "poweroff" :
-                                 (req.header.command == CMD_REBOOT) ? "reboot" : "halt";
             snprintf(resp.message, sizeof(resp.message), "System %s initiated", action);
         } else {
             resp.code = RESP_FAILURE;

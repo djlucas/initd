@@ -480,6 +480,27 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
         }
     }
 
+    /* Apply implicit dependencies for DefaultDependencies=yes */
+    if (unit->unit.default_dependencies) {
+        /* Services, timers, and sockets get implicit Conflicts=shutdown.target Before=shutdown.target */
+        if (unit->type == UNIT_SERVICE || unit->type == UNIT_TIMER || unit->type == UNIT_SOCKET) {
+            /* Add implicit Conflicts=shutdown.target */
+            if (unit->unit.conflicts_count < MAX_DEPS) {
+                unit->unit.conflicts[unit->unit.conflicts_count] = strdup("shutdown.target");
+                if (unit->unit.conflicts[unit->unit.conflicts_count]) {
+                    unit->unit.conflicts_count++;
+                }
+            }
+            /* Add implicit Before=shutdown.target */
+            if (unit->unit.before_count < MAX_DEPS) {
+                unit->unit.before[unit->unit.before_count] = strdup("shutdown.target");
+                if (unit->unit.before[unit->unit.before_count]) {
+                    unit->unit.before_count++;
+                }
+            }
+        }
+    }
+
     fclose(f);
     return 0;
 }

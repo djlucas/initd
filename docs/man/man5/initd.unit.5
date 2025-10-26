@@ -60,6 +60,11 @@ the type of unit.
 .B Description=
 A human-readable description of the unit.
 .TP
+.B AllowIsolate=
+Boolean. When true, permits this target to be used as the destination for an
+isolation request (initctl isolate). Only meaningful for .target units.
+Default: false.
+.TP
 .B After=
 Space-separated list of unit names. This unit will be started after the
 specified units are active. Used for ordering only, not dependencies.
@@ -115,6 +120,12 @@ stops (including StopWhenUnneeded) still occur. Default: false.
 .B Conflicts=
 Space-separated list of unit names. This unit conflicts with the specified
 units. Starting this unit will stop conflicting units.
+.TP
+.B DefaultDependencies=
+Boolean. When true (default), adds implicit dependencies for .service, .timer,
+and .socket units:
+.B After=basic.target Conflicts=shutdown.target Before=shutdown.target.
+Set to false to suppress these defaults. Default: yes.
 .TP
 .B ConditionPathExists=
 Absolute path to a file or directory. The unit will be skipped if the path

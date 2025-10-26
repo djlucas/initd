@@ -389,11 +389,26 @@ void test_parse_default_dependencies(void) {
     struct unit_file unit;
     assert(parse_unit_file(path, &unit) == 0);
     assert(unit.unit.default_dependencies == false);
+    /* Should NOT have implicit shutdown dependencies */
+    int has_shutdown_conflict = 0;
+    int has_shutdown_before = 0;
+    for (int i = 0; i < unit.unit.conflicts_count; i++) {
+        if (strcmp(unit.unit.conflicts[i], "shutdown.target") == 0) {
+            has_shutdown_conflict = 1;
+        }
+    }
+    for (int i = 0; i < unit.unit.before_count; i++) {
+        if (strcmp(unit.unit.before[i], "shutdown.target") == 0) {
+            has_shutdown_before = 1;
+        }
+    }
+    assert(has_shutdown_conflict == 0);
+    assert(has_shutdown_before == 0);
 
     free_unit_file(&unit);
     unlink(path);
 
-    /* Test DefaultDependencies=yes (explicit, though it's the default) */
+    /* Test DefaultDependencies=yes - should get implicit Conflicts/Before shutdown.target */
     const char *unit_content2 =
         "[Unit]\n"
         "Description=Normal Service\n"
@@ -407,11 +422,26 @@ void test_parse_default_dependencies(void) {
 
     assert(parse_unit_file(path, &unit) == 0);
     assert(unit.unit.default_dependencies == true);
+    /* Should have implicit Conflicts=shutdown.target Before=shutdown.target */
+    has_shutdown_conflict = 0;
+    has_shutdown_before = 0;
+    for (int i = 0; i < unit.unit.conflicts_count; i++) {
+        if (strcmp(unit.unit.conflicts[i], "shutdown.target") == 0) {
+            has_shutdown_conflict = 1;
+        }
+    }
+    for (int i = 0; i < unit.unit.before_count; i++) {
+        if (strcmp(unit.unit.before[i], "shutdown.target") == 0) {
+            has_shutdown_before = 1;
+        }
+    }
+    assert(has_shutdown_conflict == 1);
+    assert(has_shutdown_before == 1);
 
     free_unit_file(&unit);
     unlink(path);
 
-    /* Test default (should be true) */
+    /* Test default (should be true and get implicit dependencies) */
     const char *unit_content3 =
         "[Unit]\n"
         "Description=Service Without Explicit DefaultDependencies\n"
@@ -424,6 +454,21 @@ void test_parse_default_dependencies(void) {
 
     assert(parse_unit_file(path, &unit) == 0);
     assert(unit.unit.default_dependencies == true);  /* Should default to true */
+    /* Should have implicit shutdown dependencies */
+    has_shutdown_conflict = 0;
+    has_shutdown_before = 0;
+    for (int i = 0; i < unit.unit.conflicts_count; i++) {
+        if (strcmp(unit.unit.conflicts[i], "shutdown.target") == 0) {
+            has_shutdown_conflict = 1;
+        }
+    }
+    for (int i = 0; i < unit.unit.before_count; i++) {
+        if (strcmp(unit.unit.before[i], "shutdown.target") == 0) {
+            has_shutdown_before = 1;
+        }
+    }
+    assert(has_shutdown_conflict == 1);
+    assert(has_shutdown_before == 1);
 
     free_unit_file(&unit);
     unlink(path);

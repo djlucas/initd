@@ -90,6 +90,8 @@ Tests the unit file parser:
 - Install section extras (Also, Alias, DefaultInstance)
 - Validation rules
 - Provides= directive
+- AllowIsolate= directive for target units
+- DefaultDependencies= directive with implicit Conflicts/Before shutdown.target
 
 ### test-control (10 tests)
 Tests the control protocol:

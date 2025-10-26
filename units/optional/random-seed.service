@@ -2,7 +2,7 @@
 Description=Load/Save Random Seed
 Documentation=man:random(4)
 After=mountvirtfs.service
-Before=sysinit.target
+Before=sysinit.target shutdown.target
 Provides=random
 DefaultDependencies=no
 
