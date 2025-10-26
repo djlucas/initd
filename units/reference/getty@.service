@@ -7,6 +7,10 @@ Before=multi-user.target
 [Service]
 Type=simple
 ExecStart=@SBINDIR@/agetty --noclear %I 38400 linux
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/%I
 Restart=always
 RestartSec=0
 

@@ -198,13 +198,241 @@ static void test_combined_features(void) {
     printf("✓ Combined features parsing works\n");
 }
 
+/* Test parsing RemainAfterExit */
+static void test_parse_remain_after_exit(void) {
+    struct unit_file unit = {0};
+
+    /* Test RemainAfterExit=yes */
+    char *path1 = create_temp_unit_file(
+        "[Unit]\n"
+        "Description=Test RemainAfterExit\n"
+        "[Service]\n"
+        "Type=oneshot\n"
+        "ExecStart=/bin/true\n"
+        "RemainAfterExit=yes\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.remain_after_exit == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test RemainAfterExit=no */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "RemainAfterExit=no\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.remain_after_exit == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default (RemainAfterExit not specified) */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.remain_after_exit == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ RemainAfterExit parsing works\n");
+}
+
+/* Test parsing StandardInput */
+static void test_parse_standard_input(void) {
+    struct unit_file unit = {0};
+
+    /* Test StandardInput=null */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardInput=null\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_NULL);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test StandardInput=tty */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardInput=tty\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_TTY);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test StandardInput=tty-force */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardInput=tty-force\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_TTY_FORCE);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test default (inherit) */
+    memset(&unit, 0, sizeof(unit));
+    char *path4 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_INHERIT);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    printf("✓ StandardInput parsing works\n");
+}
+
+/* Test parsing StandardOutput */
+static void test_parse_standard_output(void) {
+    struct unit_file unit = {0};
+
+    /* Test StandardOutput=null */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardOutput=null\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.standard_output == STDIO_NULL);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test StandardOutput=tty */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardOutput=tty\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.standard_output == STDIO_TTY);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test StandardOutput=inherit */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardOutput=inherit\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.standard_output == STDIO_INHERIT);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ StandardOutput parsing works\n");
+}
+
+/* Test parsing StandardError */
+static void test_parse_standard_error(void) {
+    struct unit_file unit = {0};
+
+    /* Test StandardError=null */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardError=null\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.standard_error == STDIO_NULL);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test StandardError=tty */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardError=tty\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.standard_error == STDIO_TTY);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    printf("✓ StandardError parsing works\n");
+}
+
+/* Test parsing TTYPath */
+static void test_parse_tty_path(void) {
+    struct unit_file unit = {0};
+
+    /* Test TTYPath with /dev/console */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "TTYPath=/dev/console\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(strcmp(unit.config.service.tty_path, "/dev/console") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test TTYPath with /dev/tty1 */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "TTYPath=/dev/tty1\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(strcmp(unit.config.service.tty_path, "/dev/tty1") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    printf("✓ TTYPath parsing works\n");
+}
+
+/* Test combined StandardInput/Output/Error with TTYPath */
+static void test_combined_stdio(void) {
+    struct unit_file unit = {0};
+
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/sbin/sulogin\n"
+        "StandardInput=tty-force\n"
+        "StandardOutput=tty\n"
+        "StandardError=tty\n"
+        "TTYPath=/dev/console\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_TTY_FORCE);
+    assert(unit.config.service.standard_output == STDIO_TTY);
+    assert(unit.config.service.standard_error == STDIO_TTY);
+    assert(strcmp(unit.config.service.tty_path, "/dev/console") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ Combined StandardInput/Output/Error with TTYPath parsing works\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode)...\n");
+    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
     test_parse_kill_mode();
     test_combined_features();
+    test_parse_remain_after_exit();
+    test_parse_standard_input();
+    test_parse_standard_output();
+    test_parse_standard_error();
+    test_parse_tty_path();
+    test_combined_stdio();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

@@ -39,6 +39,10 @@ struct priv_request {
     bool private_tmp;       /* PrivateTmp= */
     int limit_nofile;       /* LimitNOFILE= (-1 = not set) */
     int kill_mode;          /* KillMode= (enum kill_mode) */
+    int standard_input;     /* StandardInput= (enum standard_io) */
+    int standard_output;    /* StandardOutput= (enum standard_io) */
+    int standard_error;     /* StandardError= (enum standard_io) */
+    char tty_path[1024];    /* TTYPath= for StandardInput=tty */
 };
 
 /* Response types from daemon to worker */

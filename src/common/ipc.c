@@ -66,6 +66,10 @@ struct priv_request_wire {
     uint8_t  private_tmp;
     int32_t  limit_nofile;
     int32_t  kill_mode;
+    int32_t  standard_input;
+    int32_t  standard_output;
+    int32_t  standard_error;
+    char     tty_path[1024];    /* NUL-terminated */
     uint32_t arg_count;         /* Number of arguments */
     uint32_t args_total_len;    /* Total bytes of packed args */
     /* Followed by args_total_len bytes of concatenated NUL-terminated args */
@@ -107,6 +111,12 @@ int send_request(int fd, const struct priv_request *req) {
     wire.private_tmp = req->private_tmp ? 1 : 0;
     wire.limit_nofile = req->limit_nofile;
     wire.kill_mode = req->kill_mode;
+    wire.standard_input = req->standard_input;
+    wire.standard_output = req->standard_output;
+    wire.standard_error = req->standard_error;
+
+    strncpy(wire.tty_path, req->tty_path, sizeof(wire.tty_path) - 1);
+    wire.tty_path[sizeof(wire.tty_path) - 1] = '\0';
 
     /* Pack exec_args */
     wire.arg_count = 0;
@@ -198,6 +208,7 @@ int recv_request(int fd, struct priv_request *req) {
     wire.unit_name[sizeof(wire.unit_name) - 1] = '\0';
     wire.unit_path[sizeof(wire.unit_path) - 1] = '\0';
     wire.exec_path[sizeof(wire.exec_path) - 1] = '\0';
+    wire.tty_path[sizeof(wire.tty_path) - 1] = '\0';
 
     /* Unpack fixed fields */
     req->type = wire.type;
@@ -210,6 +221,10 @@ int recv_request(int fd, struct priv_request *req) {
     req->private_tmp = wire.private_tmp;
     req->limit_nofile = wire.limit_nofile;
     req->kill_mode = wire.kill_mode;
+    req->standard_input = wire.standard_input;
+    req->standard_output = wire.standard_output;
+    req->standard_error = wire.standard_error;
+    strncpy(req->tty_path, wire.tty_path, sizeof(req->tty_path));
 
     /* Unpack exec_args */
     req->exec_args = NULL;

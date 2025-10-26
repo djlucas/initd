@@ -28,6 +28,7 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/ioctl.h>
 #include <syslog.h>
 #ifdef __linux__
 #include <sys/reboot.h>
@@ -530,14 +531,91 @@ static pid_t start_service_process(const struct service_section *service,
         close(stdout_pipe[0]);
         close(stderr_pipe[0]);
 
-        /* Redirect stdout and stderr to pipes */
-        if (dup2(stdout_pipe[1], STDOUT_FILENO) < 0) {
-            log_error("supervisor", "dup2(stdout): %s", strerror(errno));
-            _exit(1);
+        /* Handle StandardInput/Output/Error */
+        int tty_fd = -1;
+
+        /* Open TTY if needed */
+        if (service->standard_input == STDIO_TTY || service->standard_input == STDIO_TTY_FORCE ||
+            service->standard_output == STDIO_TTY || service->standard_error == STDIO_TTY) {
+
+            if (service->tty_path[0] != '\0') {
+                tty_fd = open(service->tty_path, O_RDWR | O_NOCTTY);
+                if (tty_fd < 0) {
+                    log_error("supervisor", "open TTY %s: %s", service->tty_path, strerror(errno));
+                    _exit(1);
+                }
+
+                /* Make this our controlling terminal */
+                if (ioctl(tty_fd, TIOCSCTTY, 0) < 0) {
+                    if (service->standard_input != STDIO_TTY_FORCE) {
+                        log_error("supervisor", "TIOCSCTTY %s: %s", service->tty_path, strerror(errno));
+                        close(tty_fd);
+                        _exit(1);
+                    }
+                }
+            }
         }
-        if (dup2(stderr_pipe[1], STDERR_FILENO) < 0) {
-            log_error("supervisor", "dup2(stderr): %s", strerror(errno));
-            _exit(1);
+
+        /* Setup stdin */
+        if (service->standard_input == STDIO_NULL) {
+            int devnull = open("/dev/null", O_RDONLY);
+            if (devnull >= 0) {
+                dup2(devnull, STDIN_FILENO);
+                close(devnull);
+            }
+        } else if ((service->standard_input == STDIO_TTY || service->standard_input == STDIO_TTY_FORCE) && tty_fd >= 0) {
+            if (dup2(tty_fd, STDIN_FILENO) < 0) {
+                log_error("supervisor", "dup2(stdin, tty): %s", strerror(errno));
+                close(tty_fd);
+                _exit(1);
+            }
+        }
+
+        /* Setup stdout */
+        if (service->standard_output == STDIO_NULL) {
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) {
+                dup2(devnull, STDOUT_FILENO);
+                close(devnull);
+            }
+        } else if (service->standard_output == STDIO_TTY && tty_fd >= 0) {
+            if (dup2(tty_fd, STDOUT_FILENO) < 0) {
+                log_error("supervisor", "dup2(stdout, tty): %s", strerror(errno));
+                close(tty_fd);
+                _exit(1);
+            }
+        } else {
+            /* Default: redirect to pipe */
+            if (dup2(stdout_pipe[1], STDOUT_FILENO) < 0) {
+                log_error("supervisor", "dup2(stdout): %s", strerror(errno));
+                _exit(1);
+            }
+        }
+
+        /* Setup stderr */
+        if (service->standard_error == STDIO_NULL) {
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) {
+                dup2(devnull, STDERR_FILENO);
+                close(devnull);
+            }
+        } else if (service->standard_error == STDIO_TTY && tty_fd >= 0) {
+            if (dup2(tty_fd, STDERR_FILENO) < 0) {
+                log_error("supervisor", "dup2(stderr, tty): %s", strerror(errno));
+                close(tty_fd);
+                _exit(1);
+            }
+        } else {
+            /* Default: redirect to pipe */
+            if (dup2(stderr_pipe[1], STDERR_FILENO) < 0) {
+                log_error("supervisor", "dup2(stderr): %s", strerror(errno));
+                _exit(1);
+            }
+        }
+
+        /* Close TTY fd if we opened it (already dup2'd where needed) */
+        if (tty_fd >= 0) {
+            close(tty_fd);
         }
 
         /* Close write ends after dup2 */

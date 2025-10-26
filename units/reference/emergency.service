@@ -4,6 +4,10 @@ Documentation=man:sulogin(8)
 
 [Service]
 Type=simple
-ExecStart=/sbin/sulogin /dev/console
+ExecStart=/sbin/sulogin
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
 Restart=always
 RestartSec=0

@@ -128,6 +128,12 @@ static int parse_service_key(struct service_section *service, const char *key, c
         } else {
             service->private_tmp = false;
         }
+    } else if (strcmp(key, "RemainAfterExit") == 0) {
+        if (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "1") == 0) {
+            service->remain_after_exit = true;
+        } else {
+            service->remain_after_exit = false;
+        }
     } else if (strcmp(key, "KillMode") == 0) {
         if (strcmp(value, "control-group") == 0) service->kill_mode = KILL_CONTROL_GROUP;
         else if (strcmp(value, "process") == 0) service->kill_mode = KILL_PROCESS;
@@ -140,6 +146,24 @@ static int parse_service_key(struct service_section *service, const char *key, c
         } else {
             service->limit_nofile = atoi(value);
         }
+    } else if (strcmp(key, "StandardInput") == 0) {
+        if (strcmp(value, "null") == 0) service->standard_input = STDIO_NULL;
+        else if (strcmp(value, "tty") == 0) service->standard_input = STDIO_TTY;
+        else if (strcmp(value, "tty-force") == 0) service->standard_input = STDIO_TTY_FORCE;
+        else service->standard_input = STDIO_INHERIT; /* Default */
+    } else if (strcmp(key, "StandardOutput") == 0) {
+        if (strcmp(value, "null") == 0) service->standard_output = STDIO_NULL;
+        else if (strcmp(value, "tty") == 0) service->standard_output = STDIO_TTY;
+        else if (strcmp(value, "inherit") == 0) service->standard_output = STDIO_INHERIT;
+        else service->standard_output = STDIO_INHERIT; /* Default */
+    } else if (strcmp(key, "StandardError") == 0) {
+        if (strcmp(value, "null") == 0) service->standard_error = STDIO_NULL;
+        else if (strcmp(value, "tty") == 0) service->standard_error = STDIO_TTY;
+        else if (strcmp(value, "inherit") == 0) service->standard_error = STDIO_INHERIT;
+        else service->standard_error = STDIO_INHERIT; /* Default */
+    } else if (strcmp(key, "TTYPath") == 0) {
+        strncpy(service->tty_path, value, sizeof(service->tty_path) - 1);
+        service->tty_path[sizeof(service->tty_path) - 1] = '\0';
     } else {
         return -1; /* Unknown key */
     }

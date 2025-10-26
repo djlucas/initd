@@ -81,6 +81,14 @@ enum kill_mode {
     KILL_NONE            /* Don't kill anything */
 };
 
+/* Standard I/O handling */
+enum standard_io {
+    STDIO_INHERIT,       /* Inherit from parent (default) */
+    STDIO_NULL,          /* Redirect to /dev/null */
+    STDIO_TTY,           /* Connect to TTY (use working_directory as TTY path) */
+    STDIO_TTY_FORCE      /* Like TTY but force even if not a TTY */
+};
+
 /* [Service] section */
 struct service_section {
     enum service_type type;
@@ -92,6 +100,7 @@ struct service_section {
     char user[64];
     char group[64];
     char working_directory[MAX_PATH];
+    char tty_path[MAX_PATH];  /* Path to TTY device for StandardInput=tty */
     char *environment[MAX_ENV_VARS];
     int environment_count;
     char *environment_file;
@@ -100,6 +109,10 @@ struct service_section {
     int timeout_start_sec;
     int timeout_stop_sec;
     bool private_tmp;
+    bool remain_after_exit;
+    enum standard_io standard_input;
+    enum standard_io standard_output;
+    enum standard_io standard_error;
     enum kill_mode kill_mode;
     int limit_nofile;    /* -1 = not set, 0 = unlimited (infinity) */
     int runtime_max_sec; /* 0 = no limit */

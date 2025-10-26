@@ -433,6 +433,11 @@ static pid_t start_service(struct unit_file *unit) {
         req.private_tmp = unit->config.service.private_tmp;
         req.limit_nofile = unit->config.service.limit_nofile;
         req.kill_mode = unit->config.service.kill_mode;
+        req.standard_input = unit->config.service.standard_input;
+        req.standard_output = unit->config.service.standard_output;
+        req.standard_error = unit->config.service.standard_error;
+        strncpy(req.tty_path, unit->config.service.tty_path, sizeof(req.tty_path) - 1);
+        req.tty_path[sizeof(req.tty_path) - 1] = '\0';
     }
 
     /* Send request to master */
@@ -593,10 +598,16 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 
     /* Update state based on exit status */
     if (success) {
-        unit->state = STATE_INACTIVE;
-        /* Only show "Stopped" for long-running services, not oneshot */
-        if (unit->config.service.type != SERVICE_ONESHOT) {
-            log_service_stopped(unit->name, unit->unit.description);
+        /* For RemainAfterExit=yes services, stay active after successful exit */
+        if (unit->config.service.remain_after_exit) {
+            unit->state = STATE_ACTIVE;
+            log_debug(unit->name, "exited successfully, remaining active (RemainAfterExit=yes)");
+        } else {
+            unit->state = STATE_INACTIVE;
+            /* Only show "Stopped" for long-running services, not oneshot */
+            if (unit->config.service.type != SERVICE_ONESHOT) {
+                log_service_stopped(unit->name, unit->unit.description);
+            }
         }
     } else {
         unit->state = STATE_FAILED;

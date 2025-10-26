@@ -264,17 +264,28 @@ Tests socket activator IPC communication:
 - Socket status request serialization
 - Socket activation notification serialization
 
-### test-service-features (4 tests)
+### test-service-features (10 tests)
 Tests service directive parsing:
 - **PrivateTmp parsing** - Tests true/false/yes/1 parsing
 - **LimitNOFILE parsing** - Tests numeric values, "infinity", and default (-1)
 - **KillMode parsing** - Tests all four modes (process, control-group, mixed, none) and default
 - **Combined features** - Tests all three directives together in one service file
+- **RemainAfterExit parsing** - Tests yes/no/true/false parsing and default behavior
+- **StandardInput parsing** - Tests null, tty, tty-force, and default (inherit) modes
+- **StandardOutput parsing** - Tests null, tty, inherit modes
+- **StandardError parsing** - Tests null, tty modes
+- **TTYPath parsing** - Tests /dev/console and /dev/tty1 paths
+- **Combined StandardInput/Output/Error** - Tests all stdio directives with TTYPath together
 
 **Key features tested:**
 - PrivateTmp=true|false (default: false)
 - LimitNOFILE=N|infinity (default: -1 = not set)
 - KillMode=process|control-group|mixed|none (default: process)
+- RemainAfterExit=yes|no (default: false)
+- StandardInput=null|tty|tty-force|inherit (default: inherit)
+- StandardOutput=null|tty|inherit (default: inherit)
+- StandardError=null|tty|inherit (default: inherit)
+- TTYPath=/dev/console (or other TTY device path)
 
 ### test-service-registry (5 tests)
 Tests service registry and DoS prevention mechanisms:

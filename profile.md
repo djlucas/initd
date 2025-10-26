@@ -1123,7 +1123,10 @@ Security Benefits:
 
 Notes:
 - Bullets use two spaces followed by `-` and a concise, present-tense clause.
-- Omit the optional “Security Benefits” section when it does not apply.
+- Omit the optional "Security Benefits" section when it does not apply.
+- Do not mention updates to markdown documentation files (README.md,
+  profile.md, tests/README.md) in the "What Changed" bullets - focus on code
+  and configuration changes only.
 - Configure `git config commit.template` (project or global) or a prepare-
   commit-msg hook to enforce the template automatically.
 
@@ -1261,7 +1264,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 10. **integration** - End-to-end workflows
 11. **timer IPC protocol** - Timer daemon IPC communication
 12. **socket IPC protocol** - Socket daemon IPC communication
-13. **service features** - PrivateTmp, LimitNOFILE, KillMode parsing
+13. **service features** - PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error parsing
 14. **service registry** - DoS prevention and rate limiting (includes 62s timing test)
 15. **timer inactivity notify** - OnUnitInactiveSec rescheduling
 16. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
