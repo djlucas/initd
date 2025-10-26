@@ -44,6 +44,11 @@ struct priv_request {
     int standard_output;    /* StandardOutput= (enum standard_io) */
     int standard_error;     /* StandardError= (enum standard_io) */
     char tty_path[1024];    /* TTYPath= for StandardInput=tty */
+    char input_file[1024];  /* Path for StandardInput=file:path */
+    char output_file[1024]; /* Path for StandardOutput=file:path */
+    char error_file[1024];  /* Path for StandardError=file:path */
+    char *input_data;       /* Buffer for StandardInput=data */
+    size_t input_data_size; /* Size of input_data */
     int start_limit_interval_sec;
     int start_limit_burst;
     int start_limit_action; /* enum start_limit_action */

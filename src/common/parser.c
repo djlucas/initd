@@ -19,6 +19,68 @@
 
 #define MAX_LINE 1024
 
+/* Base64 decoding table */
+static const unsigned char base64_decode_table[256] = {
+    ['A'] = 0,  ['B'] = 1,  ['C'] = 2,  ['D'] = 3,  ['E'] = 4,  ['F'] = 5,
+    ['G'] = 6,  ['H'] = 7,  ['I'] = 8,  ['J'] = 9,  ['K'] = 10, ['L'] = 11,
+    ['M'] = 12, ['N'] = 13, ['O'] = 14, ['P'] = 15, ['Q'] = 16, ['R'] = 17,
+    ['S'] = 18, ['T'] = 19, ['U'] = 20, ['V'] = 21, ['W'] = 22, ['X'] = 23,
+    ['Y'] = 24, ['Z'] = 25,
+    ['a'] = 26, ['b'] = 27, ['c'] = 28, ['d'] = 29, ['e'] = 30, ['f'] = 31,
+    ['g'] = 32, ['h'] = 33, ['i'] = 34, ['j'] = 35, ['k'] = 36, ['l'] = 37,
+    ['m'] = 38, ['n'] = 39, ['o'] = 40, ['p'] = 41, ['q'] = 42, ['r'] = 43,
+    ['s'] = 44, ['t'] = 45, ['u'] = 46, ['v'] = 47, ['w'] = 48, ['x'] = 49,
+    ['y'] = 50, ['z'] = 51,
+    ['0'] = 52, ['1'] = 53, ['2'] = 54, ['3'] = 55, ['4'] = 56, ['5'] = 57,
+    ['6'] = 58, ['7'] = 59, ['8'] = 60, ['9'] = 61,
+    ['+'] = 62, ['/'] = 63
+};
+
+/* Simple base64 decoder (RFC 2045) - ignores whitespace */
+static size_t base64_decode(const char *input, size_t input_len, char *output, size_t output_max) {
+    size_t out_pos = 0;
+    unsigned char buffer[4];
+    int buffer_pos = 0;
+
+    for (size_t i = 0; i < input_len; i++) {
+        unsigned char c = (unsigned char)input[i];
+
+        /* Skip whitespace */
+        if (isspace(c)) continue;
+
+        /* End on padding */
+        if (c == '=') break;
+
+        /* Invalid character */
+        if (!isalnum(c) && c != '+' && c != '/') return 0;
+
+        buffer[buffer_pos++] = base64_decode_table[c];
+
+        if (buffer_pos == 4) {
+            if (out_pos + 3 > output_max) return 0; /* Buffer too small */
+
+            output[out_pos++] = (buffer[0] << 2) | (buffer[1] >> 4);
+            output[out_pos++] = (buffer[1] << 4) | (buffer[2] >> 2);
+            output[out_pos++] = (buffer[2] << 6) | buffer[3];
+
+            buffer_pos = 0;
+        }
+    }
+
+    /* Handle remaining bytes */
+    if (buffer_pos >= 2) {
+        if (out_pos + 1 > output_max) return 0;
+        output[out_pos++] = (buffer[0] << 2) | (buffer[1] >> 4);
+
+        if (buffer_pos >= 3) {
+            if (out_pos + 1 > output_max) return 0;
+            output[out_pos++] = (buffer[1] << 4) | (buffer[2] >> 2);
+        }
+    }
+
+    return out_pos;
+}
+
 /* Current section being parsed */
 enum parse_section {
     SECTION_NONE,
@@ -288,20 +350,74 @@ static int parse_service_key(struct service_section *service, const char *key, c
         if (strcmp(value, "null") == 0) service->standard_input = STDIO_NULL;
         else if (strcmp(value, "tty") == 0) service->standard_input = STDIO_TTY;
         else if (strcmp(value, "tty-force") == 0) service->standard_input = STDIO_TTY_FORCE;
+        else if (strcmp(value, "socket") == 0) service->standard_input = STDIO_SOCKET;
+        else if (strcmp(value, "data") == 0) service->standard_input = STDIO_DATA;
+        else if (strncmp(value, "file:", 5) == 0) {
+            service->standard_input = STDIO_FILE;
+            strncpy(service->input_file, value + 5, sizeof(service->input_file) - 1);
+            service->input_file[sizeof(service->input_file) - 1] = '\0';
+        }
         else service->standard_input = STDIO_INHERIT; /* Default */
     } else if (strcmp(key, "StandardOutput") == 0) {
         if (strcmp(value, "null") == 0) service->standard_output = STDIO_NULL;
         else if (strcmp(value, "tty") == 0) service->standard_output = STDIO_TTY;
         else if (strcmp(value, "inherit") == 0) service->standard_output = STDIO_INHERIT;
+        else if (strcmp(value, "journal") == 0) service->standard_output = STDIO_INHERIT; /* systemd compat: journal → syslog */
+        else if (strcmp(value, "syslog") == 0) service->standard_output = STDIO_INHERIT; /* Already our default behavior */
+        else if (strcmp(value, "socket") == 0) service->standard_output = STDIO_SOCKET;
+        else if (strncmp(value, "file:", 5) == 0) {
+            service->standard_output = STDIO_FILE;
+            strncpy(service->output_file, value + 5, sizeof(service->output_file) - 1);
+            service->output_file[sizeof(service->output_file) - 1] = '\0';
+        }
         else service->standard_output = STDIO_INHERIT; /* Default */
     } else if (strcmp(key, "StandardError") == 0) {
         if (strcmp(value, "null") == 0) service->standard_error = STDIO_NULL;
         else if (strcmp(value, "tty") == 0) service->standard_error = STDIO_TTY;
         else if (strcmp(value, "inherit") == 0) service->standard_error = STDIO_INHERIT;
+        else if (strcmp(value, "journal") == 0) service->standard_error = STDIO_INHERIT; /* systemd compat: journal → syslog */
+        else if (strcmp(value, "syslog") == 0) service->standard_error = STDIO_INHERIT; /* Already our default behavior */
+        else if (strcmp(value, "socket") == 0) service->standard_error = STDIO_SOCKET;
+        else if (strncmp(value, "file:", 5) == 0) {
+            service->standard_error = STDIO_FILE;
+            strncpy(service->error_file, value + 5, sizeof(service->error_file) - 1);
+            service->error_file[sizeof(service->error_file) - 1] = '\0';
+        }
         else service->standard_error = STDIO_INHERIT; /* Default */
     } else if (strcmp(key, "TTYPath") == 0) {
         strncpy(service->tty_path, value, sizeof(service->tty_path) - 1);
         service->tty_path[sizeof(service->tty_path) - 1] = '\0';
+    } else if (strcmp(key, "StandardInputText") == 0) {
+        /* Append text to input_data buffer with newline */
+        size_t value_len = strlen(value);
+        size_t new_size = service->input_data_size + value_len + 1; /* +1 for newline */
+        char *new_data = realloc(service->input_data, new_size + 1); /* +1 for null terminator */
+        if (new_data) {
+            service->input_data = new_data;
+            memcpy(service->input_data + service->input_data_size, value, value_len);
+            service->input_data[service->input_data_size + value_len] = '\n';
+            service->input_data_size = new_size;
+            service->input_data[service->input_data_size] = '\0';
+        }
+    } else if (strcmp(key, "StandardInputData") == 0) {
+        /* Decode base64 and append to input_data buffer */
+        /* For now, implement a simple base64 decoder */
+        size_t value_len = strlen(value);
+        size_t decoded_max_size = (value_len * 3) / 4 + 1;
+        char *decoded = malloc(decoded_max_size);
+        if (decoded) {
+            size_t decoded_size = base64_decode(value, value_len, decoded, decoded_max_size);
+            if (decoded_size > 0) {
+                char *new_data = realloc(service->input_data, service->input_data_size + decoded_size + 1);
+                if (new_data) {
+                    service->input_data = new_data;
+                    memcpy(service->input_data + service->input_data_size, decoded, decoded_size);
+                    service->input_data_size += decoded_size;
+                    service->input_data[service->input_data_size] = '\0';
+                }
+            }
+            free(decoded);
+        }
     } else if (strcmp(key, "RestartPreventExitStatus") == 0) {
         parse_status_list(value, service->restart_prevent_statuses, &service->restart_prevent_count);
     } else if (strcmp(key, "RestartForceExitStatus") == 0) {

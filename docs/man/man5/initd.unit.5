@@ -276,6 +276,76 @@ this time, it is forcefully terminated with SIGKILL. Default: 90s.
 .B RemainAfterExit=
 Boolean. If true, the service is considered active even after the process
 exits. Useful for Type=oneshot. Default: false.
+.SS Standard Input/Output/Error
+.TP
+.B StandardInput=
+Controls where the service reads standard input from. Supported values:
+.RS
+.IP \(bu 2
+.B inherit
+\- Inherit from parent process (default)
+.IP \(bu
+.B null
+\- Redirect to /dev/null
+.IP \(bu
+.B tty
+\- Connect to TTY specified by TTYPath=
+.IP \(bu
+.B tty-force
+\- Like tty but force even if not a TTY
+.IP \(bu
+.B file:path
+\- Read from the specified file path
+.IP \(bu
+.B socket
+\- Read from socket (for socket-activated services)
+.IP \(bu
+.B data
+\- Read from embedded data (use with StandardInputText= or StandardInputData=)
+.RE
+.TP
+.B StandardOutput=
+Controls where the service writes standard output. Supported values:
+.RS
+.IP \(bu 2
+.B inherit
+\- Inherit from parent, captured and logged to syslog (default)
+.IP \(bu
+.B null
+\- Redirect to /dev/null
+.IP \(bu
+.B tty
+\- Connect to TTY specified by TTYPath=
+.IP \(bu
+.B journal
+\- Systemd compatibility alias for inherit (logged to syslog)
+.IP \(bu
+.B syslog
+\- Logged to syslog (same as inherit, our default behavior)
+.IP \(bu
+.B file:path
+\- Write to the specified file path (created/truncated)
+.IP \(bu
+.B socket
+\- Write to socket (for socket-activated services)
+.RE
+.TP
+.B StandardError=
+Controls where the service writes standard error. Same values as StandardOutput=.
+.TP
+.B StandardInputText=
+Append a line of text to StandardInput= buffer when using StandardInput=data.
+Multiple lines may be specified. Each line is automatically followed by a newline character.
+C-style escape sequences (like \\n, \\t) are supported.
+.TP
+.B StandardInputData=
+Append base64-encoded binary data to StandardInput= buffer when using StandardInput=data.
+Multiple entries may be specified and are decoded and concatenated in order.
+Whitespace in the base64 string is ignored.
+.TP
+.B TTYPath=
+Absolute path to TTY device when using StandardInput=tty, StandardOutput=tty,
+or StandardError=tty. Example: /dev/console or /dev/tty1.
 .SS Security and Resource Control
 .TP
 .B PrivateTmp=

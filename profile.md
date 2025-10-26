@@ -1228,15 +1228,6 @@ Notes:
   SyslogLevel=
   SyslogLevelPrefix=
   LogLevelMax=
-  StandardInput=data
-  StandardInput=file:*
-  StandardInput=socket
-  StandardOutput=syslog (alias journal)
-  StandardOutput=file:*
-  StandardOutput=socket
-  StandardError=syslog (alias journal)
-  StandardError=file:*
-  StandardError=socket
   NoNewPrivileges=
   ProtectSystem=
   ProtectHome=

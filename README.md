@@ -213,7 +213,8 @@ Unit types **not supported** (use traditional alternatives):
 - `PIDFile=` - adopt forked services using PID files
 - `RestartPreventExitStatus=` / `RestartForceExitStatus=` - restart filters
 - `RemainAfterExit=` - keep oneshot services active after exit
-- `StandardInput=`/`StandardOutput=`/`StandardError=` - null, inherit, tty, tty-force
+- `StandardInput=`/`StandardOutput=`/`StandardError=` - null, inherit, tty, tty-force, syslog, journal, file:path, socket, data
+- `StandardInputText=` / `StandardInputData=` - embed literal input data (text or base64)
 - `TTYPath=` - device to use with tty stdio modes
 
 ## Quick Start

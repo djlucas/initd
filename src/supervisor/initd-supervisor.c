@@ -632,6 +632,40 @@ static pid_t start_service_process(const struct service_section *service,
                 close(tty_fd);
                 _exit(1);
             }
+        } else if (service->standard_input == STDIO_FILE && service->input_file[0] != '\0') {
+            int file_fd = open(service->input_file, O_RDONLY);
+            if (file_fd < 0) {
+                log_error("supervisor", "open input file %s: %s", service->input_file, strerror(errno));
+                _exit(1);
+            }
+            if (dup2(file_fd, STDIN_FILENO) < 0) {
+                log_error("supervisor", "dup2(stdin, file): %s", strerror(errno));
+                close(file_fd);
+                _exit(1);
+            }
+            close(file_fd);
+        } else if (service->standard_input == STDIO_DATA && service->input_data != NULL) {
+            /* Create pipe and write data to it */
+            int data_pipe[2];
+            if (pipe(data_pipe) < 0) {
+                log_error("supervisor", "pipe for input data: %s", strerror(errno));
+                _exit(1);
+            }
+            /* Write data in blocking mode (should be small) */
+            ssize_t written = write(data_pipe[1], service->input_data, service->input_data_size);
+            if (written != (ssize_t)service->input_data_size) {
+                log_error("supervisor", "write input data: %s", strerror(errno));
+                close(data_pipe[0]);
+                close(data_pipe[1]);
+                _exit(1);
+            }
+            close(data_pipe[1]); /* Close write end */
+            if (dup2(data_pipe[0], STDIN_FILENO) < 0) {
+                log_error("supervisor", "dup2(stdin, data pipe): %s", strerror(errno));
+                close(data_pipe[0]);
+                _exit(1);
+            }
+            close(data_pipe[0]);
         }
 
         /* Setup stdout */
@@ -647,8 +681,20 @@ static pid_t start_service_process(const struct service_section *service,
                 close(tty_fd);
                 _exit(1);
             }
+        } else if (service->standard_output == STDIO_FILE && service->output_file[0] != '\0') {
+            int file_fd = open(service->output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (file_fd < 0) {
+                log_error("supervisor", "open output file %s: %s", service->output_file, strerror(errno));
+                _exit(1);
+            }
+            if (dup2(file_fd, STDOUT_FILENO) < 0) {
+                log_error("supervisor", "dup2(stdout, file): %s", strerror(errno));
+                close(file_fd);
+                _exit(1);
+            }
+            close(file_fd);
         } else {
-            /* Default: redirect to pipe */
+            /* Default: redirect to pipe (for logging to syslog) */
             if (dup2(stdout_pipe[1], STDOUT_FILENO) < 0) {
                 log_error("supervisor", "dup2(stdout): %s", strerror(errno));
                 _exit(1);
@@ -668,8 +714,20 @@ static pid_t start_service_process(const struct service_section *service,
                 close(tty_fd);
                 _exit(1);
             }
+        } else if (service->standard_error == STDIO_FILE && service->error_file[0] != '\0') {
+            int file_fd = open(service->error_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (file_fd < 0) {
+                log_error("supervisor", "open error file %s: %s", service->error_file, strerror(errno));
+                _exit(1);
+            }
+            if (dup2(file_fd, STDERR_FILENO) < 0) {
+                log_error("supervisor", "dup2(stderr, file): %s", strerror(errno));
+                close(file_fd);
+                _exit(1);
+            }
+            close(file_fd);
         } else {
-            /* Default: redirect to pipe */
+            /* Default: redirect to pipe (for logging to syslog) */
             if (dup2(stderr_pipe[1], STDERR_FILENO) < 0) {
                 log_error("supervisor", "dup2(stderr): %s", strerror(errno));
                 _exit(1);

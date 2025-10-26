@@ -448,6 +448,18 @@ static pid_t start_service(struct unit_file *unit) {
         strncpy(req.tty_path, unit->config.service.tty_path, sizeof(req.tty_path) - 1);
         req.tty_path[sizeof(req.tty_path) - 1] = '\0';
 
+        /* Copy file paths for StandardInput/Output/Error=file:path */
+        strncpy(req.input_file, unit->config.service.input_file, sizeof(req.input_file) - 1);
+        req.input_file[sizeof(req.input_file) - 1] = '\0';
+        strncpy(req.output_file, unit->config.service.output_file, sizeof(req.output_file) - 1);
+        req.output_file[sizeof(req.output_file) - 1] = '\0';
+        strncpy(req.error_file, unit->config.service.error_file, sizeof(req.error_file) - 1);
+        req.error_file[sizeof(req.error_file) - 1] = '\0';
+
+        /* Copy input data for StandardInput=data */
+        req.input_data = unit->config.service.input_data;
+        req.input_data_size = unit->config.service.input_data_size;
+
         int interval = unit->unit.start_limit_interval_set ?
             unit->unit.start_limit_interval_sec : INITD_DEFAULT_START_LIMIT_INTERVAL_SEC;
         if (interval < INITD_DEFAULT_START_LIMIT_INTERVAL_SEC) {

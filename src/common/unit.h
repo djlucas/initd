@@ -137,7 +137,10 @@ enum standard_io {
     STDIO_INHERIT,       /* Inherit from parent (default) */
     STDIO_NULL,          /* Redirect to /dev/null */
     STDIO_TTY,           /* Connect to TTY (use working_directory as TTY path) */
-    STDIO_TTY_FORCE      /* Like TTY but force even if not a TTY */
+    STDIO_TTY_FORCE,     /* Like TTY but force even if not a TTY */
+    STDIO_FILE,          /* Read/write from file path */
+    STDIO_SOCKET,        /* Use socket FD (for socket activation) */
+    STDIO_DATA           /* Read from embedded data (StandardInputText/Data) */
 };
 
 /* [Service] section */
@@ -158,6 +161,11 @@ struct service_section {
     char group[64];
     char working_directory[MAX_PATH];
     char tty_path[MAX_PATH];  /* Path to TTY device for StandardInput=tty */
+    char input_file[MAX_PATH];   /* Path for StandardInput=file:path */
+    char output_file[MAX_PATH];  /* Path for StandardOutput=file:path */
+    char error_file[MAX_PATH];   /* Path for StandardError=file:path */
+    char *input_data;             /* Buffer for StandardInput=data (from StandardInputText/Data) */
+    size_t input_data_size;       /* Size of input_data buffer */
     char *environment[MAX_ENV_VARS];
     int environment_count;
     char *environment_file;

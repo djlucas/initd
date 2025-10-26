@@ -334,6 +334,30 @@ static void test_parse_standard_output(void) {
     free_unit_file(&unit);
     cleanup_temp_file(path3);
 
+    /* Test StandardOutput=journal (systemd compat - maps to STDIO_INHERIT) */
+    memset(&unit, 0, sizeof(unit));
+    char *path4 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardOutput=journal\n"
+    );
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.standard_output == STDIO_INHERIT);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    /* Test StandardOutput=syslog (maps to STDIO_INHERIT) */
+    memset(&unit, 0, sizeof(unit));
+    char *path5 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardOutput=syslog\n"
+    );
+    assert(parse_unit_file(path5, &unit) == 0);
+    assert(unit.config.service.standard_output == STDIO_INHERIT);
+    free_unit_file(&unit);
+    cleanup_temp_file(path5);
+
     printf("✓ StandardOutput parsing works\n");
 }
 
@@ -420,6 +444,97 @@ static void test_combined_stdio(void) {
     printf("✓ Combined StandardInput/Output/Error with TTYPath parsing works\n");
 }
 
+/* Test StandardInput/Output/Error=file:path */
+static void test_stdio_file(void) {
+    struct unit_file unit = {0};
+
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardInput=file:/tmp/input.txt\n"
+        "StandardOutput=file:/var/log/output.log\n"
+        "StandardError=file:/var/log/error.log\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_FILE);
+    assert(unit.config.service.standard_output == STDIO_FILE);
+    assert(unit.config.service.standard_error == STDIO_FILE);
+    assert(strcmp(unit.config.service.input_file, "/tmp/input.txt") == 0);
+    assert(strcmp(unit.config.service.output_file, "/var/log/output.log") == 0);
+    assert(strcmp(unit.config.service.error_file, "/var/log/error.log") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ StandardInput/Output/Error=file:path parsing works\n");
+}
+
+/* Test StandardInput/Output/Error=socket */
+static void test_stdio_socket(void) {
+    struct unit_file unit = {0};
+
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "StandardInput=socket\n"
+        "StandardOutput=socket\n"
+        "StandardError=socket\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_SOCKET);
+    assert(unit.config.service.standard_output == STDIO_SOCKET);
+    assert(unit.config.service.standard_error == STDIO_SOCKET);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ StandardInput/Output/Error=socket parsing works\n");
+}
+
+/* Test StandardInput=data with StandardInputText= */
+static void test_stdio_data_text(void) {
+    struct unit_file unit = {0};
+
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/cat\n"
+        "StandardInput=data\n"
+        "StandardInputText=Hello World\n"
+        "StandardInputText=Second line\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_DATA);
+    assert(unit.config.service.input_data != NULL);
+    assert(unit.config.service.input_data_size > 0);
+    /* Check that the data contains both lines with newlines */
+    assert(strstr(unit.config.service.input_data, "Hello World\n") != NULL);
+    assert(strstr(unit.config.service.input_data, "Second line\n") != NULL);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ StandardInput=data with StandardInputText= parsing works\n");
+}
+
+/* Test StandardInput=data with StandardInputData= (base64) */
+static void test_stdio_data_base64(void) {
+    struct unit_file unit = {0};
+
+    /* "Hello World\n" in base64 is "SGVsbG8gV29ybGQK" */
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/cat\n"
+        "StandardInput=data\n"
+        "StandardInputData=SGVsbG8gV29ybGQK\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.standard_input == STDIO_DATA);
+    assert(unit.config.service.input_data != NULL);
+    assert(unit.config.service.input_data_size == 12); /* "Hello World\n" */
+    assert(memcmp(unit.config.service.input_data, "Hello World\n", 12) == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ StandardInput=data with StandardInputData= (base64) parsing works\n");
+}
+
 int main(void) {
     printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error)...\n");
 
@@ -433,6 +548,10 @@ int main(void) {
     test_parse_standard_error();
     test_parse_tty_path();
     test_combined_stdio();
+    test_stdio_file();
+    test_stdio_socket();
+    test_stdio_data_text();
+    test_stdio_data_base64();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;
