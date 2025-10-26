@@ -18,18 +18,24 @@
 
 #include <sys/types.h>
 #include <time.h>
+#include "../common/unit.h"
 
 /* Resource limits for DoS prevention */
 #define MAX_SERVICES 256            /* Maximum concurrent services */
-#define MAX_RESTARTS_PER_WINDOW 5   /* Max restarts allowed in time window */
-#define RESTART_WINDOW_SEC 60       /* Time window for restart tracking (60s) */
-#define MIN_RESTART_INTERVAL_SEC 1  /* Minimum time between restart attempts */
+#define MAX_RESTARTS_PER_WINDOW INITD_DEFAULT_START_LIMIT_BURST
+#define RESTART_WINDOW_SEC INITD_DEFAULT_START_LIMIT_INTERVAL_SEC
+#define MIN_RESTART_INTERVAL_SEC INITD_MIN_RESTART_INTERVAL_SEC
+#define MAX_TRACKED_RESTARTS INITD_MAX_START_LIMIT_BURST_TRACK
 
 /* Restart attempt tracking */
 struct restart_tracker {
-    time_t attempts[MAX_RESTARTS_PER_WINDOW];  /* Timestamps of recent restart attempts */
+    time_t attempts[MAX_TRACKED_RESTARTS];     /* Timestamps of recent restart attempts */
     int attempt_count;                         /* Number of attempts in current window */
     time_t last_attempt;                       /* Timestamp of last restart attempt */
+    int window_sec;                            /* Configured window in seconds */
+    int max_restarts;                          /* Allowed restarts within window */
+    int min_restart_interval_sec;              /* Minimum time between restarts */
+    int start_limit_action;                    /* enum start_limit_action */
     char unit_name[256];
     int in_use;
 };
@@ -85,6 +91,12 @@ int can_restart_service(const char *unit_name);
  * Called before starting/restarting a service
  */
 void record_restart_attempt(const char *unit_name);
+
+void update_restart_limits(const char *unit_name,
+                           int max_restarts,
+                           int window_sec,
+                           int min_interval_sec,
+                           int start_limit_action);
 
 /* DoS Prevention: Check if registry has capacity for new service
  * Returns 1 if space available, 0 if at MAX_SERVICES limit

@@ -70,6 +70,13 @@ struct priv_request_wire {
     int32_t  standard_output;
     int32_t  standard_error;
     char     tty_path[1024];    /* NUL-terminated */
+    int32_t  start_limit_interval_sec;
+    int32_t  start_limit_burst;
+    int32_t  start_limit_action;
+    int32_t  restart_prevent_statuses[MAX_RESTART_STATUS];
+    int32_t  restart_force_statuses[MAX_RESTART_STATUS];
+    uint32_t restart_prevent_count;
+    uint32_t restart_force_count;
     uint32_t arg_count;         /* Number of arguments */
     uint32_t args_total_len;    /* Total bytes of packed args */
     /* Followed by args_total_len bytes of concatenated NUL-terminated args */
@@ -117,6 +124,16 @@ int send_request(int fd, const struct priv_request *req) {
 
     strncpy(wire.tty_path, req->tty_path, sizeof(wire.tty_path) - 1);
     wire.tty_path[sizeof(wire.tty_path) - 1] = '\0';
+
+    wire.start_limit_interval_sec = req->start_limit_interval_sec;
+    wire.start_limit_burst = req->start_limit_burst;
+    wire.start_limit_action = req->start_limit_action;
+    wire.restart_prevent_count = req->restart_prevent_count;
+    wire.restart_force_count = req->restart_force_count;
+    for (int i = 0; i < MAX_RESTART_STATUS; i++) {
+        wire.restart_prevent_statuses[i] = req->restart_prevent_statuses[i];
+        wire.restart_force_statuses[i] = req->restart_force_statuses[i];
+    }
 
     /* Pack exec_args */
     wire.arg_count = 0;
@@ -225,6 +242,21 @@ int recv_request(int fd, struct priv_request *req) {
     req->standard_output = wire.standard_output;
     req->standard_error = wire.standard_error;
     strncpy(req->tty_path, wire.tty_path, sizeof(req->tty_path));
+    req->start_limit_interval_sec = wire.start_limit_interval_sec;
+    req->start_limit_burst = wire.start_limit_burst;
+    req->start_limit_action = wire.start_limit_action;
+    req->restart_prevent_count = (int)wire.restart_prevent_count;
+    if (req->restart_prevent_count > MAX_RESTART_STATUS) {
+        req->restart_prevent_count = MAX_RESTART_STATUS;
+    }
+    req->restart_force_count = (int)wire.restart_force_count;
+    if (req->restart_force_count > MAX_RESTART_STATUS) {
+        req->restart_force_count = MAX_RESTART_STATUS;
+    }
+    for (int i = 0; i < MAX_RESTART_STATUS; i++) {
+        req->restart_prevent_statuses[i] = wire.restart_prevent_statuses[i];
+        req->restart_force_statuses[i] = wire.restart_force_statuses[i];
+    }
 
     /* Unpack exec_args */
     req->exec_args = NULL;

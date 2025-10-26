@@ -28,6 +28,34 @@ static time_t get_monotonic_time(void) {
     return ts.tv_sec;
 }
 
+static int effective_window_sec(const struct restart_tracker *tracker) {
+    int window = tracker->window_sec > 0 ? tracker->window_sec : RESTART_WINDOW_SEC;
+    if (window < RESTART_WINDOW_SEC) {
+        window = RESTART_WINDOW_SEC;
+    }
+    return window;
+}
+
+static int effective_max_restarts(const struct restart_tracker *tracker) {
+    int max_restarts = tracker->max_restarts > 0 ? tracker->max_restarts : MAX_RESTARTS_PER_WINDOW;
+    if (max_restarts < MAX_RESTARTS_PER_WINDOW) {
+        max_restarts = MAX_RESTARTS_PER_WINDOW;
+    }
+    if (max_restarts > MAX_TRACKED_RESTARTS) {
+        max_restarts = MAX_TRACKED_RESTARTS;
+    }
+    return max_restarts;
+}
+
+static int effective_min_interval(const struct restart_tracker *tracker) {
+    int min_interval = tracker->min_restart_interval_sec > 0 ?
+        tracker->min_restart_interval_sec : MIN_RESTART_INTERVAL_SEC;
+    if (min_interval < MIN_RESTART_INTERVAL_SEC) {
+        min_interval = MIN_RESTART_INTERVAL_SEC;
+    }
+    return min_interval;
+}
+
 static void release_restart_tracker(const char *unit_name);
 /* Initialize the service registry */
 void service_registry_init(void) {
@@ -162,6 +190,10 @@ static struct restart_tracker *get_restart_tracker(const char *unit_name) {
         tracker->attempt_count = 0;
         tracker->last_attempt = 0;  /* No prior attempts, allow immediate start */
         memset(tracker->attempts, 0, sizeof(tracker->attempts));
+        tracker->window_sec = RESTART_WINDOW_SEC;
+        tracker->max_restarts = MAX_RESTARTS_PER_WINDOW;
+        tracker->min_restart_interval_sec = MIN_RESTART_INTERVAL_SEC;
+        tracker->start_limit_action = START_LIMIT_ACTION_NONE;
         strncpy(tracker->unit_name, unit_name, sizeof(tracker->unit_name) - 1);
         tracker->unit_name[sizeof(tracker->unit_name) - 1] = '\0';
         return tracker;
@@ -216,22 +248,25 @@ int can_restart_service(const char *unit_name) {
         return 0;
     }
     time_t now = get_monotonic_time();
+    int min_interval = effective_min_interval(tracker);
+    int window_sec = effective_window_sec(tracker);
+    int max_restarts = effective_max_restarts(tracker);
 
     /* Check minimum interval since last attempt */
     if (tracker->last_attempt > 0) {
         time_t elapsed = now - tracker->last_attempt;
-        if (elapsed < MIN_RESTART_INTERVAL_SEC) {
+        if (elapsed < min_interval) {
             fprintf(stderr, "initd-supervisor: [DoS Prevention] %s restart too soon "
                     "(%ld sec < %d sec minimum)\n",
-                    unit_name, (long)elapsed, MIN_RESTART_INTERVAL_SEC);
+                    unit_name, (long)elapsed, min_interval);
             return 0;  /* Rate limited: too fast */
         }
     }
 
     /* Clean up old attempts outside the time window */
     int valid_attempts = 0;
-    for (int i = 0; i < tracker->attempt_count && i < MAX_RESTARTS_PER_WINDOW; i++) {
-        if (now - tracker->attempts[i] < RESTART_WINDOW_SEC) {
+    for (int i = 0; i < tracker->attempt_count && i < MAX_TRACKED_RESTARTS; i++) {
+        if (now - tracker->attempts[i] < window_sec) {
             /* Still within window, keep it */
             if (valid_attempts != i) {
                 tracker->attempts[valid_attempts] = tracker->attempts[i];
@@ -240,14 +275,21 @@ int can_restart_service(const char *unit_name) {
         }
     }
     tracker->attempt_count = valid_attempts;
+    if (tracker->attempt_count > max_restarts) {
+        tracker->attempt_count = max_restarts;
+    }
 
     /* Check if we've exceeded max restarts in window */
-    if (tracker->attempt_count >= MAX_RESTARTS_PER_WINDOW) {
+    if (tracker->attempt_count >= max_restarts) {
         time_t oldest = tracker->attempts[0];
         time_t window_age = now - oldest;
         fprintf(stderr, "initd-supervisor: [DoS Prevention] %s exceeded restart limit "
                 "(%d restarts in %ld sec < %d sec window)\n",
-                unit_name, tracker->attempt_count, (long)window_age, RESTART_WINDOW_SEC);
+                unit_name, tracker->attempt_count, (long)window_age, window_sec);
+        if (tracker->start_limit_action != START_LIMIT_ACTION_NONE) {
+            fprintf(stderr, "initd-supervisor: StartLimitAction=%d requested but not implemented; ignoring\n",
+                    tracker->start_limit_action);
+        }
         return 0;  /* Rate limited: too many attempts */
     }
 
@@ -263,16 +305,75 @@ void record_restart_attempt(const char *unit_name) {
         return;
     }
     time_t now = get_monotonic_time();
+    int max_restarts = effective_max_restarts(tracker);
 
     /* Record this attempt */
-    if (tracker->attempt_count < MAX_RESTARTS_PER_WINDOW) {
+    if (tracker->attempt_count < max_restarts) {
         tracker->attempts[tracker->attempt_count] = now;
         tracker->attempt_count++;
+    } else if (max_restarts > 0) {
+        memmove(&tracker->attempts[0], &tracker->attempts[1],
+                (size_t)(max_restarts - 1) * sizeof(time_t));
+        tracker->attempts[max_restarts - 1] = now;
+        tracker->attempt_count = max_restarts;
     }
 
     tracker->last_attempt = now;
 
     fprintf(stderr, "initd-supervisor: [DoS Prevention] %s restart attempt recorded "
             "(%d/%d in window)\n",
-            unit_name, tracker->attempt_count, MAX_RESTARTS_PER_WINDOW);
+            unit_name, tracker->attempt_count, max_restarts);
+}
+
+void update_restart_limits(const char *unit_name,
+                           int max_restarts,
+                           int window_sec,
+                           int min_interval_sec,
+                           int start_limit_action) {
+    struct restart_tracker *tracker = get_restart_tracker(unit_name);
+    if (!tracker) {
+        return;
+    }
+
+    if (max_restarts > 0 && max_restarts < MAX_RESTARTS_PER_WINDOW) {
+        max_restarts = MAX_RESTARTS_PER_WINDOW;
+    }
+    if (max_restarts <= 0) {
+        max_restarts = MAX_RESTARTS_PER_WINDOW;
+    }
+    if (max_restarts > MAX_TRACKED_RESTARTS) {
+        max_restarts = MAX_TRACKED_RESTARTS;
+    }
+    tracker->max_restarts = max_restarts;
+    if (tracker->attempt_count > tracker->max_restarts) {
+        tracker->attempt_count = tracker->max_restarts;
+    }
+
+    if (window_sec > 0 && window_sec < RESTART_WINDOW_SEC) {
+        window_sec = RESTART_WINDOW_SEC;
+    }
+    if (window_sec <= 0) {
+        window_sec = RESTART_WINDOW_SEC;
+    }
+    tracker->window_sec = window_sec;
+
+    if (min_interval_sec > 0 && min_interval_sec < MIN_RESTART_INTERVAL_SEC) {
+        min_interval_sec = MIN_RESTART_INTERVAL_SEC;
+    }
+    if (min_interval_sec <= 0) {
+        min_interval_sec = MIN_RESTART_INTERVAL_SEC;
+    }
+    tracker->min_restart_interval_sec = min_interval_sec;
+
+    switch (start_limit_action) {
+    case START_LIMIT_ACTION_REBOOT:
+    case START_LIMIT_ACTION_REBOOT_FORCE:
+    case START_LIMIT_ACTION_EXIT_FORCE:
+    case START_LIMIT_ACTION_REBOOT_IMMEDIATE:
+        tracker->start_limit_action = start_limit_action;
+        break;
+    default:
+        tracker->start_limit_action = START_LIMIT_ACTION_NONE;
+        break;
+    }
 }

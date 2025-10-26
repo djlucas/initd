@@ -86,6 +86,7 @@ Tests the unit file parser:
 - Environment variables
 - ConditionPath* directive parsing with negation support
 - StopWhenUnneeded and RefuseManualStart/Stop flags
+- StartLimit* directives and RestartPrevent/Force exit status lists
 - Validation rules
 - Provides= directive
 

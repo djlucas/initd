@@ -90,6 +90,20 @@ to be active. If a wanted unit fails, this unit continues running.
 Boolean. If set to true, the unit will be stopped automatically when no
 active unit still requires or wants it. Default: false.
 .TP
+.B StartLimitIntervalSec=
+Time window used with StartLimitBurst. Values below the initd default of
+60 seconds are ignored; larger values replace the default. Default: 60s.
+.TP
+.B StartLimitBurst=
+Maximum restarts permitted within StartLimitIntervalSec. Values below the
+initd default of 5 are ignored; larger values relax the limit. Default: 5.
+.TP
+.B StartLimitAction=
+Action to take when the start limit is hit. Recognised values are
+\fInone\fR (default), \fIreboot\fR, \fIreboot-force\fR,
+\fIexit-force\fR, and \fIreboot-immediate\fR. Non-default actions are
+logged but not currently acted upon.
+.TP
 .B RefuseManualStart=
 Boolean. When true, manual start attempts via initctl/systemctl are
 rejected. Dependency-triggered activations still succeed. Default: false.
@@ -220,6 +234,15 @@ Restart policy. One of:
 .B RestartSec=
 Time to wait before restarting a service. Takes a time value in seconds
 (optionally with unit suffix: s, min, h). Default: 100ms.
+.TP
+.B RestartPreventExitStatus=
+Space-separated list of numeric exit codes that should never trigger a
+restart even when Restart= would do so. Values outside the range 0-255 are
+ignored.
+.TP
+.B RestartForceExitStatus=
+Space-separated list of exit codes that always trigger a restart, even when
+Restart=no. Values outside the range 0-255 are ignored.
 .SS Timeout Configuration
 .TP
 .B TimeoutStartSec=

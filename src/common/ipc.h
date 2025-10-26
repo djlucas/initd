@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include "unit.h"
 
 /* Request types from worker to daemon */
 enum priv_request_type {
@@ -43,6 +44,13 @@ struct priv_request {
     int standard_output;    /* StandardOutput= (enum standard_io) */
     int standard_error;     /* StandardError= (enum standard_io) */
     char tty_path[1024];    /* TTYPath= for StandardInput=tty */
+    int start_limit_interval_sec;
+    int start_limit_burst;
+    int start_limit_action; /* enum start_limit_action */
+    int restart_prevent_statuses[MAX_RESTART_STATUS];
+    int restart_force_statuses[MAX_RESTART_STATUS];
+    int restart_prevent_count;
+    int restart_force_count;
 };
 
 /* Response types from daemon to worker */

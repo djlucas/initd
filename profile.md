@@ -1093,6 +1093,9 @@ This commit single wrapped sentence summarising the solution.
 What Changed:
   - bullet for the first change
   - bullet for the next change
+
+Before presenting any commit message, explicitly confirm that every line
+is ≤ 80 characters and state that the check passed.
 ```
 
 **Bugfix commits**

@@ -199,13 +199,18 @@ void test_parse_conditions(void) {
         "StopWhenUnneeded=true\n"
         "RefuseManualStart=yes\n"
         "RefuseManualStop=1\n"
+        "StartLimitIntervalSec=120\n"
+        "StartLimitBurst=8\n"
+        "StartLimitAction=reboot\n"
         "ConditionPathExists=/etc/passwd\n"
         "ConditionPathExists=!/no/such/path\n"
         "ConditionDirectoryNotEmpty=/tmp\n"
         "ConditionFileIsExecutable=/bin/true\n"
         "\n"
         "[Service]\n"
-        "ExecStart=/bin/true\n";
+        "ExecStart=/bin/true\n"
+        "RestartPreventExitStatus=0 5\n"
+        "RestartForceExitStatus=7\n";
 
     const char *path = create_temp_unit(unit_content, ".service");
     assert(path != NULL);
@@ -216,6 +221,12 @@ void test_parse_conditions(void) {
     assert(unit.unit.stop_when_unneeded == true);
     assert(unit.unit.refuse_manual_start == true);
     assert(unit.unit.refuse_manual_stop == true);
+    assert(unit.unit.start_limit_interval_set == true);
+    assert(unit.unit.start_limit_interval_sec == 120);
+    assert(unit.unit.start_limit_burst_set == true);
+    assert(unit.unit.start_limit_burst == 8);
+    assert(unit.unit.start_limit_action_set == true);
+    assert(unit.unit.start_limit_action == START_LIMIT_ACTION_REBOOT);
 
     assert(unit.unit.conditions[0].type == CONDITION_PATH_EXISTS);
     assert(unit.unit.conditions[0].negate == false);
@@ -232,6 +243,12 @@ void test_parse_conditions(void) {
     assert(unit.unit.conditions[3].type == CONDITION_FILE_IS_EXECUTABLE);
     assert(unit.unit.conditions[3].negate == false);
     assert(strcmp(unit.unit.conditions[3].value, "/bin/true") == 0);
+
+    assert(unit.config.service.restart_prevent_count == 2);
+    assert(unit.config.service.restart_prevent_statuses[0] == 0);
+    assert(unit.config.service.restart_prevent_statuses[1] == 5);
+    assert(unit.config.service.restart_force_count == 1);
+    assert(unit.config.service.restart_force_statuses[0] == 7);
 
     free_unit_file(&unit);
     unlink(path);

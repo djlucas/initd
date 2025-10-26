@@ -188,6 +188,7 @@ Unit types **not supported** (use traditional alternatives):
 - `StopWhenUnneeded=` automatic teardown when no dependents remain
 - `RefuseManualStart=` / `RefuseManualStop=` guards for manual control
 - `ConditionPath*` checks with optional `!` negation to skip units
+- `StartLimitIntervalSec=` / `StartLimitBurst=` (with StartLimitAction= logging)
 
 ### Supported Service Directives
 
@@ -205,6 +206,7 @@ Unit types **not supported** (use traditional alternatives):
 - `PrivateTmp=` - Private /tmp namespace (Linux only)
 - `LimitNOFILE=` - File descriptor limit (portable)
 - `KillMode=` - process, control-group, mixed, none (portable)
+- `RestartPreventExitStatus=` / `RestartForceExitStatus=` - restart filters
 - `RemainAfterExit=` - keep oneshot services active after exit
 - `StandardInput=`/`StandardOutput=`/`StandardError=` - null, inherit, tty, tty-force
 - `TTYPath=` - device to use with tty stdio modes

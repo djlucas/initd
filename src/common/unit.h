@@ -16,6 +16,11 @@
 #define MAX_DEPS 32
 #define MAX_ENV_VARS 64
 #define MAX_CONDITIONS 32
+#define MAX_RESTART_STATUS 16
+#define INITD_DEFAULT_START_LIMIT_INTERVAL_SEC 60
+#define INITD_DEFAULT_START_LIMIT_BURST 5
+#define INITD_MIN_RESTART_INTERVAL_SEC 1
+#define INITD_MAX_START_LIMIT_BURST_TRACK 128
 
 /* Unit types */
 enum unit_type {
@@ -86,9 +91,15 @@ struct unit_section {
     char *binds_to[MAX_DEPS];   /* Units whose lifecycle we bind to */
     char *part_of[MAX_DEPS];    /* Parent units that control our stop/reload */
     struct unit_condition conditions[MAX_CONDITIONS];
+    int start_limit_interval_sec;
+    int start_limit_burst;
+    int start_limit_action;
     bool stop_when_unneeded;
     bool refuse_manual_start;
     bool refuse_manual_stop;
+    bool start_limit_interval_set;
+    bool start_limit_burst_set;
+    bool start_limit_action_set;
     int after_count;
     int before_count;
     int requires_count;
@@ -107,6 +118,14 @@ enum kill_mode {
     KILL_PROCESS,        /* Kill only the main process */
     KILL_MIXED,          /* SIGTERM to main, SIGKILL to others */
     KILL_NONE            /* Don't kill anything */
+};
+
+enum start_limit_action {
+    START_LIMIT_ACTION_NONE = 0,
+    START_LIMIT_ACTION_REBOOT,
+    START_LIMIT_ACTION_REBOOT_FORCE,
+    START_LIMIT_ACTION_EXIT_FORCE,
+    START_LIMIT_ACTION_REBOOT_IMMEDIATE
 };
 
 /* Standard I/O handling */
@@ -140,10 +159,14 @@ struct service_section {
     bool remain_after_exit;
     enum standard_io standard_input;
     enum standard_io standard_output;
-    enum standard_io standard_error;
-    enum kill_mode kill_mode;
-    int limit_nofile;    /* -1 = not set, 0 = unlimited (infinity) */
-    int runtime_max_sec; /* 0 = no limit */
+   enum standard_io standard_error;
+   enum kill_mode kill_mode;
+   int limit_nofile;    /* -1 = not set, 0 = unlimited (infinity) */
+   int runtime_max_sec; /* 0 = no limit */
+    int restart_prevent_statuses[MAX_RESTART_STATUS];
+    int restart_force_statuses[MAX_RESTART_STATUS];
+    int restart_prevent_count;
+    int restart_force_count;
 };
 
 /* [Timer] section */

@@ -734,6 +734,12 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             break;
         }
 
+        update_restart_limits(req->unit_name,
+                               req->start_limit_burst,
+                               req->start_limit_interval_sec,
+                               MIN_RESTART_INTERVAL_SEC,
+                               req->start_limit_action);
+
         /* DoS PREVENTION: Check restart rate limiting */
         if (!can_restart_service(req->unit_name)) {
             log_debug("supervisor", "DoS Prevention: %s rate limited", req->unit_name);

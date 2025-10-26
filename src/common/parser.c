@@ -93,6 +93,33 @@ static int add_condition(struct unit_section *unit, enum unit_condition_type typ
     return 0;
 }
 
+static void parse_status_list(const char *value, int *array, int *count) {
+    if (!value || !array || !count) {
+        return;
+    }
+
+    *count = 0;
+    char *copy = strdup(value);
+    if (!copy) {
+        return;
+    }
+
+    char *saveptr = NULL;
+    char *token = strtok_r(copy, " \t", &saveptr);
+    while (token && *count < MAX_RESTART_STATUS) {
+        errno = 0;
+        char *end = NULL;
+        long parsed = strtol(token, &end, 0);
+        if (errno == 0 && end && *end == '\0') {
+            array[*count] = (int)parsed;
+            (*count)++;
+        }
+        token = strtok_r(NULL, " \t", &saveptr);
+    }
+
+    free(copy);
+}
+
 /* Parse [Unit] section key/value */
 static int parse_unit_key(struct unit_section *unit, const char *key, char *value) {
     if (strcmp(key, "Description") == 0) {
@@ -121,6 +148,29 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         unit->refuse_manual_start = parse_boolean(value);
     } else if (strcmp(key, "RefuseManualStop") == 0) {
         unit->refuse_manual_stop = parse_boolean(value);
+    } else if (strcmp(key, "StartLimitIntervalSec") == 0) {
+        unit->start_limit_interval_sec = atoi(value);
+        unit->start_limit_interval_set = true;
+    } else if (strcmp(key, "StartLimitBurst") == 0) {
+        unit->start_limit_burst = atoi(value);
+        unit->start_limit_burst_set = true;
+    } else if (strcmp(key, "StartLimitAction") == 0) {
+        if (strcasecmp(value, "reboot") == 0) {
+            unit->start_limit_action = START_LIMIT_ACTION_REBOOT;
+            unit->start_limit_action_set = true;
+        } else if (strcasecmp(value, "reboot-force") == 0) {
+            unit->start_limit_action = START_LIMIT_ACTION_REBOOT_FORCE;
+            unit->start_limit_action_set = true;
+        } else if (strcasecmp(value, "exit-force") == 0) {
+            unit->start_limit_action = START_LIMIT_ACTION_EXIT_FORCE;
+            unit->start_limit_action_set = true;
+        } else if (strcasecmp(value, "reboot-immediate") == 0) {
+            unit->start_limit_action = START_LIMIT_ACTION_REBOOT_IMMEDIATE;
+            unit->start_limit_action_set = true;
+        } else {
+            unit->start_limit_action = START_LIMIT_ACTION_NONE;
+            unit->start_limit_action_set = true;
+        }
     } else if (strcmp(key, "ConditionPathExists") == 0) {
         add_condition(unit, CONDITION_PATH_EXISTS, value);
     } else if (strcmp(key, "ConditionPathExistsGlob") == 0) {
@@ -225,6 +275,10 @@ static int parse_service_key(struct service_section *service, const char *key, c
     } else if (strcmp(key, "TTYPath") == 0) {
         strncpy(service->tty_path, value, sizeof(service->tty_path) - 1);
         service->tty_path[sizeof(service->tty_path) - 1] = '\0';
+    } else if (strcmp(key, "RestartPreventExitStatus") == 0) {
+        parse_status_list(value, service->restart_prevent_statuses, &service->restart_prevent_count);
+    } else if (strcmp(key, "RestartForceExitStatus") == 0) {
+        parse_status_list(value, service->restart_force_statuses, &service->restart_force_count);
     } else {
         return -1; /* Unknown key */
     }

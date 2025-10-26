@@ -447,6 +447,41 @@ static pid_t start_service(struct unit_file *unit) {
         req.standard_error = unit->config.service.standard_error;
         strncpy(req.tty_path, unit->config.service.tty_path, sizeof(req.tty_path) - 1);
         req.tty_path[sizeof(req.tty_path) - 1] = '\0';
+
+        int interval = unit->unit.start_limit_interval_set ?
+            unit->unit.start_limit_interval_sec : INITD_DEFAULT_START_LIMIT_INTERVAL_SEC;
+        if (interval < INITD_DEFAULT_START_LIMIT_INTERVAL_SEC) {
+            interval = INITD_DEFAULT_START_LIMIT_INTERVAL_SEC;
+        }
+        req.start_limit_interval_sec = interval;
+
+        int burst = unit->unit.start_limit_burst_set ?
+            unit->unit.start_limit_burst : INITD_DEFAULT_START_LIMIT_BURST;
+        if (burst < INITD_DEFAULT_START_LIMIT_BURST) {
+            burst = INITD_DEFAULT_START_LIMIT_BURST;
+        }
+        if (burst > INITD_MAX_START_LIMIT_BURST_TRACK) {
+            burst = INITD_MAX_START_LIMIT_BURST_TRACK;
+        }
+        req.start_limit_burst = burst;
+
+        req.start_limit_action = unit->unit.start_limit_action_set ?
+            unit->unit.start_limit_action : START_LIMIT_ACTION_NONE;
+
+        req.restart_prevent_count = unit->config.service.restart_prevent_count;
+        if (req.restart_prevent_count > MAX_RESTART_STATUS) {
+            req.restart_prevent_count = MAX_RESTART_STATUS;
+        }
+        req.restart_force_count = unit->config.service.restart_force_count;
+        if (req.restart_force_count > MAX_RESTART_STATUS) {
+            req.restart_force_count = MAX_RESTART_STATUS;
+        }
+        for (int i = 0; i < req.restart_prevent_count; i++) {
+            req.restart_prevent_statuses[i] = unit->config.service.restart_prevent_statuses[i];
+        }
+        for (int i = 0; i < req.restart_force_count; i++) {
+            req.restart_force_statuses[i] = unit->config.service.restart_force_statuses[i];
+        }
     }
 
     /* Send request to master */
@@ -765,6 +800,18 @@ static bool unit_conditions_met(struct unit_file *unit) {
     return true;
 }
 
+static bool status_in_list(const int *list, int count, int status) {
+    if (!list || count <= 0) {
+        return false;
+    }
+    for (int i = 0; i < count; i++) {
+        if (list[i] == status) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool unit_has_active_dependents(struct unit_file *unit) {
     for (int i = 0; i < unit_count; i++) {
         struct unit_file *other = units[i];
@@ -959,6 +1006,18 @@ static void handle_service_exit(pid_t pid, int exit_status) {
     default:
         should_restart = false;
         break;
+    }
+
+    if (unit->type == UNIT_SERVICE) {
+        if (status_in_list(unit->config.service.restart_prevent_statuses,
+                           unit->config.service.restart_prevent_count,
+                           exit_status)) {
+            should_restart = false;
+        } else if (status_in_list(unit->config.service.restart_force_statuses,
+                                  unit->config.service.restart_force_count,
+                                  exit_status)) {
+            should_restart = true;
+        }
     }
 
     if (should_restart && !shutdown_requested) {
