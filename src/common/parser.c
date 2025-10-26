@@ -58,6 +58,31 @@ static int parse_list(char *value, char **array, int max_count) {
     return count;
 }
 
+/* Add condition entry */
+static int add_condition(struct unit_section *unit, enum unit_condition_type type, const char *value) {
+    if (unit->condition_count >= MAX_CONDITIONS || !value || value[0] == '\0') {
+        return -1;
+    }
+
+    struct unit_condition *cond = &unit->conditions[unit->condition_count];
+    const char *path = value;
+
+    cond->negate = false;
+    if (path[0] == '!' && path[1] != '\0') {
+        cond->negate = true;
+        path++;
+    }
+
+    cond->value = strdup(path);
+    if (!cond->value) {
+        return -1;
+    }
+
+    cond->type = type;
+    unit->condition_count++;
+    return 0;
+}
+
 /* Parse [Unit] section key/value */
 static int parse_unit_key(struct unit_section *unit, const char *key, char *value) {
     if (strcmp(key, "Description") == 0) {
@@ -80,6 +105,22 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         unit->binds_to_count = parse_list(value, unit->binds_to, MAX_DEPS);
     } else if (strcmp(key, "PartOf") == 0) {
         unit->part_of_count = parse_list(value, unit->part_of, MAX_DEPS);
+    } else if (strcmp(key, "ConditionPathExists") == 0) {
+        add_condition(unit, CONDITION_PATH_EXISTS, value);
+    } else if (strcmp(key, "ConditionPathExistsGlob") == 0) {
+        add_condition(unit, CONDITION_PATH_EXISTS_GLOB, value);
+    } else if (strcmp(key, "ConditionPathIsDirectory") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_DIRECTORY, value);
+    } else if (strcmp(key, "ConditionPathIsSymbolicLink") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_SYMBOLIC_LINK, value);
+    } else if (strcmp(key, "ConditionPathIsMountPoint") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_MOUNT_POINT, value);
+    } else if (strcmp(key, "ConditionPathIsReadWrite") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_READ_WRITE, value);
+    } else if (strcmp(key, "ConditionDirectoryNotEmpty") == 0) {
+        add_condition(unit, CONDITION_DIRECTORY_NOT_EMPTY, value);
+    } else if (strcmp(key, "ConditionFileIsExecutable") == 0) {
+        add_condition(unit, CONDITION_FILE_IS_EXECUTABLE, value);
     } else {
         return -1; /* Unknown key */
     }
@@ -381,6 +422,9 @@ void free_unit_file(struct unit_file *unit) {
     for (int i = 0; i < unit->unit.on_failure_count; i++) free(unit->unit.on_failure[i]);
     for (int i = 0; i < unit->unit.binds_to_count; i++) free(unit->unit.binds_to[i]);
     for (int i = 0; i < unit->unit.part_of_count; i++) free(unit->unit.part_of[i]);
+    for (int i = 0; i < unit->unit.condition_count; i++) {
+        free(unit->unit.conditions[i].value);
+    }
 
     /* Free [Service] fields */
     if (unit->type == UNIT_SERVICE) {

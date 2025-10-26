@@ -15,6 +15,7 @@
 #define MAX_ARGS 64
 #define MAX_DEPS 32
 #define MAX_ENV_VARS 64
+#define MAX_CONDITIONS 32
 
 /* Unit types */
 enum unit_type {
@@ -54,6 +55,24 @@ enum dependency_visit_state {
     DEP_VISIT_DONE
 };
 
+/* Condition types */
+enum unit_condition_type {
+    CONDITION_PATH_EXISTS,
+    CONDITION_PATH_EXISTS_GLOB,
+    CONDITION_PATH_IS_DIRECTORY,
+    CONDITION_PATH_IS_SYMBOLIC_LINK,
+    CONDITION_PATH_IS_MOUNT_POINT,
+    CONDITION_PATH_IS_READ_WRITE,
+    CONDITION_DIRECTORY_NOT_EMPTY,
+    CONDITION_FILE_IS_EXECUTABLE
+};
+
+struct unit_condition {
+    enum unit_condition_type type;
+    bool negate;
+    char *value;
+};
+
 /* [Unit] section */
 struct unit_section {
     char description[256];
@@ -66,6 +85,7 @@ struct unit_section {
     char *on_failure[MAX_DEPS]; /* Units to activate on failure */
     char *binds_to[MAX_DEPS];   /* Units whose lifecycle we bind to */
     char *part_of[MAX_DEPS];    /* Parent units that control our stop/reload */
+    struct unit_condition conditions[MAX_CONDITIONS];
     int after_count;
     int before_count;
     int requires_count;
@@ -75,6 +95,7 @@ struct unit_section {
     int on_failure_count;
     int binds_to_count;
     int part_of_count;
+    int condition_count;
 };
 
 /* Kill mode for service termination */

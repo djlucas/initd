@@ -84,6 +84,7 @@ Tests the unit file parser:
 - Service types (simple, forking, oneshot)
 - Timer unit parsing
 - Environment variables
+- ConditionPath* directive parsing with negation support
 - Validation rules
 - Provides= directive
 

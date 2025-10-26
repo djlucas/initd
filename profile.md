@@ -1075,10 +1075,12 @@ init (root, PID 1)
 ### Commit Message Guidelines
 
 Keep history easy to scan by using a consistent four-part structure. Wrap every
-line at 80 characters (72 preferred for the subject line). The only indentation
-should be the bullet list; all other lines begin flush left. Leave a single
-blank line between the major sections, and place the bullet list immediately
-after the `What Changed:` header (no intervening blank line).
+line at 80 characters maximum (72 preferred for the subject line) without
+exceeding the limit. The only indentation should be the bullet list; all other
+lines begin flush left. Leave a single blank line between the major summary
+sentence and the `What Changed:` heading. Place the bullet list immediately
+after the `What Changed:` line (no intervening blank line), and keep bullet
+items sentence-case without trailing periods.
 
 **Feature commits**
 ```
@@ -1175,14 +1177,6 @@ Notes:
   RefuseManualStop=
   AllowIsolate=
   DefaultDependencies=
-  ConditionPathExists=
-  ConditionPathExistsGlob=
-  ConditionPathIsDirectory=
-  ConditionPathIsSymbolicLink=
-  ConditionPathIsMountPoint=
-  ConditionPathIsReadWrite=
-  ConditionDirectoryNotEmpty=
-  ConditionFileIsExecutable=
   ConditionUser=
   ConditionGroup=
   ConditionControlGroupController=

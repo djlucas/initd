@@ -42,6 +42,9 @@
 #include <grp.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <glob.h>
+#include <dirent.h>
+#include <libgen.h>
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <sys/ucred.h>
 #endif
@@ -579,6 +582,181 @@ static bool unit_provides(struct unit_file *unit, const char *service_name) {
         }
     }
     return false;
+}
+
+static const char *condition_type_name(enum unit_condition_type type) {
+    switch (type) {
+    case CONDITION_PATH_EXISTS:
+        return "ConditionPathExists";
+    case CONDITION_PATH_EXISTS_GLOB:
+        return "ConditionPathExistsGlob";
+    case CONDITION_PATH_IS_DIRECTORY:
+        return "ConditionPathIsDirectory";
+    case CONDITION_PATH_IS_SYMBOLIC_LINK:
+        return "ConditionPathIsSymbolicLink";
+    case CONDITION_PATH_IS_MOUNT_POINT:
+        return "ConditionPathIsMountPoint";
+    case CONDITION_PATH_IS_READ_WRITE:
+        return "ConditionPathIsReadWrite";
+    case CONDITION_DIRECTORY_NOT_EMPTY:
+        return "ConditionDirectoryNotEmpty";
+    case CONDITION_FILE_IS_EXECUTABLE:
+        return "ConditionFileIsExecutable";
+    default:
+        return "Condition";
+    }
+}
+
+static bool condition_path_exists(const char *path) {
+    return access(path, F_OK) == 0;
+}
+
+static bool condition_path_exists_glob(const char *pattern) {
+    glob_t gl;
+    memset(&gl, 0, sizeof(gl));
+    int ret = glob(pattern, GLOB_NOSORT, NULL, &gl);
+    if (ret != 0) {
+        return false;
+    }
+    bool match = (gl.gl_pathc > 0);
+    globfree(&gl);
+    return match;
+}
+
+static bool condition_path_is_directory(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static bool condition_path_is_symlink(const char *path) {
+    struct stat st;
+    return lstat(path, &st) == 0 && S_ISLNK(st.st_mode);
+}
+
+static bool condition_path_is_mount_point(const char *path) {
+    struct stat st_path;
+    char resolved[PATH_MAX];
+
+    if (!realpath(path, resolved)) {
+        return false;
+    }
+
+    if (stat(resolved, &st_path) < 0) {
+        return false;
+    }
+
+    if (strcmp(resolved, "/") == 0) {
+        return true;
+    }
+
+    char parent_buf[PATH_MAX];
+    strncpy(parent_buf, resolved, sizeof(parent_buf));
+    parent_buf[sizeof(parent_buf) - 1] = '\0';
+    char *parent = dirname(parent_buf);
+    if (!parent || parent[0] == '\0') {
+        return false;
+    }
+
+    struct stat st_parent;
+    if (stat(parent, &st_parent) < 0) {
+        return false;
+    }
+
+    if (st_path.st_dev != st_parent.st_dev) {
+        return true;
+    }
+
+    if (st_path.st_dev == st_parent.st_dev && st_path.st_ino == st_parent.st_ino) {
+        return true;
+    }
+
+    return false;
+}
+
+static bool condition_path_is_read_write(const char *path) {
+    struct stat st;
+    if (stat(path, &st) < 0) {
+        return false;
+    }
+    int mode = R_OK | W_OK;
+    if (S_ISDIR(st.st_mode)) {
+        mode |= X_OK;
+    }
+    return access(path, mode) == 0;
+}
+
+static bool condition_directory_not_empty(const char *path) {
+    DIR *dir = opendir(path);
+    if (!dir) {
+        return false;
+    }
+
+    struct dirent *entry;
+    bool not_empty = false;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        not_empty = true;
+        break;
+    }
+
+    closedir(dir);
+    return not_empty;
+}
+
+static bool condition_file_is_executable(const char *path) {
+    struct stat st;
+    if (stat(path, &st) < 0) {
+        return false;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        return false;
+    }
+    return access(path, X_OK) == 0;
+}
+
+static bool evaluate_single_condition(const struct unit_condition *cond) {
+    switch (cond->type) {
+    case CONDITION_PATH_EXISTS:
+        return condition_path_exists(cond->value);
+    case CONDITION_PATH_EXISTS_GLOB:
+        return condition_path_exists_glob(cond->value);
+    case CONDITION_PATH_IS_DIRECTORY:
+        return condition_path_is_directory(cond->value);
+    case CONDITION_PATH_IS_SYMBOLIC_LINK:
+        return condition_path_is_symlink(cond->value);
+    case CONDITION_PATH_IS_MOUNT_POINT:
+        return condition_path_is_mount_point(cond->value);
+    case CONDITION_PATH_IS_READ_WRITE:
+        return condition_path_is_read_write(cond->value);
+    case CONDITION_DIRECTORY_NOT_EMPTY:
+        return condition_directory_not_empty(cond->value);
+    case CONDITION_FILE_IS_EXECUTABLE:
+        return condition_file_is_executable(cond->value);
+    default:
+        return false;
+    }
+}
+
+static bool unit_conditions_met(struct unit_file *unit) {
+    for (int i = 0; i < unit->unit.condition_count; i++) {
+        const struct unit_condition *cond = &unit->unit.conditions[i];
+        bool result = evaluate_single_condition(cond);
+        if (cond->negate) {
+            result = !result;
+        }
+        if (!result) {
+            const char *name = condition_type_name(cond->type);
+            log_info(unit->name,
+                     "%s%s=%s failed, skipping start",
+                     cond->negate ? "!" : "",
+                     name,
+                     cond->value);
+            return false;
+        }
+    }
+    return true;
 }
 
 static bool dependency_matches(struct unit_file *candidate, const char *name) {
@@ -1434,6 +1612,12 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     }
 
     unit->start_visit_state = DEP_VISIT_IN_PROGRESS;
+
+    if (!unit_conditions_met(unit)) {
+        unit->state = STATE_INACTIVE;
+        unit->start_visit_state = DEP_VISIT_DONE;
+        return 0;
+    }
 
     unit->state = STATE_ACTIVATING;
     log_service_starting(unit->name, unit->unit.description);

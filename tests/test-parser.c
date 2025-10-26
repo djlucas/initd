@@ -190,6 +190,48 @@ void test_parse_environment(void) {
     PASS();
 }
 
+void test_parse_conditions(void) {
+    TEST("condition parsing");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Condition Test\n"
+        "ConditionPathExists=/etc/passwd\n"
+        "ConditionPathExists=!/no/such/path\n"
+        "ConditionDirectoryNotEmpty=/tmp\n"
+        "ConditionFileIsExecutable=/bin/true\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/true\n";
+
+    const char *path = create_temp_unit(unit_content, ".service");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.condition_count == 4);
+
+    assert(unit.unit.conditions[0].type == CONDITION_PATH_EXISTS);
+    assert(unit.unit.conditions[0].negate == false);
+    assert(strcmp(unit.unit.conditions[0].value, "/etc/passwd") == 0);
+
+    assert(unit.unit.conditions[1].type == CONDITION_PATH_EXISTS);
+    assert(unit.unit.conditions[1].negate == true);
+    assert(strcmp(unit.unit.conditions[1].value, "/no/such/path") == 0);
+
+    assert(unit.unit.conditions[2].type == CONDITION_DIRECTORY_NOT_EMPTY);
+    assert(unit.unit.conditions[2].negate == false);
+    assert(strcmp(unit.unit.conditions[2].value, "/tmp") == 0);
+
+    assert(unit.unit.conditions[3].type == CONDITION_FILE_IS_EXECUTABLE);
+    assert(unit.unit.conditions[3].negate == false);
+    assert(strcmp(unit.unit.conditions[3].value, "/bin/true") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 void test_validate_missing_execstart(void) {
     TEST("validation - missing ExecStart");
 
@@ -244,6 +286,7 @@ int main(void) {
     test_parse_forking_service();
     test_parse_timer();
     test_parse_environment();
+    test_parse_conditions();
     test_validate_missing_execstart();
     test_parse_provides();
 
