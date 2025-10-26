@@ -293,6 +293,69 @@ static int run_lifecycle_command(const struct service_section *service,
     return 0;
 }
 
+static int run_exec_command_list(const struct service_section *service,
+                                 char *const list[],
+                                 int count,
+                                 uid_t validated_uid,
+                                 gid_t validated_gid,
+                                 const char *unit_name,
+                                 const char *stage,
+                                 bool prepare_environment) {
+    if (!list || count <= 0) {
+        return 0;
+    }
+
+    for (int i = 0; i < count; i++) {
+        if (!list[i] || list[i][0] == '\0') {
+            continue;
+        }
+
+        char stage_name[64];
+        if (count > 1) {
+            snprintf(stage_name, sizeof(stage_name), "%s[%d]", stage, i);
+        } else {
+            snprintf(stage_name, sizeof(stage_name), "%s", stage);
+        }
+
+        if (run_lifecycle_command(service,
+                                   list[i],
+                                   validated_uid,
+                                   validated_gid,
+                                   unit_name,
+                                   stage_name,
+                                   prepare_environment) < 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static pid_t read_pid_file_with_timeout(const char *path,
+                                        int attempts,
+                                        int interval_ms) {
+    if (!path || path[0] == '\0' || attempts <= 0) {
+        return -1;
+    }
+
+    for (int i = 0; i < attempts; i++) {
+        FILE *f = fopen(path, "r");
+        if (f) {
+            long pid;
+            int scanned = fscanf(f, "%ld", &pid);
+            fclose(f);
+            if (scanned == 1 && pid > 0) {
+                return (pid_t)pid;
+            }
+        }
+        if (interval_ms > 0) {
+            usleep((useconds_t)interval_ms * 1000);
+        }
+    }
+
+    return -1;
+}
+
 static int fallback_to_nobody_allowed(void) {
     const char *env = getenv("INITD_ALLOW_USER_FALLBACK");
     if (!env) {
@@ -768,41 +831,11 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             goto start_cleanup;
         }
 
-        if (!unit.config.service.exec_start || unit.config.service.exec_start[0] == '\0') {
+        if ((unit.config.service.exec_start_count == 0) &&
+            (!unit.config.service.exec_start || unit.config.service.exec_start[0] == '\0')) {
             resp->type = RESP_ERROR;
             resp->error_code = EINVAL;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit has no ExecStart");
-            goto start_cleanup;
-        }
-
-        if (build_exec_argv(unit.config.service.exec_start, &exec_argv) < 0) {
-            resp->type = RESP_ERROR;
-            resp->error_code = errno;
-            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse ExecStart command");
-            goto start_cleanup;
-        }
-
-        /* Defensive: exec_argv should never be NULL after successful build_exec_argv,
-         * but verify before dereferencing to satisfy static analysis */
-        if (!exec_argv || !exec_argv[0]) {
-            resp->type = RESP_ERROR;
-            resp->error_code = EINVAL;
-            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart parsing produced empty command");
-            goto start_cleanup;
-        }
-
-        exec_path = exec_argv[0];
-        if (exec_path[0] != '/') {
-            resp->type = RESP_ERROR;
-            resp->error_code = EINVAL;
-            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart must use absolute path");
-            goto start_cleanup;
-        }
-
-        if (strstr(exec_path, "..") != NULL) {
-            resp->type = RESP_ERROR;
-            resp->error_code = EINVAL;
-            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart path contains '..'");
             goto start_cleanup;
         }
 
@@ -844,6 +877,20 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             }
         }
 
+        if (run_exec_command_list(&unit.config.service,
+                                   unit.config.service.exec_condition,
+                                   unit.config.service.exec_condition_count,
+                                   validated_uid,
+                                   validated_gid,
+                                   unit.name,
+                                   "ExecCondition",
+                                   true) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecCondition failed");
+            goto start_cleanup;
+        }
+
         if (run_lifecycle_command(&unit.config.service,
                                    unit.config.service.exec_start_pre,
                                    validated_uid,
@@ -854,6 +901,72 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             resp->type = RESP_ERROR;
             resp->error_code = errno;
             snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStartPre failed");
+            goto start_cleanup;
+        }
+
+        if (unit.config.service.type == SERVICE_ONESHOT &&
+            unit.config.service.exec_start_count > 1) {
+            for (int i = 0; i < unit.config.service.exec_start_count - 1; i++) {
+                if (!unit.config.service.exec_start_list[i] ||
+                    unit.config.service.exec_start_list[i][0] == '\0') {
+                    continue;
+                }
+                char stage_name[32];
+                snprintf(stage_name, sizeof(stage_name), "ExecStart[%d]", i);
+                if (run_lifecycle_command(&unit.config.service,
+                                           unit.config.service.exec_start_list[i],
+                                           validated_uid,
+                                           validated_gid,
+                                           unit.name,
+                                           stage_name,
+                                           true) < 0) {
+                    resp->type = RESP_ERROR;
+                    resp->error_code = errno;
+                    snprintf(resp->error_msg, sizeof(resp->error_msg),
+                             "%s failed", stage_name);
+                    goto start_cleanup;
+                }
+            }
+        }
+
+        const char *main_exec = unit.config.service.exec_start;
+        if (unit.config.service.exec_start_count > 0) {
+            main_exec = unit.config.service.exec_start_list[unit.config.service.exec_start_count - 1];
+        }
+
+        if (!main_exec || main_exec[0] == '\0') {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Unit has no ExecStart");
+            goto start_cleanup;
+        }
+
+        if (build_exec_argv(main_exec, &exec_argv) < 0) {
+            resp->type = RESP_ERROR;
+            resp->error_code = errno;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "Failed to parse ExecStart command");
+            goto start_cleanup;
+        }
+
+        if (!exec_argv || !exec_argv[0]) {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart parsing produced empty command");
+            goto start_cleanup;
+        }
+
+        exec_path = exec_argv[0];
+        if (exec_path[0] != '/') {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart must use absolute path");
+            goto start_cleanup;
+        }
+
+        if (strstr(exec_path, "..") != NULL) {
+            resp->type = RESP_ERROR;
+            resp->error_code = EINVAL;
+            snprintf(resp->error_msg, sizeof(resp->error_msg), "ExecStart path contains '..'");
             goto start_cleanup;
         }
 
@@ -889,6 +1002,19 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             goto start_cleanup;
         }
 
+        pid_t reported_pid = pid;
+        if (unit.config.service.pid_file && unit.config.service.pid_file[0] != '\0') {
+            pid_t pidfile_pid = read_pid_file_with_timeout(unit.config.service.pid_file, 50, 100);
+            if (pidfile_pid > 0) {
+                if (service_registry_update_pid(req->unit_name, pidfile_pid) == 0) {
+                    reported_pid = pidfile_pid;
+                }
+            } else {
+                log_warn("supervisor", "PIDFile %s not available for %s",
+                         unit.config.service.pid_file, unit.name);
+            }
+        }
+
         if (run_lifecycle_command(&unit.config.service,
                                    unit.config.service.exec_start_post,
                                    validated_uid,
@@ -909,8 +1035,8 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         }
 
         resp->type = RESP_SERVICE_STARTED;
-        resp->service_pid = pid;
-        log_debug("supervisor", "started %s (pid %d)", req->unit_name, pid);
+        resp->service_pid = reported_pid;
+        log_debug("supervisor", "started %s (pid %d)", req->unit_name, reported_pid);
 start_cleanup:
         free_unit_file(&unit);
         if (exec_argv) {
@@ -1050,6 +1176,19 @@ start_cleanup:
         }
 
         if (unit_parsed) {
+            if (stop_unit.config.service.exec_stop_post_count > 0) {
+                if (run_exec_command_list(&stop_unit.config.service,
+                                           stop_unit.config.service.exec_stop_post,
+                                           stop_unit.config.service.exec_stop_post_count,
+                                           validated_uid,
+                                           validated_gid,
+                                           stop_unit.name,
+                                           "ExecStopPost",
+                                           false) < 0) {
+                    log_error("supervisor", "ExecStopPost list failed for %s",
+                              stop_unit.name);
+                }
+            }
             free_unit_file(&stop_unit);
         }
 

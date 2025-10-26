@@ -1216,13 +1216,6 @@ Notes:
 
 [Service]
   PIDFile=
-  ExecStopPost=
-  ExecCondition=
-  StartLimitIntervalSec=
-  StartLimitBurst=
-  StartLimitAction=
-  RestartPreventExitStatus=
-  RestartForceExitStatus=
   RestartMaxDelaySec=
   TimeoutAbortSec=
   TimeoutStartFailureMode=
@@ -1315,9 +1308,6 @@ Notes:
   Transparent=
 
 [Install]
-  Also=
-  Alias=
-  DefaultInstance=
 
 ### User-Mode Follow-ups
 - ✅ Documented and tested per-user reboot persistence workflows

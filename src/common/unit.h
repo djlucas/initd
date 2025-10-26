@@ -16,7 +16,9 @@
 #define MAX_DEPS 32
 #define MAX_ENV_VARS 64
 #define MAX_CONDITIONS 32
+#define MAX_EXEC_COMMANDS 16
 #define MAX_RESTART_STATUS 16
+#define MAX_INSTALL_ENTRIES MAX_DEPS
 #define INITD_DEFAULT_START_LIMIT_INTERVAL_SEC 60
 #define INITD_DEFAULT_START_LIMIT_BURST 5
 #define INITD_MIN_RESTART_INTERVAL_SEC 1
@@ -140,10 +142,16 @@ enum standard_io {
 struct service_section {
     enum service_type type;
     char *exec_start;
+    char *exec_start_list[MAX_EXEC_COMMANDS];
+    int exec_start_count;
     char *exec_stop;
+    char *exec_stop_post[MAX_EXEC_COMMANDS];
+    int exec_stop_post_count;
     char *exec_reload;
     char *exec_start_pre;
     char *exec_start_post;
+    char *exec_condition[MAX_EXEC_COMMANDS];
+    int exec_condition_count;
     char user[64];
     char group[64];
     char working_directory[MAX_PATH];
@@ -167,6 +175,7 @@ struct service_section {
     int restart_force_statuses[MAX_RESTART_STATUS];
     int restart_prevent_count;
     int restart_force_count;
+    char *pid_file;
 };
 
 /* [Timer] section */
@@ -191,8 +200,13 @@ struct socket_section {
 struct install_section {
     char *wanted_by[MAX_DEPS];
     char *required_by[MAX_DEPS];
+    char *also[MAX_INSTALL_ENTRIES];
+    char *alias[MAX_INSTALL_ENTRIES];
     int wanted_by_count;
     int required_by_count;
+    int also_count;
+    int alias_count;
+    char default_instance[256];
 };
 
 /* Complete unit file representation */

@@ -182,9 +182,17 @@ Command line to execute before ExecStart. May be specified multiple times.
 .B ExecStartPost=
 Command line to execute after ExecStart. May be specified multiple times.
 .TP
+.B ExecCondition=
+Command that must succeed before ExecStartPre/ExecStart run. Each listed
+command is executed in order and the unit is skipped if any exits non-zero.
+.TP
 .B ExecStop=
 Command line to execute to stop the service. If not specified, the service
 is terminated by sending SIGTERM.
+.TP
+.B ExecStopPost=
+Command line to execute after the service has been stopped. May be specified
+multiple times.
 .TP
 .B ExecReload=
 Command line to execute to reload the service configuration. Typically sends
@@ -203,7 +211,8 @@ Working directory to use for the service process. If not specified, uses
 the root directory.
 .TP
 .B PIDFile=
-Absolute path to PID file. Used with Type=forking to track the main process.
+Absolute path to a PID file. When provided, initd waits for the file and
+tracks the recorded PID (values below initd defaults are ignored).
 .SS Environment Configuration
 .TP
 .B Environment=

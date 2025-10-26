@@ -98,6 +98,8 @@ void update_restart_limits(const char *unit_name,
                            int min_interval_sec,
                            int start_limit_action);
 
+int service_registry_update_pid(const char *unit_name, pid_t new_pid);
+
 /* DoS Prevention: Check if registry has capacity for new service
  * Returns 1 if space available, 0 if at MAX_SERVICES limit
  */

@@ -209,6 +209,7 @@ void test_parse_conditions(void) {
         "\n"
         "[Service]\n"
         "ExecStart=/bin/true\n"
+        "PIDFile=/run/test.pid\n"
         "RestartPreventExitStatus=0 5\n"
         "RestartForceExitStatus=7\n";
 
@@ -249,6 +250,40 @@ void test_parse_conditions(void) {
     assert(unit.config.service.restart_prevent_statuses[1] == 5);
     assert(unit.config.service.restart_force_count == 1);
     assert(unit.config.service.restart_force_statuses[0] == 7);
+    assert(strcmp(unit.config.service.pid_file, "/run/test.pid") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_install_extras(void) {
+    TEST("install extras parsing");
+
+    const char *unit_content =
+        "[Install]\n"
+        "WantedBy=multi-user.target\n"
+        "RequiredBy=graphical.target\n"
+        "Also=foo.service bar.service\n"
+        "Alias=alias.service alt.service\n"
+        "DefaultInstance=%i\n";
+
+    const char *path = create_temp_unit(unit_content, ".service");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.install.wanted_by_count == 1);
+    assert(strcmp(unit.install.wanted_by[0], "multi-user.target") == 0);
+    assert(unit.install.required_by_count == 1);
+    assert(strcmp(unit.install.required_by[0], "graphical.target") == 0);
+    assert(unit.install.also_count == 2);
+    assert(strcmp(unit.install.also[0], "foo.service") == 0);
+    assert(strcmp(unit.install.also[1], "bar.service") == 0);
+    assert(unit.install.alias_count == 2);
+    assert(strcmp(unit.install.alias[0], "alias.service") == 0);
+    assert(strcmp(unit.install.alias[1], "alt.service") == 0);
+    assert(strcmp(unit.install.default_instance, "%i") == 0);
 
     free_unit_file(&unit);
     unlink(path);
@@ -310,6 +345,7 @@ int main(void) {
     test_parse_timer();
     test_parse_environment();
     test_parse_conditions();
+    test_parse_install_extras();
     test_validate_missing_execstart();
     test_parse_provides();
 

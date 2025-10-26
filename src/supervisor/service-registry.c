@@ -377,3 +377,18 @@ void update_restart_limits(const char *unit_name,
         break;
     }
 }
+
+int service_registry_update_pid(const char *unit_name, pid_t new_pid) {
+    if (!unit_name || unit_name[0] == '\0' || new_pid <= 0) {
+        return -1;
+    }
+
+    struct service_record *svc = lookup_service_by_name(unit_name);
+    if (!svc) {
+        return -1;
+    }
+
+    svc->pid = new_pid;
+    svc->pgid = new_pid;
+    return 0;
+}

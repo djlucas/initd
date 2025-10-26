@@ -68,6 +68,19 @@ static int parse_list(char *value, char **array, int max_count) {
     return count;
 }
 
+static void append_string(char **array, int max_count, int *count, const char *value) {
+    if (!array || !count || !value) {
+        return;
+    }
+    if (*count >= max_count) {
+        return;
+    }
+    array[*count] = strdup(value);
+    if (array[*count]) {
+        (*count)++;
+    }
+}
+
 /* Add condition entry */
 static int add_condition(struct unit_section *unit, enum unit_condition_type type, const char *value) {
     if (unit->condition_count >= MAX_CONDITIONS || !value || value[0] == '\0') {
@@ -200,7 +213,11 @@ static int parse_service_key(struct service_section *service, const char *key, c
         else if (strcmp(value, "forking") == 0) service->type = SERVICE_FORKING;
         else if (strcmp(value, "oneshot") == 0) service->type = SERVICE_ONESHOT;
     } else if (strcmp(key, "ExecStart") == 0) {
-        service->exec_start = strdup(value);
+        append_string(service->exec_start_list, MAX_EXEC_COMMANDS,
+                      &service->exec_start_count, value);
+        if (service->exec_start_count > 0) {
+            service->exec_start = service->exec_start_list[service->exec_start_count - 1];
+        }
     } else if (strcmp(key, "ExecStop") == 0) {
         service->exec_stop = strdup(value);
     } else if (strcmp(key, "ExecReload") == 0) {
@@ -209,6 +226,12 @@ static int parse_service_key(struct service_section *service, const char *key, c
         service->exec_start_pre = strdup(value);
     } else if (strcmp(key, "ExecStartPost") == 0) {
         service->exec_start_post = strdup(value);
+    } else if (strcmp(key, "ExecStopPost") == 0) {
+        append_string(service->exec_stop_post, MAX_EXEC_COMMANDS,
+                      &service->exec_stop_post_count, value);
+    } else if (strcmp(key, "ExecCondition") == 0) {
+        append_string(service->exec_condition, MAX_EXEC_COMMANDS,
+                      &service->exec_condition_count, value);
     } else if (strcmp(key, "User") == 0) {
         strncpy(service->user, value, sizeof(service->user) - 1);
     } else if (strcmp(key, "Group") == 0) {
@@ -279,6 +302,8 @@ static int parse_service_key(struct service_section *service, const char *key, c
         parse_status_list(value, service->restart_prevent_statuses, &service->restart_prevent_count);
     } else if (strcmp(key, "RestartForceExitStatus") == 0) {
         parse_status_list(value, service->restart_force_statuses, &service->restart_force_count);
+    } else if (strcmp(key, "PIDFile") == 0) {
+        service->pid_file = strdup(value);
     } else {
         return -1; /* Unknown key */
     }
@@ -327,6 +352,13 @@ static int parse_install_key(struct install_section *install, const char *key, c
         install->wanted_by_count = parse_list(value, install->wanted_by, MAX_DEPS);
     } else if (strcmp(key, "RequiredBy") == 0) {
         install->required_by_count = parse_list(value, install->required_by, MAX_DEPS);
+    } else if (strcmp(key, "Also") == 0) {
+        install->also_count = parse_list(value, install->also, MAX_INSTALL_ENTRIES);
+    } else if (strcmp(key, "Alias") == 0) {
+        install->alias_count = parse_list(value, install->alias, MAX_INSTALL_ENTRIES);
+    } else if (strcmp(key, "DefaultInstance") == 0) {
+        strncpy(install->default_instance, value, sizeof(install->default_instance) - 1);
+        install->default_instance[sizeof(install->default_instance) - 1] = '\0';
     } else {
         return -1;
     }
@@ -498,15 +530,28 @@ void free_unit_file(struct unit_file *unit) {
 
     /* Free [Service] fields */
     if (unit->type == UNIT_SERVICE) {
-        free(unit->config.service.exec_start);
+        for (int i = 0; i < unit->config.service.exec_start_count; i++) {
+            free(unit->config.service.exec_start_list[i]);
+            unit->config.service.exec_start_list[i] = NULL;
+        }
+        unit->config.service.exec_start = NULL;
         free(unit->config.service.exec_stop);
         free(unit->config.service.exec_reload);
         free(unit->config.service.exec_start_pre);
         free(unit->config.service.exec_start_post);
+        for (int i = 0; i < unit->config.service.exec_stop_post_count; i++) {
+            free(unit->config.service.exec_stop_post[i]);
+            unit->config.service.exec_stop_post[i] = NULL;
+        }
+        for (int i = 0; i < unit->config.service.exec_condition_count; i++) {
+            free(unit->config.service.exec_condition[i]);
+            unit->config.service.exec_condition[i] = NULL;
+        }
         free(unit->config.service.environment_file);
         for (int i = 0; i < unit->config.service.environment_count; i++) {
             free(unit->config.service.environment[i]);
         }
+        free(unit->config.service.pid_file);
     }
 
     /* Free [Timer] fields */
@@ -526,5 +571,11 @@ void free_unit_file(struct unit_file *unit) {
     }
     for (int i = 0; i < unit->install.required_by_count; i++) {
         free(unit->install.required_by[i]);
+    }
+    for (int i = 0; i < unit->install.also_count; i++) {
+        free(unit->install.also[i]);
+    }
+    for (int i = 0; i < unit->install.alias_count; i++) {
+        free(unit->install.alias[i]);
     }
 }
