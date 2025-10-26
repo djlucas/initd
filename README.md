@@ -431,10 +431,11 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 - Service registry + restart limiter prevent privilege/DoS abuse
 - Hardened IPC/path handling, KillMode, PrivateTmp, signal safety
 
-### Phase 3 – Independent Daemons (100%)
+### Phase 3 – Independent Daemons (75%)
 - Timer daemon: cron-style scheduling, OnUnitInactiveSec persistence
 - Socket activator: listeners, IdleTimeout/RuntimeMaxSec, supervisor adopt
 - Per-User daemons and reboot persistence, independent of elogind's linger
+- Full systemd directive parity (in progress)
 
 ### Phase 4 – Linux Enhancements (0%)
 - Cgroup v2 integration: tracking, resource limits, OOM handling

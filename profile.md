@@ -1168,6 +1168,166 @@ Notes:
 8. ✅ Shutdown/reboot/halt implementation with PID 1 vs standalone mode detection
 9. ✅ Per-user daemon support with reboot persistence (independent of elogind)
 
+#### TODO: Full systemd directive parsing
+[Unit]
+  BindsTo=
+  PartOf=
+  StopWhenUnneeded=
+  RefuseManualStart=
+  RefuseManualStop=
+  AllowIsolate=
+  DefaultDependencies=
+  ConditionPathExists=
+  ConditionPathExistsGlob=
+  ConditionPathIsDirectory=
+  ConditionPathIsSymbolicLink=
+  ConditionPathIsMountPoint=
+  ConditionPathIsReadWrite=
+  ConditionDirectoryNotEmpty=
+  ConditionFileIsExecutable=
+  ConditionUser=
+  ConditionGroup=
+  ConditionControlGroupController=
+  ConditionArchitecture=
+  ConditionVirtualization=
+  ConditionKernelCommandLine=
+  ConditionKernelVersion=
+  ConditionFirmware=
+  ConditionSecurity=
+  ConditionCapability=
+  ConditionHost=
+  ConditionACPower=
+  ConditionNeedsUpdate=
+  ConditionFirstBoot=
+  AssertPathExists=
+  AssertPathExistsGlob=
+  AssertPathIsDirectory=
+  AssertPathIsSymbolicLink=
+  AssertPathIsMountPoint=
+  AssertPathIsReadWrite=
+  AssertDirectoryNotEmpty=
+  AssertFileIsExecutable=
+  AssertUser=
+  AssertGroup=
+  AssertControlGroupController=
+  AssertArchitecture=
+  AssertVirtualization=
+  AssertKernelCommandLine=
+  AssertKernelVersion=
+  AssertFirmware=
+  AssertSecurity=
+  AssertCapability=
+  AssertHost=
+  AssertACPower=
+  AssertNeedsUpdate=
+  AssertFirstBoot=
+
+[Service]
+  PIDFile=
+  ExecStopPost=
+  ExecCondition=
+  StartLimitIntervalSec=
+  StartLimitBurst=
+  StartLimitAction=
+  RestartPreventExitStatus=
+  RestartForceExitStatus=
+  RestartMaxDelaySec=
+  TimeoutAbortSec=
+  TimeoutStartFailureMode=
+  SyslogIdentifier=
+  SyslogFacility=
+  SyslogLevel=
+  SyslogLevelPrefix=
+  LogLevelMax=
+  StandardInput=data
+  StandardInput=file:*
+  StandardInput=socket
+  StandardInput=fd:*
+  StandardOutput=syslog
+  StandardOutput=file:*
+  StandardOutput=socket
+  StandardError=syslog
+  StandardError=file:*
+  StandardError=socket
+  NoNewPrivileges=
+  ProtectSystem=
+  ProtectHome=
+  CapabilityBoundingSet=
+  AmbientCapabilities=
+  DynamicUser=
+  PrivateDevices=
+  DeviceAllow=
+  ProtectKernelTunables=
+  ProtectControlGroups=
+  RestrictSUIDSGID=
+  UMask=
+  RootDirectory=
+  RootImage=
+  MountFlags=
+  MemoryLimit=
+  LimitCPU=
+  LimitFSIZE=
+  LimitDATA=
+  LimitSTACK=
+  LimitCORE=
+  LimitRSS=
+  LimitNPROC=
+  LimitMEMLOCK=
+  LimitSIGPENDING=
+  LimitMSGQUEUE=
+  LimitNICE=
+  LimitRTPRIO=
+  LimitRTTIME=
+
+[Timer]
+  AccuracySec=
+  Unit=
+  RemainAfterElapse=
+  WakeSystem=
+  FixedRandomDelay=
+  OnClockChange=
+  OnTimezoneChange=
+  Additional OnCalendar= entries
+
+[Socket]
+  Accept=
+  Service=
+  SocketUser=
+  SocketGroup=
+  SocketMode=
+  Backlog=
+  BindIPv6Only=
+  ListenFIFO=
+  ListenNetlink=
+  ListenSequentialPacket=
+  RemoveOnStop=
+  MaxConnections=
+  TriggerLimitBurst=
+  TriggerLimitIntervalSec=
+  PassCredentials=
+  PassSecurity=
+  FreeBind=
+  ReusePort=
+  KeepAlive=
+  KeepAliveTimeSec=
+  KeepAliveIntervalSec=
+  KeepAliveProbes=
+  NoDelay=
+  DeferAcceptSec=
+  PipeSize=
+  Priority=
+  ReceiveBuffer=
+  SendBuffer=
+  IPTOS=
+  IPTTL=
+  Mark=
+  Transparent=
+
+[Install]
+  Also=
+  Alias=
+  DefaultInstance=
+
 ### User-Mode Follow-ups
 - ✅ Documented and tested per-user reboot persistence workflows
 
