@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <strings.h>
 #include "unit.h"
 
 #define MAX_LINE 1024
@@ -43,6 +44,15 @@ static char *trim(char *str) {
     end[1] = '\0';
 
     return str;
+}
+
+static bool parse_boolean(const char *value) {
+    if (!value) return false;
+    if (strcasecmp(value, "true") == 0) return true;
+    if (strcasecmp(value, "yes") == 0) return true;
+    if (strcasecmp(value, "on") == 0) return true;
+    if (strcmp(value, "1") == 0) return true;
+    return false;
 }
 
 /* Parse space-separated list into array */
@@ -105,6 +115,12 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         unit->binds_to_count = parse_list(value, unit->binds_to, MAX_DEPS);
     } else if (strcmp(key, "PartOf") == 0) {
         unit->part_of_count = parse_list(value, unit->part_of, MAX_DEPS);
+    } else if (strcmp(key, "StopWhenUnneeded") == 0) {
+        unit->stop_when_unneeded = parse_boolean(value);
+    } else if (strcmp(key, "RefuseManualStart") == 0) {
+        unit->refuse_manual_start = parse_boolean(value);
+    } else if (strcmp(key, "RefuseManualStop") == 0) {
+        unit->refuse_manual_stop = parse_boolean(value);
     } else if (strcmp(key, "ConditionPathExists") == 0) {
         add_condition(unit, CONDITION_PATH_EXISTS, value);
     } else if (strcmp(key, "ConditionPathExistsGlob") == 0) {

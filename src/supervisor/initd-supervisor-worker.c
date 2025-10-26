@@ -66,6 +66,7 @@ static unsigned int start_traversal_generation = 0;
 static unsigned int stop_traversal_generation = 0;
 static unsigned int isolate_generation = 0;
 static bool debug_mode = false;
+static bool stop_when_unneeded_guard = false;
 
 /* Forward declarations */
 static bool unit_provides(struct unit_file *unit, const char *service_name);
@@ -75,6 +76,11 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
 static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
 static void mark_isolate_closure(struct unit_file *unit, unsigned int generation);
 static void trigger_on_failure(struct unit_file *unit);
+static bool unit_conditions_met(struct unit_file *unit);
+static bool unit_has_active_dependents(struct unit_file *unit);
+static void enforce_stop_when_unneeded(void);
+static void stop_bound_dependents(struct unit_file *unit, const char *reason);
+static bool dependency_matches(struct unit_file *candidate, const char *name);
 
 /* Maximum recursion depth for dependency resolution */
 #define MAX_RECURSION_DEPTH 100
@@ -759,6 +765,81 @@ static bool unit_conditions_met(struct unit_file *unit) {
     return true;
 }
 
+static bool unit_has_active_dependents(struct unit_file *unit) {
+    for (int i = 0; i < unit_count; i++) {
+        struct unit_file *other = units[i];
+        if (!other || other == unit) {
+            continue;
+        }
+
+        if (other->state != STATE_ACTIVE && other->state != STATE_ACTIVATING) {
+            continue;
+        }
+
+        for (int j = 0; j < other->unit.requires_count; j++) {
+            if (dependency_matches(unit, other->unit.requires[j])) {
+                return true;
+            }
+        }
+        for (int j = 0; j < other->unit.wants_count; j++) {
+            if (dependency_matches(unit, other->unit.wants[j])) {
+                return true;
+            }
+        }
+        for (int j = 0; j < other->unit.binds_to_count; j++) {
+            if (dependency_matches(unit, other->unit.binds_to[j])) {
+                return true;
+            }
+        }
+        for (int j = 0; j < other->unit.part_of_count; j++) {
+            if (dependency_matches(unit, other->unit.part_of[j])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void enforce_stop_when_unneeded(void) {
+    if (stop_when_unneeded_guard) {
+        return;
+    }
+
+    stop_when_unneeded_guard = true;
+
+    bool changed;
+    do {
+        changed = false;
+        for (int i = 0; i < unit_count; i++) {
+            struct unit_file *unit = units[i];
+            if (!unit) {
+                continue;
+            }
+
+            if (!unit->unit.stop_when_unneeded) {
+                continue;
+            }
+
+            if (unit->state != STATE_ACTIVE) {
+                continue;
+            }
+
+            if (unit_has_active_dependents(unit)) {
+                continue;
+            }
+
+            log_info(unit->name, "Stopping (StopWhenUnneeded=yes)");
+            if (stop_unit_recursive(unit) == 0) {
+                changed = true;
+            } else {
+                log_warn(unit->name, "Failed to stop despite StopWhenUnneeded=yes");
+            }
+        }
+    } while (changed);
+
+    stop_when_unneeded_guard = false;
+}
+
 static bool dependency_matches(struct unit_file *candidate, const char *name) {
     if (!candidate || !name) {
         return false;
@@ -862,6 +943,7 @@ static void handle_service_exit(pid_t pid, int exit_status) {
         const char *reason = success ? "dependency became inactive"
                                      : "dependency failed";
         stop_bound_dependents(unit, reason);
+        enforce_stop_when_unneeded();
     }
 
     /* Handle restart policy */
@@ -1049,6 +1131,8 @@ static void handle_control_command(int client_fd, bool read_only) {
     /* fprintf(stderr, "worker: received command %s for unit %s\n",
             command_to_string(req.header.command), req.unit_name); */
 
+    bool manual_request = !(req.header.flags & REQ_FLAG_INTERNAL);
+
     /* Set default response */
     resp.header.length = sizeof(resp);
     resp.header.command = req.header.command;
@@ -1064,6 +1148,10 @@ static void handle_control_command(int client_fd, bool read_only) {
         } else if (unit->state == STATE_ACTIVE) {
             resp.code = RESP_UNIT_ALREADY_ACTIVE;
             snprintf(resp.message, sizeof(resp.message), "Unit %s is already active", req.unit_name);
+        } else if (unit->unit.refuse_manual_start && manual_request) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message),
+                     "Manual start refused (RefuseManualStart=yes)");
         } else {
             if (start_unit_recursive(unit) < 0) {
                 resp.code = RESP_FAILURE;
@@ -1103,12 +1191,17 @@ static void handle_control_command(int client_fd, bool read_only) {
         } else if (unit->state != STATE_ACTIVE) {
             resp.code = RESP_UNIT_INACTIVE;
             snprintf(resp.message, sizeof(resp.message), "Unit %s is not active", req.unit_name);
+        } else if (unit->unit.refuse_manual_stop && manual_request) {
+            resp.code = RESP_FAILURE;
+            snprintf(resp.message, sizeof(resp.message),
+                     "Manual stop refused (RefuseManualStop=yes)");
         } else {
             if (stop_unit_recursive(unit) < 0) {
                 resp.code = RESP_FAILURE;
                 snprintf(resp.message, sizeof(resp.message), "Failed to stop %s", req.unit_name);
             } else {
                 snprintf(resp.message, sizeof(resp.message), "Stopped %s", req.unit_name);
+                enforce_stop_when_unneeded();
             }
         }
         break;

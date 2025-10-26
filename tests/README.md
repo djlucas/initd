@@ -85,6 +85,7 @@ Tests the unit file parser:
 - Timer unit parsing
 - Environment variables
 - ConditionPath* directive parsing with negation support
+- StopWhenUnneeded and RefuseManualStart/Stop flags
 - Validation rules
 - Provides= directive
 

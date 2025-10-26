@@ -444,6 +444,7 @@ static int activate_via_supervisor(const char *service_name) {
     /* Send start request */
     req.header.length = sizeof(req);
     req.header.command = CMD_START;
+    req.header.flags = REQ_FLAG_INTERNAL;
     strncpy(req.unit_name, service_name, sizeof(req.unit_name) - 1);
 
     if (send_control_request(fd, &req) < 0) {

@@ -196,6 +196,9 @@ void test_parse_conditions(void) {
     const char *unit_content =
         "[Unit]\n"
         "Description=Condition Test\n"
+        "StopWhenUnneeded=true\n"
+        "RefuseManualStart=yes\n"
+        "RefuseManualStop=1\n"
         "ConditionPathExists=/etc/passwd\n"
         "ConditionPathExists=!/no/such/path\n"
         "ConditionDirectoryNotEmpty=/tmp\n"
@@ -210,6 +213,9 @@ void test_parse_conditions(void) {
     struct unit_file unit;
     assert(parse_unit_file(path, &unit) == 0);
     assert(unit.unit.condition_count == 4);
+    assert(unit.unit.stop_when_unneeded == true);
+    assert(unit.unit.refuse_manual_start == true);
+    assert(unit.unit.refuse_manual_stop == true);
 
     assert(unit.unit.conditions[0].type == CONDITION_PATH_EXISTS);
     assert(unit.unit.conditions[0].negate == false);

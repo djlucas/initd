@@ -86,6 +86,9 @@ struct unit_section {
     char *binds_to[MAX_DEPS];   /* Units whose lifecycle we bind to */
     char *part_of[MAX_DEPS];    /* Parent units that control our stop/reload */
     struct unit_condition conditions[MAX_CONDITIONS];
+    bool stop_when_unneeded;
+    bool refuse_manual_start;
+    bool refuse_manual_stop;
     int after_count;
     int before_count;
     int requires_count;

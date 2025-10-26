@@ -182,6 +182,13 @@ Unit types **not supported** (use traditional alternatives):
 - ❌ `.scope`     - Runtime-created units (systemd internal)
 - ❌ `.slice`     - cgroup hierarchy management - elogind has user slices
 
+### Supported Unit Directives
+
+- `BindsTo=` / `PartOf=` lifecycle linkage for dependent units
+- `StopWhenUnneeded=` automatic teardown when no dependents remain
+- `RefuseManualStart=` / `RefuseManualStop=` guards for manual control
+- `ConditionPath*` checks with optional `!` negation to skip units
+
 ### Supported Service Directives
 
 - `Type=` - simple, forking, oneshot

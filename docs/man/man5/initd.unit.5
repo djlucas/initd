@@ -86,13 +86,52 @@ WantedBy=/RequiredBy= to start the member units.
 Space-separated list of unit names. This unit wants the specified units
 to be active. If a wanted unit fails, this unit continues running.
 .TP
+.B StopWhenUnneeded=
+Boolean. If set to true, the unit will be stopped automatically when no
+active unit still requires or wants it. Default: false.
+.TP
+.B RefuseManualStart=
+Boolean. When true, manual start attempts via initctl/systemctl are
+rejected. Dependency-triggered activations still succeed. Default: false.
+.TP
+.B RefuseManualStop=
+Boolean. When true, manual stop attempts are rejected. Dependency-driven
+stops (including StopWhenUnneeded) still occur. Default: false.
+.TP
 .B Conflicts=
 Space-separated list of unit names. This unit conflicts with the specified
 units. Starting this unit will stop conflicting units.
 .TP
 .B ConditionPathExists=
 Absolute path to a file or directory. The unit will be skipped if the path
-does not exist.
+does not exist. Prefix the path with \fB!\fR to invert the check.
+.TP
+.B ConditionPathExistsGlob=
+Glob pattern that must match at least one path. Prefix with \fB!\fR to invert
+the condition.
+.TP
+.B ConditionPathIsDirectory=
+Path that must exist and be a directory. Prefix with \fB!\fR to require that
+the path is not a directory.
+.TP
+.B ConditionPathIsSymbolicLink=
+Path that must exist and be a symbolic link. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionPathIsMountPoint=
+Path that must be a mount point. Prefix with \fB!\fR to require that it is
+not a mount point.
+.TP
+.B ConditionPathIsReadWrite=
+Path that must be writable (and executable when a directory). Prefix with
+\fB!\fR to invert.
+.TP
+.B ConditionDirectoryNotEmpty=
+Directory that must contain at least one entry other than '.' or '..'.
+Prefix with \fB!\fR to require that the directory is empty.
+.TP
+.B ConditionFileIsExecutable=
+Path that must reference an executable regular file. Prefix with \fB!\fR to
+invert.
 .TP
 .B Provides=
 Symbolic name for this unit. Other units can depend on this name, and any

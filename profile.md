@@ -1172,9 +1172,6 @@ Notes:
 
 #### TODO: Full systemd directive parsing
 [Unit]
-  StopWhenUnneeded=
-  RefuseManualStart=
-  RefuseManualStop=
   AllowIsolate=
   DefaultDependencies=
   ConditionUser=

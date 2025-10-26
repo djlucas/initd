@@ -77,7 +77,8 @@ enum unit_state_response {
 };
 
 /* Request flags */
-#define REQ_FLAG_ALL  0x0001  /* Include systemd directories for list-units */
+#define REQ_FLAG_ALL       0x0001  /* Include systemd directories for list-units */
+#define REQ_FLAG_INTERNAL  0x0002  /* Sent by timers/socket activator (not manual ctl) */
 
 /* Message header */
 struct msg_header {
