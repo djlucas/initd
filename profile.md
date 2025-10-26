@@ -1170,8 +1170,6 @@ Notes:
 
 #### TODO: Full systemd directive parsing
 [Unit]
-  BindsTo=
-  PartOf=
   StopWhenUnneeded=
   RefuseManualStart=
   RefuseManualStop=
@@ -1242,11 +1240,10 @@ Notes:
   StandardInput=data
   StandardInput=file:*
   StandardInput=socket
-  StandardInput=fd:*
-  StandardOutput=syslog
+  StandardOutput=syslog (alias journal)
   StandardOutput=file:*
   StandardOutput=socket
-  StandardError=syslog
+  StandardError=syslog (alias journal)
   StandardError=file:*
   StandardError=socket
   NoNewPrivileges=

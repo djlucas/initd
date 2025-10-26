@@ -198,6 +198,9 @@ Unit types **not supported** (use traditional alternatives):
 - `PrivateTmp=` - Private /tmp namespace (Linux only)
 - `LimitNOFILE=` - File descriptor limit (portable)
 - `KillMode=` - process, control-group, mixed, none (portable)
+- `RemainAfterExit=` - keep oneshot services active after exit
+- `StandardInput=`/`StandardOutput=`/`StandardError=` - null, inherit, tty, tty-force
+- `TTYPath=` - device to use with tty stdio modes
 
 ## Quick Start
 

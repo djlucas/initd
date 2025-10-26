@@ -76,6 +76,10 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         unit->provides_count = parse_list(value, unit->provides, MAX_DEPS);
     } else if (strcmp(key, "OnFailure") == 0) {
         unit->on_failure_count = parse_list(value, unit->on_failure, MAX_DEPS);
+    } else if (strcmp(key, "BindsTo") == 0) {
+        unit->binds_to_count = parse_list(value, unit->binds_to, MAX_DEPS);
+    } else if (strcmp(key, "PartOf") == 0) {
+        unit->part_of_count = parse_list(value, unit->part_of, MAX_DEPS);
     } else {
         return -1; /* Unknown key */
     }
@@ -374,6 +378,9 @@ void free_unit_file(struct unit_file *unit) {
     for (int i = 0; i < unit->unit.wants_count; i++) free(unit->unit.wants[i]);
     for (int i = 0; i < unit->unit.conflicts_count; i++) free(unit->unit.conflicts[i]);
     for (int i = 0; i < unit->unit.provides_count; i++) free(unit->unit.provides[i]);
+    for (int i = 0; i < unit->unit.on_failure_count; i++) free(unit->unit.on_failure[i]);
+    for (int i = 0; i < unit->unit.binds_to_count; i++) free(unit->unit.binds_to[i]);
+    for (int i = 0; i < unit->unit.part_of_count; i++) free(unit->unit.part_of[i]);
 
     /* Free [Service] fields */
     if (unit->type == UNIT_SERVICE) {

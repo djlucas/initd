@@ -72,6 +72,16 @@ specified units. Used for ordering only, not dependencies.
 Space-separated list of unit names. This unit requires the specified units
 to be active. If any required unit fails, this unit will fail.
 .TP
+.B BindsTo=
+Stronger variant of Requires. The bound units are started with this unit and
+any transition of the bound unit to the inactive or failed state immediately
+stops this unit as well.
+.TP
+.B PartOf=
+Declares that the unit is a member of another unit. Stopping or reloading the
+listed parent units stops or reloads this unit in lockstep. Combine with
+WantedBy=/RequiredBy= to start the member units.
+.TP
 .B Wants=
 Space-separated list of unit names. This unit wants the specified units
 to be active. If a wanted unit fails, this unit continues running.

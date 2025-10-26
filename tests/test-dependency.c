@@ -92,6 +92,23 @@ void test_requires_dependency(void) {
     PASS();
 }
 
+void test_binds_to_dependency(void) {
+    TEST("BindsTo= lifecycle binding");
+
+    struct unit_file unit_a, unit_b;
+    setup_unit(&unit_a, "a.service", UNIT_SERVICE);
+    setup_unit(&unit_b, "b.service", UNIT_SERVICE);
+
+    unit_a.unit.binds_to[0] = strdup("b.service");
+    unit_a.unit.binds_to_count = 1;
+
+    assert(unit_a.unit.binds_to_count == 1);
+    assert(strcmp(unit_a.unit.binds_to[0], "b.service") == 0);
+
+    free(unit_a.unit.binds_to[0]);
+    PASS();
+}
+
 void test_wants_dependency(void) {
     TEST("Wants= soft dependency");
 
@@ -110,6 +127,23 @@ void test_wants_dependency(void) {
     assert(strcmp(unit_a.unit.wants[0], "b.service") == 0);
 
     free(unit_a.unit.wants[0]);
+    PASS();
+}
+
+void test_part_of_dependency(void) {
+    TEST("PartOf= parent relationship");
+
+    struct unit_file unit_service, unit_target;
+    setup_unit(&unit_service, "getty@tty1.service", UNIT_SERVICE);
+    setup_unit(&unit_target, "getty.target", UNIT_TARGET);
+
+    unit_service.unit.part_of[0] = strdup("getty.target");
+    unit_service.unit.part_of_count = 1;
+
+    assert(unit_service.unit.part_of_count == 1);
+    assert(strcmp(unit_service.unit.part_of[0], "getty.target") == 0);
+
+    free(unit_service.unit.part_of[0]);
     PASS();
 }
 
@@ -288,7 +322,9 @@ int main(void) {
     test_after_dependency();
     test_before_dependency();
     test_requires_dependency();
+    test_binds_to_dependency();
     test_wants_dependency();
+    test_part_of_dependency();
     test_conflicts_dependency();
     test_circular_dependency_detection();
     test_dependency_chain();

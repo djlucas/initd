@@ -64,6 +64,8 @@ struct unit_section {
     char *conflicts[MAX_DEPS];  /* Conflicting units */
     char *provides[MAX_DEPS];   /* Virtual names this unit provides */
     char *on_failure[MAX_DEPS]; /* Units to activate on failure */
+    char *binds_to[MAX_DEPS];   /* Units whose lifecycle we bind to */
+    char *part_of[MAX_DEPS];    /* Parent units that control our stop/reload */
     int after_count;
     int before_count;
     int requires_count;
@@ -71,6 +73,8 @@ struct unit_section {
     int conflicts_count;
     int provides_count;
     int on_failure_count;
+    int binds_to_count;
+    int part_of_count;
 };
 
 /* Kill mode for service termination */

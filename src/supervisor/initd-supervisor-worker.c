@@ -581,6 +581,65 @@ static bool unit_provides(struct unit_file *unit, const char *service_name) {
     return false;
 }
 
+static bool dependency_matches(struct unit_file *candidate, const char *name) {
+    if (!candidate || !name) {
+        return false;
+    }
+    if (strcmp(candidate->name, name) == 0) {
+        return true;
+    }
+    return unit_provides(candidate, name);
+}
+
+static void stop_bound_dependents(struct unit_file *unit, const char *reason) {
+    if (!unit) {
+        return;
+    }
+
+    for (int i = 0; i < unit_count; i++) {
+        struct unit_file *other = units[i];
+        if (!other || other == unit) {
+            continue;
+        }
+
+        bool binds = false;
+        for (int j = 0; j < other->unit.binds_to_count; j++) {
+            if (dependency_matches(unit, other->unit.binds_to[j])) {
+                binds = true;
+                break;
+            }
+        }
+
+        bool part = false;
+        for (int j = 0; j < other->unit.part_of_count; j++) {
+            if (dependency_matches(unit, other->unit.part_of[j])) {
+                part = true;
+                break;
+            }
+        }
+
+        if (!binds && !part) {
+            continue;
+        }
+
+        if (other->state != STATE_ACTIVE &&
+            other->state != STATE_DEACTIVATING &&
+            other->state != STATE_ACTIVATING) {
+            continue;
+        }
+
+        if (binds) {
+            log_msg(LOG_INFO, other->name,
+                    "stopping (BindsTo=%s) because %s", unit->name, reason);
+        } else if (part) {
+            log_msg(LOG_INFO, other->name,
+                    "stopping (PartOf=%s) because %s", unit->name, reason);
+        }
+
+        stop_unit_recursive(other);
+    }
+}
+
 /* Handle service exit notification from master */
 static void handle_service_exit(pid_t pid, int exit_status) {
     struct unit_file *unit = find_unit_by_pid(pid);
@@ -619,6 +678,12 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 
     if (success && unit->type == UNIT_SERVICE) {
         notify_timer_daemon_inactive(unit->name);
+    }
+
+    if (unit->state != STATE_ACTIVE) {
+        const char *reason = success ? "dependency became inactive"
+                                     : "dependency failed";
+        stop_bound_dependents(unit, reason);
     }
 
     /* Handle restart policy */
@@ -1248,14 +1313,32 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
 
         bool depends_on_us = false;
         for (int j = 0; j < other->unit.requires_count; j++) {
-            if (strcmp(other->unit.requires[j], unit->name) == 0) {
+            if (dependency_matches(unit, other->unit.requires[j])) {
                 depends_on_us = true;
                 break;
             }
         }
         if (!depends_on_us) {
             for (int j = 0; j < other->unit.wants_count; j++) {
-                if (strcmp(other->unit.wants[j], unit->name) == 0) {
+                if (dependency_matches(unit, other->unit.wants[j])) {
+                    depends_on_us = true;
+                    break;
+                }
+            }
+        }
+
+        if (!depends_on_us) {
+            for (int j = 0; j < other->unit.binds_to_count; j++) {
+                if (dependency_matches(unit, other->unit.binds_to[j])) {
+                    depends_on_us = true;
+                    break;
+                }
+            }
+        }
+
+        if (!depends_on_us) {
+            for (int j = 0; j < other->unit.part_of_count; j++) {
+                if (dependency_matches(unit, other->unit.part_of[j])) {
                     depends_on_us = true;
                     break;
                 }
@@ -1298,6 +1381,11 @@ static void mark_isolate_closure(struct unit_file *unit, unsigned int generation
 
     for (int i = 0; i < unit->unit.requires_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.requires[i]);
+        mark_isolate_closure(dep, generation);
+    }
+
+    for (int i = 0; i < unit->unit.binds_to_count; i++) {
+        struct unit_file *dep = resolve_unit(unit->unit.binds_to[i]);
         mark_isolate_closure(dep, generation);
     }
 
@@ -1350,8 +1438,22 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     unit->state = STATE_ACTIVATING;
     log_service_starting(unit->name, unit->unit.description);
 
+    for (int i = 0; i < unit->unit.binds_to_count; i++) {
+        struct unit_file *dep = resolve_unit(unit->unit.binds_to[i]);
+        if (dep && start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
+            char reason[256];
+            snprintf(reason, sizeof(reason), "failed to start bound dependency %s",
+                     unit->unit.binds_to[i]);
+            log_service_failed(unit->name, unit->unit.description, reason);
+            unit->state = STATE_FAILED;
+            trigger_on_failure(unit);
+            unit->start_visit_state = DEP_VISIT_NONE;
+            return -1;
+        }
+    }
+
     for (int i = 0; i < unit->unit.requires_count; i++) {
-        struct unit_file *dep = find_unit(unit->unit.requires[i]);
+        struct unit_file *dep = resolve_unit(unit->unit.requires[i]);
         if (dep && start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
             char reason[256];
             snprintf(reason, sizeof(reason), "failed to start required dependency %s", unit->unit.requires[i]);
@@ -1364,14 +1466,14 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     }
 
     for (int i = 0; i < unit->unit.wants_count; i++) {
-        struct unit_file *dep = find_unit(unit->unit.wants[i]);
+        struct unit_file *dep = resolve_unit(unit->unit.wants[i]);
         if (dep) {
             start_unit_recursive_depth(dep, depth + 1, generation);
         }
     }
 
     for (int i = 0; i < unit->unit.after_count; i++) {
-        struct unit_file *dep = find_unit(unit->unit.after[i]);
+        struct unit_file *dep = resolve_unit(unit->unit.after[i]);
         if (dep && dep->state != STATE_ACTIVE && dep->state != STATE_FAILED) {
             if (dep->state == STATE_INACTIVE) {
                 if (start_unit_recursive_depth(dep, depth + 1, generation) < 0) {

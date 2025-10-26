@@ -80,7 +80,7 @@ Tests the calendar expression parser for timer units:
 ### test-parser
 Tests the unit file parser:
 - Basic service parsing
-- Dependency resolution (After, Requires, Wants)
+- Dependency resolution (After, Requires, Wants, BindsTo, PartOf)
 - Service types (simple, forking, oneshot)
 - Timer unit parsing
 - Environment variables
