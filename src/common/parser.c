@@ -462,6 +462,8 @@ static int parse_service_key(struct service_section *service, const char *key, c
         if (*endptr == '\0' && mask >= 0 && mask <= 0777) {
             service->umask_value = (mode_t)mask;
         }
+    } else if (strcmp(key, "NoNewPrivileges") == 0) {
+        service->no_new_privs = parse_boolean(value);
     } else {
         return -1; /* Unknown key */
     }

@@ -218,6 +218,7 @@ Unit types **not supported** (use traditional alternatives):
 - `TTYPath=` - device to use with tty stdio modes
 - `SyslogIdentifier=` / `SyslogFacility=` / `SyslogLevel=` / `SyslogLevelPrefix=` - syslog configuration
 - `UMask=` - file creation mask (octal)
+- `NoNewPrivileges=` - prevent privilege escalation via setuid/setgid (Linux/FreeBSD only)
 
 ## Quick Start
 
@@ -383,7 +384,7 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Run all tests (23 test suites total: 20 non-privileged, 3 privileged)
+# Run all tests (23 test suites, 182 individual tests: 20 non-privileged, 3 privileged)
 ninja -C build test
 
 # Run privileged tests (requires root)

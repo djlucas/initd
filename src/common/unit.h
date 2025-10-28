@@ -191,6 +191,7 @@ struct service_section {
     int syslog_level;             /* SyslogLevel= (LOG_INFO, LOG_DEBUG, etc.) */
     bool syslog_level_prefix;     /* SyslogLevelPrefix= */
     mode_t umask_value;           /* UMask= (octal file creation mask) */
+    bool no_new_privs;            /* NoNewPrivileges= (prevent privilege escalation on execve) */
 };
 
 /* [Timer] section */

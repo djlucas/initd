@@ -589,8 +589,50 @@ static void test_umask_directive(void) {
     printf("✓ UMask directive parsing works\n");
 }
 
+/* Test NoNewPrivileges */
+static void test_no_new_privs_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test NoNewPrivileges=true */
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "NoNewPrivileges=true\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.no_new_privs == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    /* Test NoNewPrivileges=false (default) */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "NoNewPrivileges=false\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.no_new_privs == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test NoNewPrivileges=yes */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "NoNewPrivileges=yes\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.no_new_privs == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ NoNewPrivileges directive parsing works\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask)...\n");
+    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -608,6 +650,7 @@ int main(void) {
     test_stdio_data_base64();
     test_syslog_directives();
     test_umask_directive();
+    test_no_new_privs_directive();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

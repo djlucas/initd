@@ -546,6 +546,32 @@ KillMode=control-group    # process, control-group, mixed, or none
 - Functionally equivalent for most services
 - initd's approach works on BSD, Hurd, and other Unix systems
 
+#### NoNewPrivileges (Linux/FreeBSD only)
+
+**Purpose:** Prevent privilege escalation via setuid/setgid on execve()
+
+**Implementation:**
+- Linux: Uses `prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)` (kernel 3.5+)
+- FreeBSD: Uses `procctl(P_PID, 0, PROC_NO_NEW_PRIVS_CTL, &enable)`
+- Sets kernel flag preventing privilege gain on exec
+
+**Platform Support:**
+- Linux/FreeBSD: Full support
+- OpenBSD: Not supported - OpenBSD's `pledge()` is fundamentally different, requiring application cooperation and capability-based restrictions rather than just blocking privilege elevation
+- GNU Hurd: Not supported - no equivalent mechanism (CVE-2021-43411 race condition in setuid execve handling)
+
+**Usage:**
+```ini
+[Service]
+ExecStart=/usr/bin/myapp
+NoNewPrivileges=true    # or false (default)
+```
+
+**Security Benefits:**
+- Blocks setuid/setgid bits and file capabilities on execve()
+- Once set, cannot be unset (inherited across fork/exec)
+- Recommended for services that don't need to exec privileged binaries
+
 ## Targets
 
 ### Standard Targets
@@ -1247,7 +1273,6 @@ Notes:
   TimeoutAbortSec=
   TimeoutStartFailureMode=
   LogLevelMax=
-  NoNewPrivileges=
   ProtectSystem=
   ProtectHome=
   CapabilityBoundingSet=
@@ -1404,7 +1429,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**23 test suites - all passing**
+**23 test suites, 182 individual tests - all passing**
 
 1. **calendar parser** - Calendar expression parsing
 2. **unit file parser** - Unit file parsing & validation

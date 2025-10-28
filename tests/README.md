@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (23 test suites; 3 marked privileged)
+# Build and run all tests (23 test suites, 182 individual tests; 3 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -270,7 +270,7 @@ Tests socket activator IPC communication:
 - Socket status request serialization
 - Socket activation notification serialization
 
-### test-service-features (10 tests)
+### test-service-features (18 tests)
 Tests service directive parsing:
 - **PrivateTmp parsing** - Tests true/false/yes/1 parsing
 - **LimitNOFILE parsing** - Tests numeric values, "infinity", and default (-1)
@@ -282,16 +282,27 @@ Tests service directive parsing:
 - **StandardError parsing** - Tests null, tty modes
 - **TTYPath parsing** - Tests /dev/console and /dev/tty1 paths
 - **Combined StandardInput/Output/Error** - Tests all stdio directives with TTYPath together
+- **StandardInput/Output/Error=file:path** - Tests file redirection modes
+- **StandardInput/Output/Error=socket** - Tests socket activation mode
+- **StandardInput=data with StandardInputText=** - Tests embedded text input
+- **StandardInput=data with StandardInputData=** - Tests base64-encoded binary input
+- **Syslog directives** - Tests SyslogIdentifier, SyslogFacility, SyslogLevel, SyslogLevelPrefix
+- **UMask directive** - Tests octal umask values (0022, 0077)
+- **NoNewPrivileges directive** - Tests true/false/yes parsing for privilege escalation prevention
 
 **Key features tested:**
 - PrivateTmp=true|false (default: false)
 - LimitNOFILE=N|infinity (default: -1 = not set)
 - KillMode=process|control-group|mixed|none (default: process)
 - RemainAfterExit=yes|no (default: false)
-- StandardInput=null|tty|tty-force|inherit (default: inherit)
-- StandardOutput=null|tty|inherit (default: inherit)
-- StandardError=null|tty|inherit (default: inherit)
+- StandardInput=null|tty|tty-force|inherit|file:path|socket|data (default: inherit)
+- StandardOutput=null|tty|inherit|file:path|socket (default: inherit)
+- StandardError=null|tty|inherit|file:path|socket (default: inherit)
+- StandardInputText= / StandardInputData= - embed literal input data
 - TTYPath=/dev/console (or other TTY device path)
+- SyslogIdentifier= / SyslogFacility= / SyslogLevel= / SyslogLevelPrefix=
+- UMask=0022 (octal file creation mask)
+- NoNewPrivileges=true|false (default: false)
 
 ### test-service-registry (5 tests)
 Tests service registry and DoS prevention mechanisms:
@@ -353,7 +364,7 @@ Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 23 test suites - all passing ✅**
+**Total: 23 test suites, 182 individual tests - all passing ✅**
 
 **Regular tests:** 20 suites (no root required)
 **Privileged tests:** 3 suites (offline enable/disable, Exec lifecycle, privileged operations)

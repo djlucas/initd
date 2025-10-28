@@ -470,6 +470,9 @@ static pid_t start_service(struct unit_file *unit) {
         /* Copy umask */
         req.umask_value = unit->config.service.umask_value;
 
+        /* Copy NoNewPrivileges */
+        req.no_new_privs = unit->config.service.no_new_privs;
+
         int interval = unit->unit.start_limit_interval_set ?
             unit->unit.start_limit_interval_sec : INITD_DEFAULT_START_LIMIT_INTERVAL_SEC;
         if (interval < INITD_DEFAULT_START_LIMIT_INTERVAL_SEC) {

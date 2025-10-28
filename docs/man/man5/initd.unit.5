@@ -398,6 +398,16 @@ Boolean. If true, parse BSD syslog priority prefix from service output
 Sets the file mode creation mask (umask) for the service process in octal
 notation. Determines default permissions for created files and directories.
 Example: UMask=0022 (owner rw, group r, other r).
+.TP
+.B NoNewPrivileges=
+Boolean. If true, ensures the service process and all its children can never
+gain new privileges through execve(). This prevents privilege escalation via
+setuid/setgid binaries and file capabilities. Implemented using
+.BR prctl(PR_SET_NO_NEW_PRIVS)
+on Linux and
+.BR procctl(PROC_NO_NEW_PRIVS_CTL)
+on FreeBSD. Not supported on OpenBSD or GNU Hurd (logs warning and continues).
+Default: false.
 .SH [TIMER] SECTION
 The
 .B [Timer]

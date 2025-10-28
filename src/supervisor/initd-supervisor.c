@@ -35,6 +35,10 @@
 #include <sys/mount.h>
 #include <sys/statfs.h>
 #include <linux/magic.h>
+#include <sys/prctl.h>
+#endif
+#ifdef __FreeBSD__
+#include <sys/procctl.h>
 #endif
 #include "../common/ipc.h"
 #include "../common/privileged-ops.h"
@@ -798,6 +802,25 @@ static pid_t start_service_process(const struct service_section *service,
         /* Set umask if specified */
         if (service->umask_value != 0) {
             umask(service->umask_value);
+        }
+
+        /* Set no_new_privs if specified (Linux and FreeBSD only) */
+        if (service->no_new_privs) {
+#ifdef __linux__
+            if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
+                log_error("supervisor", "prctl(PR_SET_NO_NEW_PRIVS): %s", strerror(errno));
+                _exit(1);
+            }
+#elif defined(__FreeBSD__)
+            int enable = PROC_NO_NEW_PRIVS_ENABLE;
+            if (procctl(P_PID, 0, PROC_NO_NEW_PRIVS_CTL, &enable) < 0) {
+                log_error("supervisor", "procctl(PROC_NO_NEW_PRIVS_CTL): %s", strerror(errno));
+                _exit(1);
+            }
+#else
+            /* OpenBSD/Hurd: no equivalent - log warning and continue */
+            log_warning("supervisor", "NoNewPrivileges= not supported on this platform");
+#endif
         }
 
         /* Exec service using argv (NO SHELL - prevents injection) */
