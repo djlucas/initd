@@ -325,6 +325,22 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         add_condition(unit, CONDITION_CPUS, value, true);
     } else if (strcmp(key, "AssertEnvironment") == 0) {
         add_condition(unit, CONDITION_ENVIRONMENT, value, true);
+    } else if (strcmp(key, "ConditionVirtualization") == 0) {
+        add_condition(unit, CONDITION_VIRTUALIZATION, value, false);
+    } else if (strcmp(key, "AssertVirtualization") == 0) {
+        add_condition(unit, CONDITION_VIRTUALIZATION, value, true);
+    } else if (strcmp(key, "ConditionACPower") == 0) {
+        add_condition(unit, CONDITION_AC_POWER, value, false);
+    } else if (strcmp(key, "AssertACPower") == 0) {
+        add_condition(unit, CONDITION_AC_POWER, value, true);
+    } else if (strcmp(key, "ConditionOSRelease") == 0) {
+        add_condition(unit, CONDITION_OS_RELEASE, value, false);
+    } else if (strcmp(key, "AssertOSRelease") == 0) {
+        add_condition(unit, CONDITION_OS_RELEASE, value, true);
+    } else if (strcmp(key, "ConditionKernelVersion") == 0) {
+        add_condition(unit, CONDITION_KERNEL_VERSION, value, false);
+    } else if (strcmp(key, "AssertKernelVersion") == 0) {
+        add_condition(unit, CONDITION_KERNEL_VERSION, value, true);
     } else {
         return -1; /* Unknown key */
     }

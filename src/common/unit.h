@@ -81,7 +81,12 @@ enum unit_condition_type {
     CONDITION_ARCHITECTURE,
     CONDITION_MEMORY,
     CONDITION_CPUS,
-    CONDITION_ENVIRONMENT
+    CONDITION_ENVIRONMENT,
+    /* Platform-specific conditions */
+    CONDITION_VIRTUALIZATION,
+    CONDITION_AC_POWER,
+    CONDITION_OS_RELEASE,
+    CONDITION_KERNEL_VERSION
 };
 
 struct unit_condition {

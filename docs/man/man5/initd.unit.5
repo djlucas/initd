@@ -195,7 +195,33 @@ Environment variable check. Format: \fBVAR\fR (exists) or \fBVAR=value\fR
 (exact match). The unit will be skipped if the condition fails. Prefix with
 \fB!\fR to invert.
 .TP
-.B AssertPathExists=, AssertPathExistsGlob=, AssertPathIsDirectory=, AssertPathIsSymbolicLink=, AssertPathIsMountPoint=, AssertPathIsReadWrite=, AssertDirectoryNotEmpty=, AssertFileIsExecutable=, AssertFileNotEmpty=, AssertUser=, AssertGroup=, AssertHost=, AssertArchitecture=, AssertMemory=, AssertCPUs=, AssertEnvironment=
+.B ConditionVirtualization=
+Virtualization/container detection. Matches VM types (\fBkvm\fR, \fBqemu\fR,
+\fBvmware\fR, \fBoracle\fR, \fBxen\fR, \fBmicrosoft\fR, \fBbhyve\fR) or
+container types (\fBdocker\fR, \fBopenvz\fR, \fBjail\fR). Special values:
+\fBvm\fR (any VM), \fBcontainer\fR (any container). Linux: DMI/sysfs detection.
+FreeBSD: kern.vm_guest sysctl and jail detection. macOS: hypervisor detection
+via sysctl. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionACPower=
+AC power status check. Value: \fBtrue\fR (on AC power) or \fBfalse\fR (on
+battery). Linux: \fB/sys/class/power_supply\fR. FreeBSD: hw.acpi.acline
+sysctl. OpenBSD/NetBSD: /dev/apm. macOS: hw.model heuristic. Defaults to AC
+if detection unavailable. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionOSRelease=
+OS release file parsing. Format: \fBKEY=value\fR. Checks
+\fB/etc/os-release\fR or \fB/usr/lib/os-release\fR for matching key-value
+pairs (e.g., \fBID=debian\fR, \fBVERSION_ID=12\fR). Prefix with \fB!\fR to
+invert.
+.TP
+.B ConditionKernelVersion=
+Kernel version comparison. Format: \fBOP VERSION\fR where OP is \fB>=\fR,
+\fB<=\fR, \fB>\fR, \fB<\fR, or \fB=\fR (e.g., \fB>=5.10\fR, \fB<6.0\fR).
+Uses \fBuname()\fR for detection. Version format varies by OS. Prefix with
+\fB!\fR to invert.
+.TP
+.B AssertPathExists=, AssertPathExistsGlob=, AssertPathIsDirectory=, AssertPathIsSymbolicLink=, AssertPathIsMountPoint=, AssertPathIsReadWrite=, AssertDirectoryNotEmpty=, AssertFileIsExecutable=, AssertFileNotEmpty=, AssertUser=, AssertGroup=, AssertHost=, AssertArchitecture=, AssertMemory=, AssertCPUs=, AssertEnvironment=, AssertVirtualization=, AssertACPower=, AssertOSRelease=, AssertKernelVersion=
 Assert equivalents of Condition directives. Unlike conditions which silently skip
 unit activation, failed assertions abort the start job with error logging (state
 becomes failed). Use assertions for critical requirements that indicate

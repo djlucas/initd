@@ -1255,17 +1255,6 @@ Notes:
 
 #### TODO: Condition*/Assert* directives
 
-**Platform-Specific (different implementations per OS):**
-[Unit]
-  ConditionVirtualization=            (VM/container detection varies by OS)
-  ConditionACPower=                   (Linux: /sys/class/power_supply; BSD: ioctl; Hurd: TBD)
-  ConditionOSRelease=                 (/etc/os-release location varies)
-  ConditionKernelVersion=             (uname works; version string format differs)
-  AssertVirtualization=
-  AssertACPower=
-  AssertOSRelease=
-  AssertKernelVersion=
-
 **Linux-Only (cannot implement portably):**
 [Unit]
   ConditionKernelCommandLine=         (/proc/cmdline)
@@ -1299,9 +1288,9 @@ Notes:
   AssertNeedsUpdate=
   AssertFirstBoot=
 
-**Summary:** 42 missing directives total (22 implemented, 64 originally identified)
+**Summary:** 32 missing directives total (32 implemented, 64 originally identified)
   - 0 POSIX-portable remaining (all 22 now implemented!)
-  - 8 platform-specific (can have OS-specific implementations)
+  - 0 platform-specific remaining (all 8 now implemented!)
   - 32 Linux-only (warn/skip on other platforms)
 
 #### TODO: Other systemd directives

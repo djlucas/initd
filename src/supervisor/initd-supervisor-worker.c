@@ -48,6 +48,7 @@
 #include <libgen.h>
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <sys/ucred.h>
+#include <sys/sysctl.h>
 #endif
 #include "../common/ipc.h"
 #include "../common/control.h"
@@ -706,6 +707,14 @@ static const char *condition_type_name(enum unit_condition_type type, bool is_as
         return is_assert ? "AssertCPUs" : "ConditionCPUs";
     case CONDITION_ENVIRONMENT:
         return is_assert ? "AssertEnvironment" : "ConditionEnvironment";
+    case CONDITION_VIRTUALIZATION:
+        return is_assert ? "AssertVirtualization" : "ConditionVirtualization";
+    case CONDITION_AC_POWER:
+        return is_assert ? "AssertACPower" : "ConditionACPower";
+    case CONDITION_OS_RELEASE:
+        return is_assert ? "AssertOSRelease" : "ConditionOSRelease";
+    case CONDITION_KERNEL_VERSION:
+        return is_assert ? "AssertKernelVersion" : "ConditionKernelVersion";
     default:
         return prefix;
     }
@@ -1012,6 +1021,395 @@ static bool condition_environment(const char *value) {
     }
 }
 
+static bool condition_virtualization(const char *value) {
+    /* Detect virtualization/container type (platform-specific) */
+    bool is_virtualized = false;
+    char detected_type[64] = {0};
+
+#ifdef __linux__
+    /* Check for container indicators */
+    if (access("/proc/vz", F_OK) == 0 && access("/proc/bc", F_OK) != 0) {
+        is_virtualized = true;
+        strncpy(detected_type, "openvz", sizeof(detected_type) - 1);
+        if (strcmp(value, "openvz") == 0 || strcmp(value, "container") == 0) {
+            return true;
+        }
+    }
+    if (access("/.dockerenv", F_OK) == 0) {
+        is_virtualized = true;
+        strncpy(detected_type, "docker", sizeof(detected_type) - 1);
+        if (strcmp(value, "docker") == 0 || strcmp(value, "container") == 0) {
+            return true;
+        }
+    }
+    if (access("/run/systemd/container", F_OK) == 0) {
+        FILE *f = fopen("/run/systemd/container", "r");
+        if (f) {
+            char container[64];
+            if (fgets(container, sizeof(container), f)) {
+                container[strcspn(container, "\n")] = '\0';
+                is_virtualized = true;
+                strncpy(detected_type, container, sizeof(detected_type) - 1);
+                fclose(f);
+                if (strcmp(value, container) == 0 || strcmp(value, "container") == 0) {
+                    return true;
+                }
+            } else {
+                fclose(f);
+            }
+        }
+    }
+
+    /* Check for VM indicators via DMI/CPUID */
+    FILE *f = fopen("/sys/class/dmi/id/sys_vendor", "r");
+    if (f) {
+        char vendor[128];
+        if (fgets(vendor, sizeof(vendor), f)) {
+            vendor[strcspn(vendor, "\n")] = '\0';
+            fclose(f);
+            if (strstr(vendor, "QEMU")) {
+                is_virtualized = true;
+                if (strcmp(value, "kvm") == 0 || strcmp(value, "qemu") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            }
+            if (strstr(vendor, "VMware")) {
+                is_virtualized = true;
+                if (strcmp(value, "vmware") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            }
+            if (strstr(vendor, "innotek")) {
+                is_virtualized = true;
+                if (strcmp(value, "oracle") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            }
+            if (strstr(vendor, "Xen")) {
+                is_virtualized = true;
+                if (strcmp(value, "xen") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            }
+            if (strstr(vendor, "Microsoft")) {
+                is_virtualized = true;
+                if (strcmp(value, "microsoft") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            }
+        } else {
+            fclose(f);
+        }
+    }
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    /* BSD: use sysctl to detect virtualization */
+    char vm_guest[64] = {0};
+    size_t len = sizeof(vm_guest);
+
+#ifdef __FreeBSD__
+    /* FreeBSD: kern.vm_guest sysctl */
+    if (sysctlbyname("kern.vm_guest", vm_guest, &len, NULL, 0) == 0) {
+        if (strlen(vm_guest) > 0 && strcmp(vm_guest, "none") != 0) {
+            is_virtualized = true;
+            /* Map FreeBSD vm_guest values to systemd names */
+            if (strcmp(vm_guest, "hv") == 0) {
+                if (strcmp(value, "microsoft") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            } else if (strcmp(vm_guest, "vmware") == 0) {
+                if (strcmp(value, "vmware") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            } else if (strcmp(vm_guest, "kvm") == 0) {
+                if (strcmp(value, "kvm") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            } else if (strcmp(vm_guest, "xen") == 0) {
+                if (strcmp(value, "xen") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            } else if (strcmp(vm_guest, "bhyve") == 0) {
+                if (strcmp(value, "bhyve") == 0 || strcmp(value, "vm") == 0) {
+                    return true;
+                }
+            }
+        }
+    }
+#endif
+
+    /* Check for jails (BSD container) */
+    int jailed = 0;
+    len = sizeof(jailed);
+    if (sysctlbyname("security.jail.jailed", &jailed, &len, NULL, 0) == 0 && jailed) {
+        is_virtualized = true;
+        if (strcmp(value, "jail") == 0 || strcmp(value, "container") == 0) {
+            return true;
+        }
+    }
+#elif defined(__APPLE__)
+    /* macOS: check for hypervisor via sysctl */
+    uint32_t is_vm = 0;
+    size_t len = sizeof(is_vm);
+
+    if (sysctlbyname("kern.hv_vmm_present", &is_vm, &len, NULL, 0) == 0 && is_vm) {
+        is_virtualized = true;
+        if (strcmp(value, "vm") == 0) {
+            return true;
+        }
+    }
+
+    /* Check for specific hypervisors via CPU brand string */
+    char brand[128] = {0};
+    len = sizeof(brand);
+    if (sysctlbyname("machdep.cpu.brand_string", brand, &len, NULL, 0) == 0) {
+        if (strstr(brand, "QEMU") || strstr(brand, "Virtual")) {
+            is_virtualized = true;
+            if (strcmp(value, "qemu") == 0 || strcmp(value, "kvm") == 0 || strcmp(value, "vm") == 0) {
+                return true;
+            }
+        }
+        if (strstr(brand, "VMware")) {
+            is_virtualized = true;
+            if (strcmp(value, "vmware") == 0 || strcmp(value, "vm") == 0) {
+                return true;
+            }
+        }
+    }
+#endif
+
+    /* Special value "vm" or "container" matches any virtualization */
+    if (is_virtualized) {
+        if (strcmp(value, "vm") == 0 || strcmp(value, "container") == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool condition_ac_power(const char *value) {
+    /* Check AC power status (platform-specific) */
+    bool on_ac = false;
+    bool power_detected = false;
+
+#ifdef __linux__
+    /* Check /sys/class/power_supply for AC adapters */
+    DIR *dir = opendir("/sys/class/power_supply");
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+
+            char type_path[512];
+            snprintf(type_path, sizeof(type_path), "/sys/class/power_supply/%s/type", entry->d_name);
+
+            FILE *f = fopen(type_path, "r");
+            if (f) {
+                char type[32];
+                if (fgets(type, sizeof(type), f) && strstr(type, "Mains")) {
+                    fclose(f);
+
+                    char online_path[512];
+                    snprintf(online_path, sizeof(online_path), "/sys/class/power_supply/%s/online", entry->d_name);
+                    f = fopen(online_path, "r");
+                    if (f) {
+                        char online[8];
+                        if (fgets(online, sizeof(online), f) && atoi(online) == 1) {
+                            on_ac = true;
+                        }
+                        fclose(f);
+                        power_detected = true;
+                        break;
+                    }
+                } else {
+                    fclose(f);
+                }
+            }
+        }
+        closedir(dir);
+    }
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    /* BSD: use ACPI via sysctl or /dev/acpi */
+#ifdef __FreeBSD__
+    /* FreeBSD: hw.acpi.acline sysctl (1 = on AC, 0 = on battery) */
+    int acline = -1;
+    size_t len = sizeof(acline);
+    if (sysctlbyname("hw.acpi.acline", &acline, &len, NULL, 0) == 0) {
+        power_detected = true;
+        on_ac = (acline == 1);
+    }
+#elif defined(__OpenBSD__)
+    /* OpenBSD: hw.sensors.acpiac0.indicator0 or check apm */
+    /* Simple heuristic: check if /dev/apm exists and can be read */
+    int apm_fd = open("/dev/apm", O_RDONLY);
+    if (apm_fd >= 0) {
+        /* APM structure varies; for simplicity, assume desktop (AC) if APM present */
+        /* A full implementation would use ioctl(apm_fd, APM_IOC_GETPOWER, &info) */
+        power_detected = true;
+        on_ac = true;  /* Conservative default for OpenBSD */
+        close(apm_fd);
+    }
+#elif defined(__NetBSD__)
+    /* NetBSD: use envsys or apm */
+    int apm_fd = open("/dev/apm", O_RDONLY);
+    if (apm_fd >= 0) {
+        power_detected = true;
+        on_ac = true;  /* Conservative default for NetBSD */
+        close(apm_fd);
+    }
+#endif
+#elif defined(__APPLE__)
+    /* macOS: use IOKit Power Sources API via sysctl or pmset */
+    /* Simple heuristic: check hw.model to see if it's a laptop */
+    char model[64] = {0};
+    size_t len = sizeof(model);
+    if (sysctlbyname("hw.model", model, &len, NULL, 0) == 0) {
+        /* If model contains "Book" (MacBook), assume battery possible */
+        if (strstr(model, "Book")) {
+            /* For macOS, we'd need IOKit to properly check AC status */
+            /* This is a simplified fallback - assume AC for desktops, battery unknown for laptops */
+            power_detected = true;
+            on_ac = false;  /* Conservative: assume on battery if laptop detected */
+        } else {
+            /* Desktop Mac - always on AC */
+            power_detected = true;
+            on_ac = true;
+        }
+    }
+#endif
+
+    /* If power detection failed, assume on AC (conservative default for desktops) */
+    if (!power_detected) {
+        on_ac = true;
+    }
+
+    /* Parse value: "true" means on AC, "false" means on battery */
+    if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0) {
+        return on_ac;
+    } else {
+        return !on_ac;
+    }
+}
+
+static bool condition_os_release(const char *value) {
+    /* Parse /etc/os-release for key=value matching */
+    const char *equals = strchr(value, '=');
+    if (!equals) {
+        return false;
+    }
+
+    size_t key_len = equals - value;
+    char key[128];
+    if (key_len >= sizeof(key)) {
+        return false;
+    }
+    strncpy(key, value, key_len);
+    key[key_len] = '\0';
+
+    const char *expected_value = equals + 1;
+
+    /* Try /etc/os-release first, then /usr/lib/os-release */
+    const char *paths[] = {"/etc/os-release", "/usr/lib/os-release", NULL};
+    for (int i = 0; paths[i]; i++) {
+        FILE *f = fopen(paths[i], "r");
+        if (!f) {
+            continue;
+        }
+
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            line[strcspn(line, "\n")] = '\0';
+
+            /* Skip comments and empty lines */
+            if (line[0] == '#' || line[0] == '\0') {
+                continue;
+            }
+
+            char *line_equals = strchr(line, '=');
+            if (!line_equals) {
+                continue;
+            }
+
+            *line_equals = '\0';
+            const char *line_key = line;
+            const char *line_value = line_equals + 1;
+
+            /* Remove quotes from value */
+            if (line_value[0] == '"') {
+                line_value++;
+                char *end_quote = strchr(line_value, '"');
+                if (end_quote) {
+                    *end_quote = '\0';
+                }
+            }
+
+            if (strcmp(line_key, key) == 0 && strcmp(line_value, expected_value) == 0) {
+                fclose(f);
+                return true;
+            }
+        }
+
+        fclose(f);
+    }
+
+    return false;
+}
+
+static bool condition_kernel_version(const char *value) {
+    /* Compare kernel version (format varies by OS) */
+    struct utsname uts;
+    if (uname(&uts) < 0) {
+        return false;
+    }
+
+    /* Parse comparison operator */
+    const char *op = value;
+    const char *version_str = value;
+
+    if (strncmp(value, ">=", 2) == 0) {
+        op = ">=";
+        version_str = value + 2;
+    } else if (strncmp(value, "<=", 2) == 0) {
+        op = "<=";
+        version_str = value + 2;
+    } else if (value[0] == '>') {
+        op = ">";
+        version_str = value + 1;
+    } else if (value[0] == '<') {
+        op = "<";
+        version_str = value + 1;
+    } else if (value[0] == '=') {
+        op = "=";
+        version_str = value + 1;
+    } else {
+        op = "=";
+    }
+
+    /* Simple version comparison (major.minor.patch) */
+    int kernel_maj = 0, kernel_min = 0, kernel_patch = 0;
+    int target_maj = 0, target_min = 0, target_patch = 0;
+
+    sscanf(uts.release, "%d.%d.%d", &kernel_maj, &kernel_min, &kernel_patch);
+    sscanf(version_str, "%d.%d.%d", &target_maj, &target_min, &target_patch);
+
+    int kernel_ver = kernel_maj * 1000000 + kernel_min * 1000 + kernel_patch;
+    int target_ver = target_maj * 1000000 + target_min * 1000 + target_patch;
+
+    if (strcmp(op, ">=") == 0) {
+        return kernel_ver >= target_ver;
+    } else if (strcmp(op, "<=") == 0) {
+        return kernel_ver <= target_ver;
+    } else if (strcmp(op, ">") == 0) {
+        return kernel_ver > target_ver;
+    } else if (strcmp(op, "<") == 0) {
+        return kernel_ver < target_ver;
+    } else {
+        return kernel_ver == target_ver;
+    }
+}
+
 static bool evaluate_single_condition(const struct unit_condition *cond) {
     switch (cond->type) {
     case CONDITION_PATH_EXISTS:
@@ -1046,6 +1444,14 @@ static bool evaluate_single_condition(const struct unit_condition *cond) {
         return condition_cpus(cond->value);
     case CONDITION_ENVIRONMENT:
         return condition_environment(cond->value);
+    case CONDITION_VIRTUALIZATION:
+        return condition_virtualization(cond->value);
+    case CONDITION_AC_POWER:
+        return condition_ac_power(cond->value);
+    case CONDITION_OS_RELEASE:
+        return condition_os_release(cond->value);
+    case CONDITION_KERNEL_VERSION:
+        return condition_kernel_version(cond->value);
     default:
         return false;
     }

@@ -299,9 +299,153 @@ static void test_condition_negation(void) {
     printf("✓ Condition/Assert negation works\n");
 }
 
-int main(void) {
-    printf("Testing POSIX-portable Condition*/Assert* directives...\n");
+static void test_condition_virtualization(void) {
+    struct unit_file unit;
+    memset(&unit, 0, sizeof(unit));
+    strncpy(unit.name, "virt-test.service", sizeof(unit.name));
+    unit.type = UNIT_SERVICE;
 
+    const char *path = create_temp_unit_file(
+        "[Unit]\n"
+        "ConditionVirtualization=kvm\n"
+        "ConditionVirtualization=docker\n"
+        "AssertVirtualization=vm\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.condition_count == 3);
+
+    assert(unit.unit.conditions[0].type == CONDITION_VIRTUALIZATION);
+    assert(unit.unit.conditions[0].is_assert == false);
+    assert(strcmp(unit.unit.conditions[0].value, "kvm") == 0);
+
+    assert(unit.unit.conditions[1].type == CONDITION_VIRTUALIZATION);
+    assert(unit.unit.conditions[1].is_assert == false);
+    assert(strcmp(unit.unit.conditions[1].value, "docker") == 0);
+
+    assert(unit.unit.conditions[2].type == CONDITION_VIRTUALIZATION);
+    assert(unit.unit.conditions[2].is_assert == true);
+    assert(strcmp(unit.unit.conditions[2].value, "vm") == 0);
+
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ ConditionVirtualization/AssertVirtualization parsing works\n");
+}
+
+static void test_condition_ac_power(void) {
+    struct unit_file unit;
+    memset(&unit, 0, sizeof(unit));
+    strncpy(unit.name, "ac-power-test.service", sizeof(unit.name));
+    unit.type = UNIT_SERVICE;
+
+    const char *path = create_temp_unit_file(
+        "[Unit]\n"
+        "ConditionACPower=true\n"
+        "AssertACPower=false\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.condition_count == 2);
+
+    assert(unit.unit.conditions[0].type == CONDITION_AC_POWER);
+    assert(unit.unit.conditions[0].is_assert == false);
+    assert(strcmp(unit.unit.conditions[0].value, "true") == 0);
+
+    assert(unit.unit.conditions[1].type == CONDITION_AC_POWER);
+    assert(unit.unit.conditions[1].is_assert == true);
+    assert(strcmp(unit.unit.conditions[1].value, "false") == 0);
+
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ ConditionACPower/AssertACPower parsing works\n");
+}
+
+static void test_condition_os_release(void) {
+    struct unit_file unit;
+    memset(&unit, 0, sizeof(unit));
+    strncpy(unit.name, "os-release-test.service", sizeof(unit.name));
+    unit.type = UNIT_SERVICE;
+
+    const char *path = create_temp_unit_file(
+        "[Unit]\n"
+        "ConditionOSRelease=ID=debian\n"
+        "ConditionOSRelease=VERSION_ID=12\n"
+        "AssertOSRelease=NAME=Debian GNU/Linux\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.condition_count == 3);
+
+    assert(unit.unit.conditions[0].type == CONDITION_OS_RELEASE);
+    assert(unit.unit.conditions[0].is_assert == false);
+    assert(strcmp(unit.unit.conditions[0].value, "ID=debian") == 0);
+
+    assert(unit.unit.conditions[1].type == CONDITION_OS_RELEASE);
+    assert(unit.unit.conditions[1].is_assert == false);
+    assert(strcmp(unit.unit.conditions[1].value, "VERSION_ID=12") == 0);
+
+    assert(unit.unit.conditions[2].type == CONDITION_OS_RELEASE);
+    assert(unit.unit.conditions[2].is_assert == true);
+    assert(strcmp(unit.unit.conditions[2].value, "NAME=Debian GNU/Linux") == 0);
+
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ ConditionOSRelease/AssertOSRelease parsing works\n");
+}
+
+static void test_condition_kernel_version(void) {
+    struct unit_file unit;
+    memset(&unit, 0, sizeof(unit));
+    strncpy(unit.name, "kernel-version-test.service", sizeof(unit.name));
+    unit.type = UNIT_SERVICE;
+
+    const char *path = create_temp_unit_file(
+        "[Unit]\n"
+        "ConditionKernelVersion=>=5.10\n"
+        "ConditionKernelVersion=<6.0\n"
+        "AssertKernelVersion=>=4.0\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.unit.condition_count == 3);
+
+    assert(unit.unit.conditions[0].type == CONDITION_KERNEL_VERSION);
+    assert(unit.unit.conditions[0].is_assert == false);
+    assert(strcmp(unit.unit.conditions[0].value, ">=5.10") == 0);
+
+    assert(unit.unit.conditions[1].type == CONDITION_KERNEL_VERSION);
+    assert(unit.unit.conditions[1].is_assert == false);
+    assert(strcmp(unit.unit.conditions[1].value, "<6.0") == 0);
+
+    assert(unit.unit.conditions[2].type == CONDITION_KERNEL_VERSION);
+    assert(unit.unit.conditions[2].is_assert == true);
+    assert(strcmp(unit.unit.conditions[2].value, ">=4.0") == 0);
+
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ ConditionKernelVersion/AssertKernelVersion parsing works\n");
+}
+
+int main(void) {
+    printf("Testing Condition*/Assert* directives...\n");
+
+    /* POSIX-portable tests */
     test_condition_file_not_empty();
     test_condition_user();
     test_condition_group();
@@ -312,6 +456,12 @@ int main(void) {
     test_condition_environment();
     test_assert_directives();
     test_condition_negation();
+
+    /* Platform-specific tests */
+    test_condition_virtualization();
+    test_condition_ac_power();
+    test_condition_os_release();
+    test_condition_kernel_version();
 
     printf("\n✓ All condition/assert tests passed!\n");
     return 0;
