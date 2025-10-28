@@ -384,14 +384,14 @@ This allows initctl to be unit-type agnostic in most operations.
 Standard systemd INI format
 
 ### Directories (priority order)
-1. `/etc/<name>/system/` - local admin configs
-2. `/lib/<name>/system/` - distribution defaults
+1. `/etc/initd/system/` - local admin configs
+2. `/lib/initd/system/` - distribution defaults
 3. `/etc/systemd/system/` - compatibility
 4. `/lib/systemd/system/` - compatibility
 
 ### Import on enable
 - `systemctl enable foo` finds unit in systemd dirs
-- Copies to `/etc/<name>/system/`
+- Copies to `/etc/initd/system/`
 - Uses converted copy thereafter
 
 ### Supported Sections
@@ -550,18 +550,40 @@ KillMode=control-group    # process, control-group, mixed, or none
 
 ### Standard Targets
 
-- `rescue.target` - Single-user mode (runlevel 1)
+The reference implementation includes 17 targets:
+
+**Core Boot Targets:**
+- `sysinit.target` - System initialization
+- `basic.target` - Basic system services
 - `multi-user.target` - Full system, no GUI (runlevel 3)
 - `graphical.target` - With GUI (runlevel 5)
-- `poweroff.target` - Shutdown (runlevel 0)
-- `reboot.target` - Reboot (runlevel 6)
-- `halt.target` - Halt
+
+**Recovery Targets:**
+- `rescue.target` - Single-user mode (runlevel 1)
+- `emergency.target` - Minimal recovery shell
+
+**Shutdown Target:**
+- `shutdown.target` - Shutdown ordering and conflicts
+
+**Specialty Targets:**
+- `network.target` - Network services ready
+- `local-fs.target` - Local filesystems mounted
+- `remote-fs.target` - Remote filesystems mounted
+- `swap.target` - Swap enabled
+- `sockets.target` - Socket units active
+- `timers.target` - Timer units active
+- `paths.target` - Path units active
+
+**Default Symlink:**
+- `default.target` → `multi-user.target` (or `graphical.target`)
 
 ### Compatibility Symlinks
 - `runlevel1.target → rescue.target`
 - `runlevel3.target → multi-user.target`
 - `runlevel5.target → graphical.target`
-- etc.
+
+**Note:** systemd's poweroff.target, reboot.target, and halt.target are handled
+through the shutdown.target mechanism with implicit dependencies.
 
 ### Target Hierarchy
 
@@ -599,10 +621,12 @@ graphical.target
 
 ### Required Units
 
-The following units are hardcoded and must exist:
+The following four units are required and must exist for proper system operation:
 
-- **default.target** - Primary boot target (typically symlinked to multi-user.target or graphical.target)
+- **default.target** - Primary boot target (typically symlinked to multi-user.target or graphical.target). If missing, system falls back to emergency.target with a warning.
 - **emergency.target** - Minimal recovery target, used when default.target is missing or boot fails
+- **basic.target** - Foundation target that all services implicitly depend on (via DefaultDependencies=yes)
+- **shutdown.target** - Shutdown ordering target. Services with DefaultDependencies=yes implicitly conflict with and order before this target.
 
 ### Failure Handling
 
@@ -1219,14 +1243,9 @@ Notes:
   AssertFirstBoot=
 
 [Service]
-  PIDFile=
   RestartMaxDelaySec=
   TimeoutAbortSec=
   TimeoutStartFailureMode=
-  SyslogIdentifier=
-  SyslogFacility=
-  SyslogLevel=
-  SyslogLevelPrefix=
   LogLevelMax=
   NoNewPrivileges=
   ProtectSystem=
@@ -1239,7 +1258,6 @@ Notes:
   ProtectKernelTunables=
   ProtectControlGroups=
   RestrictSUIDSGID=
-  UMask=
   RootDirectory=
   RootImage=
   MountFlags=
@@ -1653,7 +1671,7 @@ PRIORITY=""
 SINCE=""
 UNTIL=""
 BOOT=""
-UNITDIRS="/etc/CHANGEME/system /lib/CHANGEME/system /etc/systemd/system /lib/systemd/system"
+UNITDIRS="/etc/initd/system /lib/initd/system /etc/systemd/system /lib/systemd/system"
 
 # Detect available pager
 if command -v less >/dev/null 2>&1; then
@@ -1899,4 +1917,4 @@ fi
 # End /usr/bin/journalctl
 ```
 
-**Note:** Replace `CHANGEME` with actual project name during build/install.
+**Note:** The project is now named `initd` and uses `/etc/initd/` and `/lib/initd/` paths.

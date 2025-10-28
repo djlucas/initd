@@ -460,6 +460,16 @@ static pid_t start_service(struct unit_file *unit) {
         req.input_data = unit->config.service.input_data;
         req.input_data_size = unit->config.service.input_data_size;
 
+        /* Copy syslog configuration */
+        strncpy(req.syslog_identifier, unit->config.service.syslog_identifier, sizeof(req.syslog_identifier) - 1);
+        req.syslog_identifier[sizeof(req.syslog_identifier) - 1] = '\0';
+        req.syslog_facility = unit->config.service.syslog_facility;
+        req.syslog_level = unit->config.service.syslog_level;
+        req.syslog_level_prefix = unit->config.service.syslog_level_prefix;
+
+        /* Copy umask */
+        req.umask_value = unit->config.service.umask_value;
+
         int interval = unit->unit.start_limit_interval_set ?
             unit->unit.start_limit_interval_sec : INITD_DEFAULT_START_LIMIT_INTERVAL_SEC;
         if (interval < INITD_DEFAULT_START_LIMIT_INTERVAL_SEC) {

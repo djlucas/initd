@@ -216,6 +216,8 @@ Unit types **not supported** (use traditional alternatives):
 - `StandardInput=`/`StandardOutput=`/`StandardError=` - null, inherit, tty, tty-force, syslog, journal, file:path, socket, data
 - `StandardInputText=` / `StandardInputData=` - embed literal input data (text or base64)
 - `TTYPath=` - device to use with tty stdio modes
+- `SyslogIdentifier=` / `SyslogFacility=` / `SyslogLevel=` / `SyslogLevelPrefix=` - syslog configuration
+- `UMask=` - file creation mask (octal)
 
 ## Quick Start
 

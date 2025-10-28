@@ -15,6 +15,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <strings.h>
+#include <syslog.h>
+#include <sys/stat.h>
 #include "unit.h"
 
 #define MAX_LINE 1024
@@ -424,6 +426,42 @@ static int parse_service_key(struct service_section *service, const char *key, c
         parse_status_list(value, service->restart_force_statuses, &service->restart_force_count);
     } else if (strcmp(key, "PIDFile") == 0) {
         service->pid_file = strdup(value);
+    } else if (strcmp(key, "SyslogIdentifier") == 0) {
+        strncpy(service->syslog_identifier, value, sizeof(service->syslog_identifier) - 1);
+        service->syslog_identifier[sizeof(service->syslog_identifier) - 1] = '\0';
+    } else if (strcmp(key, "SyslogFacility") == 0) {
+        /* Parse facility name to LOG_* constant */
+        if (strcmp(value, "daemon") == 0) service->syslog_facility = LOG_DAEMON;
+        else if (strcmp(value, "user") == 0) service->syslog_facility = LOG_USER;
+        else if (strcmp(value, "local0") == 0) service->syslog_facility = LOG_LOCAL0;
+        else if (strcmp(value, "local1") == 0) service->syslog_facility = LOG_LOCAL1;
+        else if (strcmp(value, "local2") == 0) service->syslog_facility = LOG_LOCAL2;
+        else if (strcmp(value, "local3") == 0) service->syslog_facility = LOG_LOCAL3;
+        else if (strcmp(value, "local4") == 0) service->syslog_facility = LOG_LOCAL4;
+        else if (strcmp(value, "local5") == 0) service->syslog_facility = LOG_LOCAL5;
+        else if (strcmp(value, "local6") == 0) service->syslog_facility = LOG_LOCAL6;
+        else if (strcmp(value, "local7") == 0) service->syslog_facility = LOG_LOCAL7;
+        else service->syslog_facility = LOG_DAEMON; /* Default */
+    } else if (strcmp(key, "SyslogLevel") == 0) {
+        /* Parse level name to LOG_* constant */
+        if (strcmp(value, "emerg") == 0) service->syslog_level = LOG_EMERG;
+        else if (strcmp(value, "alert") == 0) service->syslog_level = LOG_ALERT;
+        else if (strcmp(value, "crit") == 0) service->syslog_level = LOG_CRIT;
+        else if (strcmp(value, "err") == 0) service->syslog_level = LOG_ERR;
+        else if (strcmp(value, "warning") == 0) service->syslog_level = LOG_WARNING;
+        else if (strcmp(value, "notice") == 0) service->syslog_level = LOG_NOTICE;
+        else if (strcmp(value, "info") == 0) service->syslog_level = LOG_INFO;
+        else if (strcmp(value, "debug") == 0) service->syslog_level = LOG_DEBUG;
+        else service->syslog_level = LOG_INFO; /* Default */
+    } else if (strcmp(key, "SyslogLevelPrefix") == 0) {
+        service->syslog_level_prefix = parse_boolean(value);
+    } else if (strcmp(key, "UMask") == 0) {
+        /* Parse octal umask value */
+        char *endptr;
+        long mask = strtol(value, &endptr, 8);
+        if (*endptr == '\0' && mask >= 0 && mask <= 0777) {
+            service->umask_value = (mode_t)mask;
+        }
     } else {
         return -1; /* Unknown key */
     }

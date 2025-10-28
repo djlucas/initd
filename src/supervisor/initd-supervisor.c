@@ -795,6 +795,11 @@ static pid_t start_service_process(const struct service_section *service,
             }
         }
 
+        /* Set umask if specified */
+        if (service->umask_value != 0) {
+            umask(service->umask_value);
+        }
+
         /* Exec service using argv (NO SHELL - prevents injection) */
         execv(exec_path, argv);
 

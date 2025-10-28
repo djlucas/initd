@@ -10,6 +10,7 @@
 #include <string.h>
 #include <assert.h>
 #include <sys/resource.h>
+#include <syslog.h>
 #include <unistd.h>
 #include "../src/common/unit.h"
 #include "../src/common/parser.h"
@@ -535,8 +536,61 @@ static void test_stdio_data_base64(void) {
     printf("✓ StandardInput=data with StandardInputData= (base64) parsing works\n");
 }
 
+/* Test Syslog directives */
+static void test_syslog_directives(void) {
+    struct unit_file unit = {0};
+
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "SyslogIdentifier=my-service\n"
+        "SyslogFacility=daemon\n"
+        "SyslogLevel=info\n"
+        "SyslogLevelPrefix=yes\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(strcmp(unit.config.service.syslog_identifier, "my-service") == 0);
+    assert(unit.config.service.syslog_facility == LOG_DAEMON);
+    assert(unit.config.service.syslog_level == LOG_INFO);
+    assert(unit.config.service.syslog_level_prefix == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    printf("✓ Syslog directives parsing works\n");
+}
+
+/* Test UMask */
+static void test_umask_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test octal umask */
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "UMask=0022\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.umask_value == 0022);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    /* Test another umask value */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "UMask=0077\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.umask_value == 0077);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    printf("✓ UMask directive parsing works\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error)...\n");
+    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -552,6 +606,8 @@ int main(void) {
     test_stdio_socket();
     test_stdio_data_text();
     test_stdio_data_base64();
+    test_syslog_directives();
+    test_umask_directive();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

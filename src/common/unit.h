@@ -186,6 +186,11 @@ struct service_section {
     int restart_prevent_count;
     int restart_force_count;
     char *pid_file;
+    char syslog_identifier[256];  /* SyslogIdentifier= */
+    int syslog_facility;          /* SyslogFacility= (LOG_USER, LOG_DAEMON, etc.) */
+    int syslog_level;             /* SyslogLevel= (LOG_INFO, LOG_DEBUG, etc.) */
+    bool syslog_level_prefix;     /* SyslogLevelPrefix= */
+    mode_t umask_value;           /* UMask= (octal file creation mask) */
 };
 
 /* [Timer] section */

@@ -377,6 +377,27 @@ Specifies how processes of this service should be terminated. One of:
 .IP
 All services run in their own process group. KillMode determines which
 processes receive termination signals.
+.TP
+.B SyslogIdentifier=
+Sets the program name used for syslog messages. If not specified, uses the
+service unit name. Example: SyslogIdentifier=my-daemon.
+.TP
+.B SyslogFacility=
+Sets the syslog facility for log messages. Supported values: daemon, user,
+local0 through local7. Default: daemon.
+.TP
+.B SyslogLevel=
+Sets the minimum syslog level for filtering messages. Supported values:
+emerg, alert, crit, err, warning, notice, info, debug. Default: info.
+.TP
+.B SyslogLevelPrefix=
+Boolean. If true, parse BSD syslog priority prefix from service output
+(e.g., "<3>" for LOG_ERR). Default: false.
+.TP
+.B UMask=
+Sets the file mode creation mask (umask) for the service process in octal
+notation. Determines default permissions for created files and directories.
+Example: UMask=0022 (owner rw, group r, other r).
 .SH [TIMER] SECTION
 The
 .B [Timer]

@@ -49,6 +49,11 @@ struct priv_request {
     char error_file[1024];  /* Path for StandardError=file:path */
     char *input_data;       /* Buffer for StandardInput=data */
     size_t input_data_size; /* Size of input_data */
+    char syslog_identifier[256]; /* SyslogIdentifier= */
+    int syslog_facility;    /* SyslogFacility= */
+    int syslog_level;       /* SyslogLevel= */
+    bool syslog_level_prefix; /* SyslogLevelPrefix= */
+    mode_t umask_value;     /* UMask= */
     int start_limit_interval_sec;
     int start_limit_burst;
     int start_limit_action; /* enum start_limit_action */
