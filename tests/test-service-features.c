@@ -631,8 +631,49 @@ static void test_no_new_privs_directive(void) {
     printf("✓ NoNewPrivileges directive parsing works\n");
 }
 
+/* Test RootDirectory */
+static void test_root_directory_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test absolute path */
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "RootDirectory=/var/chroot/myservice\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(strcmp(unit.config.service.root_directory, "/var/chroot/myservice") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    /* Test another path */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "RootDirectory=/srv/jail\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(strcmp(unit.config.service.root_directory, "/srv/jail") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test empty (default) */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.root_directory[0] == '\0');
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ RootDirectory directive parsing works\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges)...\n");
+    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -651,6 +692,7 @@ int main(void) {
     test_syslog_directives();
     test_umask_directive();
     test_no_new_privs_directive();
+    test_root_directory_directive();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

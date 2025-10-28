@@ -464,6 +464,9 @@ static int parse_service_key(struct service_section *service, const char *key, c
         }
     } else if (strcmp(key, "NoNewPrivileges") == 0) {
         service->no_new_privs = parse_boolean(value);
+    } else if (strcmp(key, "RootDirectory") == 0) {
+        strncpy(service->root_directory, value, sizeof(service->root_directory) - 1);
+        service->root_directory[sizeof(service->root_directory) - 1] = '\0';
     } else {
         return -1; /* Unknown key */
     }

@@ -770,6 +770,19 @@ static pid_t start_service_process(const struct service_section *service,
             _exit(1);
         }
 
+        /* chroot if RootDirectory is specified (must be done before dropping privileges) */
+        if (service->root_directory[0] != '\0') {
+            if (chroot(service->root_directory) < 0) {
+                log_error("supervisor", "chroot(%s): %s", service->root_directory, strerror(errno));
+                _exit(1);
+            }
+            /* chroot() doesn't change cwd, so we must chdir to the new root */
+            if (chdir("/") < 0) {
+                log_error("supervisor", "chdir(/) after chroot: %s", strerror(errno));
+                _exit(1);
+            }
+        }
+
         /* Drop privileges using VALIDATED UID/GID from master's unit file parsing */
         if (validated_gid != 0) {
             /* Clear supplementary groups first */

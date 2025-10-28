@@ -1283,7 +1283,6 @@ Notes:
   ProtectKernelTunables=
   ProtectControlGroups=
   RestrictSUIDSGID=
-  RootDirectory=
   RootImage=
   MountFlags=
   MemoryLimit=
@@ -1429,7 +1428,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**23 test suites, 182 individual tests - all passing**
+**24 test suites, 185 individual tests - all passing**
 
 1. **calendar parser** - Calendar expression parsing
 2. **unit file parser** - Unit file parsing & validation

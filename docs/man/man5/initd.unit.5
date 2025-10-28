@@ -408,6 +408,20 @@ on Linux and
 .BR procctl(PROC_NO_NEW_PRIVS_CTL)
 on FreeBSD. Not supported on OpenBSD or GNU Hurd (logs warning and continues).
 Default: false.
+.TP
+.B RootDirectory=
+Takes an absolute directory path. Sets the root directory for the service
+process using
+.BR chroot(2) .
+The service and all its children will be confined to this directory tree,
+unable to access files outside the jail. All required binaries, libraries,
+and files must exist within the specified directory. The chroot is applied
+before dropping privileges to the service user. Note that
+.BR chroot(2)
+does not change the current working directory, so the service automatically
+changes to / within the chroot after the chroot call. This provides
+filesystem isolation for security hardening. Available on all POSIX systems
+(Linux, BSD, Hurd). Example: RootDirectory=/var/chroot/myservice
 .SH [TIMER] SECTION
 The
 .B [Timer]

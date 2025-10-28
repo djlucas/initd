@@ -473,6 +473,10 @@ static pid_t start_service(struct unit_file *unit) {
         /* Copy NoNewPrivileges */
         req.no_new_privs = unit->config.service.no_new_privs;
 
+        /* Copy RootDirectory */
+        strncpy(req.root_directory, unit->config.service.root_directory, sizeof(req.root_directory) - 1);
+        req.root_directory[sizeof(req.root_directory) - 1] = '\0';
+
         int interval = unit->unit.start_limit_interval_set ?
             unit->unit.start_limit_interval_sec : INITD_DEFAULT_START_LIMIT_INTERVAL_SEC;
         if (interval < INITD_DEFAULT_START_LIMIT_INTERVAL_SEC) {

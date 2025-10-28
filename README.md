@@ -219,6 +219,7 @@ Unit types **not supported** (use traditional alternatives):
 - `SyslogIdentifier=` / `SyslogFacility=` / `SyslogLevel=` / `SyslogLevelPrefix=` - syslog configuration
 - `UMask=` - file creation mask (octal)
 - `NoNewPrivileges=` - prevent privilege escalation via setuid/setgid (Linux/FreeBSD only)
+- `RootDirectory=` - chroot jail for filesystem isolation (portable)
 
 ## Quick Start
 
@@ -384,23 +385,25 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Run all tests (23 test suites, 182 individual tests: 20 non-privileged, 3 privileged)
+# Run all tests (24 test suites, 185 individual tests: 20 non-privileged, 4 privileged)
 ninja -C build test
 
 # Run privileged tests (requires root)
 sudo ninja -C build test-privileged
 ```
 
-**Privileged Test Suites (3 total):**
+**Privileged Test Suites (4 total):**
 The privileged test suites validate critical functionality:
 
 1. **offline enable/disable** - Unit enable/disable without running daemons
 2. **Exec lifecycle** - ExecStartPre/Post/Stop/Reload execution paths
 3. **privileged operations** - Converting systemd units, creating symlinks in system directories
+4. **chroot confinement** - RootDirectory= chroot jail functionality
 
 These tests require root privileges because they:
 - Create files in system directories (`/lib/initd/system/`, `/etc/initd/system/`)
 - Create symlinks for unit dependencies (`*.wants`, `*.requires`)
+- Call chroot() which requires root privileges
 - Validate real-world privilege separation scenarios
 
 When run without root, privileged tests properly skip with exit code 77 (meson skip).

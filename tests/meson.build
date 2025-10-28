@@ -64,6 +64,12 @@ test_privileged_ops = executable(
   dependencies: [common_dep, privileged_ops_dep]
 )
 
+test_chroot = executable(
+  'test-chroot',
+  'test-chroot.c',
+  dependencies: common_dep
+)
+
 test_timer_ipc = executable(
   'test-timer-ipc',
   'test-timer-ipc.c',
@@ -166,6 +172,7 @@ test_offline_enable = executable(
 test('offline enable/disable', test_offline_enable, suite: 'privileged', priority: 1000)
 test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged', priority: 1000)
 test('privileged operations', test_privileged_ops, suite: 'privileged', priority: 1000)
+test('chroot confinement', test_chroot, suite: 'privileged', priority: 1000)
 
 # Unprivileged tests start here
 test('calendar parser', test_calendar)

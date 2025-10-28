@@ -192,6 +192,7 @@ struct service_section {
     bool syslog_level_prefix;     /* SyslogLevelPrefix= */
     mode_t umask_value;           /* UMask= (octal file creation mask) */
     bool no_new_privs;            /* NoNewPrivileges= (prevent privilege escalation on execve) */
+    char root_directory[MAX_PATH]; /* RootDirectory= (chroot jail path) */
 };
 
 /* [Timer] section */

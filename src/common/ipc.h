@@ -55,6 +55,7 @@ struct priv_request {
     bool syslog_level_prefix; /* SyslogLevelPrefix= */
     mode_t umask_value;     /* UMask= */
     bool no_new_privs;      /* NoNewPrivileges= */
+    char root_directory[1024]; /* RootDirectory= */
     int start_limit_interval_sec;
     int start_limit_burst;
     int start_limit_action; /* enum start_limit_action */

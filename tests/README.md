@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (23 test suites, 182 individual tests; 3 marked privileged)
+# Build and run all tests (24 test suites, 185 individual tests; 4 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -270,7 +270,7 @@ Tests socket activator IPC communication:
 - Socket status request serialization
 - Socket activation notification serialization
 
-### test-service-features (18 tests)
+### test-service-features (19 tests)
 Tests service directive parsing:
 - **PrivateTmp parsing** - Tests true/false/yes/1 parsing
 - **LimitNOFILE parsing** - Tests numeric values, "infinity", and default (-1)
@@ -289,6 +289,7 @@ Tests service directive parsing:
 - **Syslog directives** - Tests SyslogIdentifier, SyslogFacility, SyslogLevel, SyslogLevelPrefix
 - **UMask directive** - Tests octal umask values (0022, 0077)
 - **NoNewPrivileges directive** - Tests true/false/yes parsing for privilege escalation prevention
+- **RootDirectory directive** - Tests absolute path parsing for chroot jails
 
 **Key features tested:**
 - PrivateTmp=true|false (default: false)
@@ -303,6 +304,7 @@ Tests service directive parsing:
 - SyslogIdentifier= / SyslogFacility= / SyslogLevel= / SyslogLevelPrefix=
 - UMask=0022 (octal file creation mask)
 - NoNewPrivileges=true|false (default: false)
+- RootDirectory=/path/to/chroot (chroot jail path)
 
 ### test-service-registry (5 tests)
 Tests service registry and DoS prevention mechanisms:
@@ -362,12 +364,23 @@ Tests offline unit enable/disable without running daemons:
 
 Run with: `sudo meson test -C build --suite privileged`
 
+### test-chroot (chroot confinement) - PRIVILEGED
+Tests RootDirectory= chroot jail functionality:
+- Validates chroot actually confines processes to directory tree
+- Tests file creation inside chroot
+- Verifies chroot is called before dropping privileges
+- Confirms processes cannot access files outside the jail
+
+**Note:** This test requires root privileges because chroot() system call requires root.
+
+Run with: `sudo meson test -C build --suite privileged`
+
 ## Test Statistics
 
-**Total: 23 test suites, 182 individual tests - all passing ✅**
+**Total: 24 test suites, 185 individual tests - all passing ✅**
 
 **Regular tests:** 20 suites (no root required)
-**Privileged tests:** 3 suites (offline enable/disable, Exec lifecycle, privileged operations)
+**Privileged tests:** 4 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement)
 
 ## CI Integration
 
