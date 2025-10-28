@@ -154,7 +154,7 @@ static void append_string(char **array, int max_count, int *count, const char *v
 }
 
 /* Add condition entry */
-static int add_condition(struct unit_section *unit, enum unit_condition_type type, const char *value) {
+static int add_condition(struct unit_section *unit, enum unit_condition_type type, const char *value, bool is_assert) {
     if (unit->condition_count >= MAX_CONDITIONS || !value || value[0] == '\0') {
         return -1;
     }
@@ -174,6 +174,7 @@ static int add_condition(struct unit_section *unit, enum unit_condition_type typ
     }
 
     cond->type = type;
+    cond->is_assert = is_assert;
     unit->condition_count++;
     return 0;
 }
@@ -261,21 +262,69 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
             unit->start_limit_action_set = true;
         }
     } else if (strcmp(key, "ConditionPathExists") == 0) {
-        add_condition(unit, CONDITION_PATH_EXISTS, value);
+        add_condition(unit, CONDITION_PATH_EXISTS, value, false);
     } else if (strcmp(key, "ConditionPathExistsGlob") == 0) {
-        add_condition(unit, CONDITION_PATH_EXISTS_GLOB, value);
+        add_condition(unit, CONDITION_PATH_EXISTS_GLOB, value, false);
     } else if (strcmp(key, "ConditionPathIsDirectory") == 0) {
-        add_condition(unit, CONDITION_PATH_IS_DIRECTORY, value);
+        add_condition(unit, CONDITION_PATH_IS_DIRECTORY, value, false);
     } else if (strcmp(key, "ConditionPathIsSymbolicLink") == 0) {
-        add_condition(unit, CONDITION_PATH_IS_SYMBOLIC_LINK, value);
+        add_condition(unit, CONDITION_PATH_IS_SYMBOLIC_LINK, value, false);
     } else if (strcmp(key, "ConditionPathIsMountPoint") == 0) {
-        add_condition(unit, CONDITION_PATH_IS_MOUNT_POINT, value);
+        add_condition(unit, CONDITION_PATH_IS_MOUNT_POINT, value, false);
     } else if (strcmp(key, "ConditionPathIsReadWrite") == 0) {
-        add_condition(unit, CONDITION_PATH_IS_READ_WRITE, value);
+        add_condition(unit, CONDITION_PATH_IS_READ_WRITE, value, false);
     } else if (strcmp(key, "ConditionDirectoryNotEmpty") == 0) {
-        add_condition(unit, CONDITION_DIRECTORY_NOT_EMPTY, value);
+        add_condition(unit, CONDITION_DIRECTORY_NOT_EMPTY, value, false);
     } else if (strcmp(key, "ConditionFileIsExecutable") == 0) {
-        add_condition(unit, CONDITION_FILE_IS_EXECUTABLE, value);
+        add_condition(unit, CONDITION_FILE_IS_EXECUTABLE, value, false);
+    } else if (strcmp(key, "ConditionFileNotEmpty") == 0) {
+        add_condition(unit, CONDITION_FILE_NOT_EMPTY, value, false);
+    } else if (strcmp(key, "ConditionUser") == 0) {
+        add_condition(unit, CONDITION_USER, value, false);
+    } else if (strcmp(key, "ConditionGroup") == 0) {
+        add_condition(unit, CONDITION_GROUP, value, false);
+    } else if (strcmp(key, "ConditionHost") == 0) {
+        add_condition(unit, CONDITION_HOST, value, false);
+    } else if (strcmp(key, "ConditionArchitecture") == 0) {
+        add_condition(unit, CONDITION_ARCHITECTURE, value, false);
+    } else if (strcmp(key, "ConditionMemory") == 0) {
+        add_condition(unit, CONDITION_MEMORY, value, false);
+    } else if (strcmp(key, "ConditionCPUs") == 0) {
+        add_condition(unit, CONDITION_CPUS, value, false);
+    } else if (strcmp(key, "ConditionEnvironment") == 0) {
+        add_condition(unit, CONDITION_ENVIRONMENT, value, false);
+    } else if (strcmp(key, "AssertPathExists") == 0) {
+        add_condition(unit, CONDITION_PATH_EXISTS, value, true);
+    } else if (strcmp(key, "AssertPathExistsGlob") == 0) {
+        add_condition(unit, CONDITION_PATH_EXISTS_GLOB, value, true);
+    } else if (strcmp(key, "AssertPathIsDirectory") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_DIRECTORY, value, true);
+    } else if (strcmp(key, "AssertPathIsSymbolicLink") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_SYMBOLIC_LINK, value, true);
+    } else if (strcmp(key, "AssertPathIsMountPoint") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_MOUNT_POINT, value, true);
+    } else if (strcmp(key, "AssertPathIsReadWrite") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_READ_WRITE, value, true);
+    } else if (strcmp(key, "AssertDirectoryNotEmpty") == 0) {
+        add_condition(unit, CONDITION_DIRECTORY_NOT_EMPTY, value, true);
+    } else if (strcmp(key, "AssertFileIsExecutable") == 0) {
+        add_condition(unit, CONDITION_FILE_IS_EXECUTABLE, value, true);
+    } else if (strcmp(key, "AssertFileNotEmpty") == 0) {
+        add_condition(unit, CONDITION_FILE_NOT_EMPTY, value, true);
+    } else if (strcmp(key, "AssertUser") == 0) {
+        add_condition(unit, CONDITION_USER, value, true);
+    } else if (strcmp(key, "AssertGroup") == 0) {
+        add_condition(unit, CONDITION_GROUP, value, true);
+    } else if (strcmp(key, "AssertHost") == 0) {
+        add_condition(unit, CONDITION_HOST, value, true);
+    } else if (strcmp(key, "AssertArchitecture") == 0) {
+        add_condition(unit, CONDITION_ARCHITECTURE, value, true);
+    } else if (strcmp(key, "AssertMemory") == 0) {
+        add_condition(unit, CONDITION_MEMORY, value, true);
+    } else if (strcmp(key, "AssertCPUs") == 0) {
+        add_condition(unit, CONDITION_CPUS, value, true);
+    } else if (strcmp(key, "AssertEnvironment") == 0) {
+        add_condition(unit, CONDITION_ENVIRONMENT, value, true);
     } else {
         return -1; /* Unknown key */
     }

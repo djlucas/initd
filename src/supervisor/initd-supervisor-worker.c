@@ -41,6 +41,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <limits.h>
+#include <sys/utsname.h>
 #include <stdbool.h>
 #include <glob.h>
 #include <dirent.h>
@@ -669,26 +670,44 @@ static bool unit_provides(struct unit_file *unit, const char *service_name) {
     return false;
 }
 
-static const char *condition_type_name(enum unit_condition_type type) {
+static const char *condition_type_name(enum unit_condition_type type, bool is_assert) {
+    const char *prefix = is_assert ? "Assert" : "Condition";
+
     switch (type) {
     case CONDITION_PATH_EXISTS:
-        return "ConditionPathExists";
+        return is_assert ? "AssertPathExists" : "ConditionPathExists";
     case CONDITION_PATH_EXISTS_GLOB:
-        return "ConditionPathExistsGlob";
+        return is_assert ? "AssertPathExistsGlob" : "ConditionPathExistsGlob";
     case CONDITION_PATH_IS_DIRECTORY:
-        return "ConditionPathIsDirectory";
+        return is_assert ? "AssertPathIsDirectory" : "ConditionPathIsDirectory";
     case CONDITION_PATH_IS_SYMBOLIC_LINK:
-        return "ConditionPathIsSymbolicLink";
+        return is_assert ? "AssertPathIsSymbolicLink" : "ConditionPathIsSymbolicLink";
     case CONDITION_PATH_IS_MOUNT_POINT:
-        return "ConditionPathIsMountPoint";
+        return is_assert ? "AssertPathIsMountPoint" : "ConditionPathIsMountPoint";
     case CONDITION_PATH_IS_READ_WRITE:
-        return "ConditionPathIsReadWrite";
+        return is_assert ? "AssertPathIsReadWrite" : "ConditionPathIsReadWrite";
     case CONDITION_DIRECTORY_NOT_EMPTY:
-        return "ConditionDirectoryNotEmpty";
+        return is_assert ? "AssertDirectoryNotEmpty" : "ConditionDirectoryNotEmpty";
     case CONDITION_FILE_IS_EXECUTABLE:
-        return "ConditionFileIsExecutable";
+        return is_assert ? "AssertFileIsExecutable" : "ConditionFileIsExecutable";
+    case CONDITION_FILE_NOT_EMPTY:
+        return is_assert ? "AssertFileNotEmpty" : "ConditionFileNotEmpty";
+    case CONDITION_USER:
+        return is_assert ? "AssertUser" : "ConditionUser";
+    case CONDITION_GROUP:
+        return is_assert ? "AssertGroup" : "ConditionGroup";
+    case CONDITION_HOST:
+        return is_assert ? "AssertHost" : "ConditionHost";
+    case CONDITION_ARCHITECTURE:
+        return is_assert ? "AssertArchitecture" : "ConditionArchitecture";
+    case CONDITION_MEMORY:
+        return is_assert ? "AssertMemory" : "ConditionMemory";
+    case CONDITION_CPUS:
+        return is_assert ? "AssertCPUs" : "ConditionCPUs";
+    case CONDITION_ENVIRONMENT:
+        return is_assert ? "AssertEnvironment" : "ConditionEnvironment";
     default:
-        return "Condition";
+        return prefix;
     }
 }
 
@@ -801,6 +820,198 @@ static bool condition_file_is_executable(const char *path) {
     return access(path, X_OK) == 0;
 }
 
+static bool condition_file_not_empty(const char *path) {
+    struct stat st;
+    if (stat(path, &st) < 0) {
+        return false;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        return false;
+    }
+    return st.st_size > 0;
+}
+
+static bool condition_user(const char *value) {
+    /* Format: "user" or "uid" or "@system" (runs as superuser) */
+    uid_t current_uid = getuid();
+
+    /* Special case: @system means running as superuser */
+    if (strcmp(value, "@system") == 0) {
+        return current_uid == 0;
+    }
+
+    /* Try to parse as numeric UID */
+    char *endptr;
+    long uid_long = strtol(value, &endptr, 10);
+    if (*endptr == '\0' && uid_long >= 0) {
+        return current_uid == (uid_t)uid_long;
+    }
+
+    /* Try to look up username */
+    struct passwd *pwd = getpwnam(value);
+    if (pwd) {
+        return current_uid == pwd->pw_uid;
+    }
+
+    return false;
+}
+
+static bool condition_group(const char *value) {
+    gid_t current_gid = getgid();
+
+    /* Try to parse as numeric GID */
+    char *endptr;
+    long gid_long = strtol(value, &endptr, 10);
+    if (*endptr == '\0' && gid_long >= 0) {
+        return current_gid == (gid_t)gid_long;
+    }
+
+    /* Try to look up group name */
+    struct group *grp = getgrnam(value);
+    if (grp) {
+        return current_gid == grp->gr_gid;
+    }
+
+    return false;
+}
+
+static bool condition_host(const char *value) {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) < 0) {
+        return false;
+    }
+    hostname[sizeof(hostname) - 1] = '\0';
+    return strcmp(hostname, value) == 0;
+}
+
+static bool condition_architecture(const char *value) {
+    struct utsname uts;
+    if (uname(&uts) < 0) {
+        return false;
+    }
+
+    /* Map systemd architecture names to uname machine types */
+    const char *arch = uts.machine;
+
+    /* Direct match */
+    if (strcmp(value, arch) == 0) {
+        return true;
+    }
+
+    /* Common systemd architecture names */
+    if (strcmp(value, "x86-64") == 0 && (strcmp(arch, "x86_64") == 0 || strcmp(arch, "amd64") == 0)) {
+        return true;
+    }
+    if (strcmp(value, "x86") == 0 && (strcmp(arch, "i386") == 0 || strcmp(arch, "i686") == 0)) {
+        return true;
+    }
+    if (strcmp(value, "arm64") == 0 && strcmp(arch, "aarch64") == 0) {
+        return true;
+    }
+    if (strcmp(value, "arm") == 0 && (strncmp(arch, "arm", 3) == 0 || strcmp(arch, "armv7l") == 0)) {
+        return true;
+    }
+
+    return false;
+}
+
+static bool condition_memory(const char *value) {
+    /* Parse memory requirement (supports suffixes: K, M, G) */
+    char *endptr;
+    long long required_bytes = strtoll(value, &endptr, 10);
+
+    if (endptr == value) {
+        return false;  /* No digits parsed */
+    }
+
+    /* Handle size suffixes */
+    if (*endptr != '\0') {
+        if (*endptr == 'K' || *endptr == 'k') {
+            required_bytes *= 1024;
+        } else if (*endptr == 'M' || *endptr == 'm') {
+            required_bytes *= 1024 * 1024;
+        } else if (*endptr == 'G' || *endptr == 'g') {
+            required_bytes *= 1024 * 1024 * 1024;
+        } else {
+            return false;  /* Invalid suffix */
+        }
+    }
+
+    /* Get system memory using POSIX sysconf */
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long page_size = sysconf(_SC_PAGESIZE);
+
+    if (pages < 0 || page_size < 0) {
+        return false;
+    }
+
+    long long total_memory = (long long)pages * page_size;
+    return total_memory >= required_bytes;
+}
+
+static bool condition_cpus(const char *value) {
+    /* Parse CPU requirement (number or range like ">=4") */
+    int required_cpus;
+    char op[3] = {0};
+
+    /* Try to parse comparison operator */
+    if (sscanf(value, "%2[<>=]%d", op, &required_cpus) == 2) {
+        /* Has operator */
+    } else if (sscanf(value, "%d", &required_cpus) == 1) {
+        /* No operator, default to exact match */
+        strcpy(op, "=");
+    } else {
+        return false;
+    }
+
+    /* Get CPU count */
+    long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu_count < 0) {
+        return false;
+    }
+
+    /* Compare */
+    if (strcmp(op, "=") == 0 || strcmp(op, "==") == 0) {
+        return cpu_count == required_cpus;
+    } else if (strcmp(op, ">=") == 0) {
+        return cpu_count >= required_cpus;
+    } else if (strcmp(op, "<=") == 0) {
+        return cpu_count <= required_cpus;
+    } else if (strcmp(op, ">") == 0) {
+        return cpu_count > required_cpus;
+    } else if (strcmp(op, "<") == 0) {
+        return cpu_count < required_cpus;
+    }
+
+    return false;
+}
+
+static bool condition_environment(const char *value) {
+    /* Format: "VAR" (exists) or "VAR=value" (equals) */
+    const char *equals = strchr(value, '=');
+
+    if (equals) {
+        /* Check for exact value */
+        size_t name_len = equals - value;
+        char name[256];
+        if (name_len >= sizeof(name)) {
+            return false;
+        }
+        strncpy(name, value, name_len);
+        name[name_len] = '\0';
+
+        const char *env_value = getenv(name);
+        if (!env_value) {
+            return false;
+        }
+
+        return strcmp(env_value, equals + 1) == 0;
+    } else {
+        /* Just check existence */
+        return getenv(value) != NULL;
+    }
+}
+
 static bool evaluate_single_condition(const struct unit_condition *cond) {
     switch (cond->type) {
     case CONDITION_PATH_EXISTS:
@@ -819,20 +1030,66 @@ static bool evaluate_single_condition(const struct unit_condition *cond) {
         return condition_directory_not_empty(cond->value);
     case CONDITION_FILE_IS_EXECUTABLE:
         return condition_file_is_executable(cond->value);
+    case CONDITION_FILE_NOT_EMPTY:
+        return condition_file_not_empty(cond->value);
+    case CONDITION_USER:
+        return condition_user(cond->value);
+    case CONDITION_GROUP:
+        return condition_group(cond->value);
+    case CONDITION_HOST:
+        return condition_host(cond->value);
+    case CONDITION_ARCHITECTURE:
+        return condition_architecture(cond->value);
+    case CONDITION_MEMORY:
+        return condition_memory(cond->value);
+    case CONDITION_CPUS:
+        return condition_cpus(cond->value);
+    case CONDITION_ENVIRONMENT:
+        return condition_environment(cond->value);
     default:
         return false;
     }
 }
 
 static bool unit_conditions_met(struct unit_file *unit) {
+    /* First check all assertions (loud failures) */
     for (int i = 0; i < unit->unit.condition_count; i++) {
         const struct unit_condition *cond = &unit->unit.conditions[i];
+        if (!cond->is_assert) {
+            continue;  /* Skip conditions for now */
+        }
+
         bool result = evaluate_single_condition(cond);
         if (cond->negate) {
             result = !result;
         }
+
         if (!result) {
-            const char *name = condition_type_name(cond->type);
+            const char *name = condition_type_name(cond->type, cond->is_assert);
+            log_msg(LOG_ERR, unit->name,
+                    "%s%s=%s failed, aborting start",
+                    cond->negate ? "!" : "",
+                    name,
+                    cond->value);
+            unit->state = STATE_FAILED;
+            return false;
+        }
+    }
+
+    /* Then check all conditions (silent skips) */
+    for (int i = 0; i < unit->unit.condition_count; i++) {
+        const struct unit_condition *cond = &unit->unit.conditions[i];
+        if (cond->is_assert) {
+            continue;  /* Already checked */
+        }
+
+        bool result = evaluate_single_condition(cond);
+        if (cond->negate) {
+            result = !result;
+        }
+
+        if (!result) {
+            const char *name = condition_type_name(cond->type, cond->is_assert);
             log_info(unit->name,
                      "%s%s=%s failed, skipping start",
                      cond->negate ? "!" : "",
@@ -841,6 +1098,7 @@ static bool unit_conditions_met(struct unit_file *unit) {
             return false;
         }
     }
+
     return true;
 }
 

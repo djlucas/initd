@@ -7,11 +7,11 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (24 test suites, 186 individual tests; 4 marked privileged)
+# Build and run all tests (25 test suites, 196 individual tests; 4 marked privileged)
 ninja -C build
 ninja -C build test
 
-# Run only non-privileged tests (20 test suites)
+# Run only non-privileged tests (21 test suites)
 ninja -C build test --suite initd
 
 # Run privileged tests (covers offline enable, Exec* lifecycle, and privileged ops)
@@ -308,6 +308,26 @@ Tests service directive parsing:
 - NoNewPrivileges=true|false (default: false)
 - RootDirectory=/path/to/chroot (chroot jail path)
 
+### test-conditions (10 tests)
+Tests POSIX-portable Condition*/Assert* directive parsing:
+- **ConditionFileNotEmpty** - Tests file non-empty check parsing
+- **ConditionUser** - Tests user/UID matching (supports numeric UID, username, @system)
+- **ConditionGroup** - Tests group/GID matching (supports numeric GID, group name)
+- **ConditionHost** - Tests hostname matching
+- **ConditionArchitecture** - Tests CPU architecture matching (x86-64, arm64, etc.)
+- **ConditionMemory** - Tests memory threshold with K/M/G suffixes
+- **ConditionCPUs** - Tests CPU count with comparison operators (>=2, <4, etc.)
+- **ConditionEnvironment** - Tests environment variable existence and value matching
+- **Assert* directives** - Tests all Assert equivalents (loud failures vs silent skips)
+- **Negation support** - Tests ! prefix for inverted conditions/assertions
+
+**Key features tested:**
+- All 8 new POSIX-portable Condition directives
+- All 11 Assert equivalents (8 new + 3 existing path-based)
+- Negation with ! prefix
+- is_assert flag distinguishes behavior (LOG_ERR+STATE_FAILED vs LOG_INFO+skip)
+- POSIX APIs: getuid, getpwnam, getgrnam, gethostname, uname, sysconf, getenv
+
 ### test-service-registry (5 tests)
 Tests service registry and DoS prevention mechanisms:
 - **Lookup by name** - Tests service registration and name-based lookup
@@ -379,9 +399,9 @@ Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 24 test suites, 186 individual tests - all passing ✅**
+**Total: 25 test suites, 196 individual tests - all passing ✅**
 
-**Regular tests:** 20 suites (no root required)
+**Regular tests:** 21 suites (no root required)
 **Privileged tests:** 4 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement)
 
 ## CI Integration

@@ -64,6 +64,7 @@ enum dependency_visit_state {
 
 /* Condition types */
 enum unit_condition_type {
+    /* Path-based conditions (already implemented) */
     CONDITION_PATH_EXISTS,
     CONDITION_PATH_EXISTS_GLOB,
     CONDITION_PATH_IS_DIRECTORY,
@@ -71,12 +72,22 @@ enum unit_condition_type {
     CONDITION_PATH_IS_MOUNT_POINT,
     CONDITION_PATH_IS_READ_WRITE,
     CONDITION_DIRECTORY_NOT_EMPTY,
-    CONDITION_FILE_IS_EXECUTABLE
+    CONDITION_FILE_IS_EXECUTABLE,
+    /* New POSIX-portable conditions */
+    CONDITION_FILE_NOT_EMPTY,
+    CONDITION_USER,
+    CONDITION_GROUP,
+    CONDITION_HOST,
+    CONDITION_ARCHITECTURE,
+    CONDITION_MEMORY,
+    CONDITION_CPUS,
+    CONDITION_ENVIRONMENT
 };
 
 struct unit_condition {
     enum unit_condition_type type;
     bool negate;
+    bool is_assert;  /* true = Assert*, false = Condition* */
     char *value;
 };
 

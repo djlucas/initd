@@ -1253,45 +1253,60 @@ Notes:
     - Proper ordering: normal services → early boot services (random-seed) → filesystem operations (swap, mountfs)
     - Full systemd unit compatibility for existing Conflicts/Before directives
 
-#### TODO: Full systemd directive parsing
+#### TODO: Condition*/Assert* directives
 
+**Platform-Specific (different implementations per OS):**
 [Unit]
-  ConditionUser=
-  ConditionGroup=
-  ConditionControlGroupController=
-  ConditionArchitecture=
-  ConditionVirtualization=
-  ConditionKernelCommandLine=
-  ConditionKernelVersion=
-  ConditionFirmware=
-  ConditionSecurity=
-  ConditionCapability=
-  ConditionHost=
-  ConditionACPower=
-  ConditionNeedsUpdate=
-  ConditionFirstBoot=
-  AssertPathExists=
-  AssertPathExistsGlob=
-  AssertPathIsDirectory=
-  AssertPathIsSymbolicLink=
-  AssertPathIsMountPoint=
-  AssertPathIsReadWrite=
-  AssertDirectoryNotEmpty=
-  AssertFileIsExecutable=
-  AssertUser=
-  AssertGroup=
-  AssertControlGroupController=
-  AssertArchitecture=
+  ConditionVirtualization=            (VM/container detection varies by OS)
+  ConditionACPower=                   (Linux: /sys/class/power_supply; BSD: ioctl; Hurd: TBD)
+  ConditionOSRelease=                 (/etc/os-release location varies)
+  ConditionKernelVersion=             (uname works; version string format differs)
   AssertVirtualization=
-  AssertKernelCommandLine=
+  AssertACPower=
+  AssertOSRelease=
   AssertKernelVersion=
-  AssertFirmware=
+
+**Linux-Only (cannot implement portably):**
+[Unit]
+  ConditionKernelCommandLine=         (/proc/cmdline)
+  ConditionKernelModuleLoaded=        (/proc/modules or /sys/module/)
+  ConditionSecurity=                  (SELinux, AppArmor, SMACK, IMA, TPM2)
+  ConditionCapability=                (Linux capabilities via capget())
+  ConditionControlGroupController=    (cgroup v1/v2)
+  ConditionMemoryPressure=            (/proc/pressure/memory - PSI)
+  ConditionCPUPressure=               (/proc/pressure/cpu - PSI)
+  ConditionIOPressure=                (/proc/pressure/io - PSI)
+  ConditionPathIsEncrypted=           (dm-crypt/LUKS)
+  ConditionFirmware=                  (UEFI vs device-tree detection)
+  ConditionCPUFeature=                (x86 CPUID instruction)
+  ConditionVersion=                   (systemd/kernel/glibc version comparison)
+  ConditionCredential=                (systemd credential system)
+  ConditionNeedsUpdate=               (systemd-specific: /etc/.updated, /var/.updated)
+  ConditionFirstBoot=                 (systemd-specific: /etc/machine-id)
+  AssertKernelCommandLine=
+  AssertKernelModuleLoaded=
   AssertSecurity=
   AssertCapability=
-  AssertHost=
-  AssertACPower=
+  AssertControlGroupController=
+  AssertMemoryPressure=
+  AssertCPUPressure=
+  AssertIOPressure=
+  AssertPathIsEncrypted=
+  AssertFirmware=
+  AssertCPUFeature=
+  AssertVersion=
+  AssertCredential=
   AssertNeedsUpdate=
   AssertFirstBoot=
+
+**Summary:** 42 missing directives total (22 implemented, 64 originally identified)
+  - 0 POSIX-portable remaining (all 22 now implemented!)
+  - 8 platform-specific (can have OS-specific implementations)
+  - 32 Linux-only (warn/skip on other platforms)
+
+#### TODO: Other systemd directives
+
+[Service]
 
 [Service]
   RestartMaxDelaySec=
@@ -1440,7 +1455,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**24 test suites, 186 individual tests - all passing**
+**25 test suites, 196 individual tests - all passing**
 
 1. **calendar parser** - Calendar expression parsing
 2. **unit file parser** - Unit file parsing & validation
@@ -1455,16 +1470,18 @@ To avoid writing ourselves into a corner, the following must be considered durin
 11. **timer IPC protocol** - Timer daemon IPC communication
 12. **socket IPC protocol** - Socket daemon IPC communication
 13. **service features** - PrivateTmp, all Limit* directives (16 total), KillMode, RemainAfterExit, StandardInput/Output/Error parsing
-14. **service registry** - DoS prevention and rate limiting (includes 62s timing test)
-15. **timer inactivity notify** - OnUnitInactiveSec rescheduling
-16. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
-17. **supervisor socket IPC** - CMD_SOCKET_ADOPT control path
-18. **isolate closure** - Target isolation and dependency closure
-19. **initctl routing** - Command routing to correct daemon sockets
-20. **user persistence** - Per-user reboot persistence helpers
-21. **offline enable/disable** (privileged) - Unit enable/disable without running daemons
-22. **Exec lifecycle** (privileged) - ExecStartPre/Post/Stop/Reload execution
-23. **privileged operations** (privileged) - Root-only operations (systemd conversion, symlinks)
+14. **conditions and assertions** - POSIX-portable Condition*/Assert* directives (8 new + 11 Assert equivalents)
+15. **service registry** - DoS prevention and rate limiting (includes 62s timing test)
+16. **timer inactivity notify** - OnUnitInactiveSec rescheduling
+17. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
+18. **supervisor socket IPC** - CMD_SOCKET_ADOPT control path
+19. **isolate closure** - Target isolation and dependency closure
+20. **initctl routing** - Command routing to correct daemon sockets
+21. **user persistence** - Per-user reboot persistence helpers
+22. **offline enable/disable** (privileged) - Unit enable/disable without running daemons
+23. **Exec lifecycle** (privileged) - ExecStartPre/Post/Stop/Reload execution
+24. **privileged operations** (privileged) - Root-only operations (systemd conversion, symlinks)
+25. **chroot confinement** (privileged) - RootDirectory= chroot jail functionality
 
 **Coverage:**
 - ✅ Unit file parsing (all types)

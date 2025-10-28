@@ -158,6 +158,49 @@ Prefix with \fB!\fR to require that the directory is empty.
 Path that must reference an executable regular file. Prefix with \fB!\fR to
 invert.
 .TP
+.B ConditionFileNotEmpty=
+Path that must reference a non-empty regular file. Prefix with \fB!\fR to
+invert.
+.TP
+.B ConditionUser=
+User name or numeric UID. The unit will be skipped if not running as the
+specified user. Special value \fB@system\fR means superuser (UID 0). Prefix
+with \fB!\fR to invert.
+.TP
+.B ConditionGroup=
+Group name or numeric GID. The unit will be skipped if not running as the
+specified group. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionHost=
+Hostname that must match the system hostname (via gethostname()). Prefix with
+\fB!\fR to invert.
+.TP
+.B ConditionArchitecture=
+CPU architecture (e.g., x86-64, arm64, arm, x86). Matches against uname machine
+type with common systemd architecture name mappings. Prefix with \fB!\fR to
+invert.
+.TP
+.B ConditionMemory=
+Minimum system memory in bytes (supports K, M, G suffixes). The unit will be
+skipped if system has less than the specified amount. Prefix with \fB!\fR to
+invert.
+.TP
+.B ConditionCPUs=
+CPU count requirement. May be a number or comparison operator (>=2, <4, etc.).
+The unit will be skipped if the requirement is not met. Prefix with \fB!\fR to
+invert.
+.TP
+.B ConditionEnvironment=
+Environment variable check. Format: \fBVAR\fR (exists) or \fBVAR=value\fR
+(exact match). The unit will be skipped if the condition fails. Prefix with
+\fB!\fR to invert.
+.TP
+.B AssertPathExists=, AssertPathExistsGlob=, AssertPathIsDirectory=, AssertPathIsSymbolicLink=, AssertPathIsMountPoint=, AssertPathIsReadWrite=, AssertDirectoryNotEmpty=, AssertFileIsExecutable=, AssertFileNotEmpty=, AssertUser=, AssertGroup=, AssertHost=, AssertArchitecture=, AssertMemory=, AssertCPUs=, AssertEnvironment=
+Assert equivalents of Condition directives. Unlike conditions which silently skip
+unit activation, failed assertions abort the start job with error logging (state
+becomes failed). Use assertions for critical requirements that indicate
+misconfiguration. All support \fB!\fR prefix for negation.
+.TP
 .B Provides=
 Symbolic name for this unit. Other units can depend on this name, and any
 unit providing it will satisfy the dependency.

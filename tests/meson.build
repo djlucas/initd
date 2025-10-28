@@ -88,6 +88,12 @@ test_service_features = executable(
   dependencies: common_dep
 )
 
+test_conditions = executable(
+  'test-conditions',
+  'test-conditions.c',
+  dependencies: common_dep
+)
+
 test_service_registry = executable(
   'test-service-registry',
   ['test-service-registry.c', '../src/supervisor/service-registry.c'],
@@ -188,6 +194,7 @@ test('integration', test_integration)
 test('timer IPC protocol', test_timer_ipc)
 test('socket IPC protocol', test_socket_ipc)
 test('service features', test_service_features)
+test('conditions and assertions', test_conditions)
 test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
 test('socket worker', test_socket_worker)
 test('isolate closure', test_isolate)
