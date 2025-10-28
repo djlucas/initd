@@ -39,6 +39,21 @@ struct priv_request {
     /* Service configuration for setup_service_environment */
     bool private_tmp;       /* PrivateTmp= */
     int limit_nofile;       /* LimitNOFILE= (-1 = not set) */
+    long limit_cpu;         /* LimitCPU= */
+    long limit_fsize;       /* LimitFSIZE= */
+    long limit_data;        /* LimitDATA= */
+    long limit_stack;       /* LimitSTACK= */
+    long limit_core;        /* LimitCORE= */
+    long limit_rss;         /* LimitRSS= */
+    long limit_as;          /* LimitAS= */
+    long limit_nproc;       /* LimitNPROC= */
+    long limit_memlock;     /* LimitMEMLOCK= */
+    long limit_locks;       /* LimitLOCKS= */
+    long limit_sigpending;  /* LimitSIGPENDING= */
+    long limit_msgqueue;    /* LimitMSGQUEUE= */
+    long limit_nice;        /* LimitNICE= */
+    long limit_rtprio;      /* LimitRTPRIO= */
+    long limit_rttime;      /* LimitRTTIME= */
     int kill_mode;          /* KillMode= (enum kill_mode) */
     int standard_input;     /* StandardInput= (enum standard_io) */
     int standard_output;    /* StandardOutput= (enum standard_io) */

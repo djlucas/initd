@@ -441,6 +441,21 @@ static pid_t start_service(struct unit_file *unit) {
         /* Copy service configuration for environment setup */
         req.private_tmp = unit->config.service.private_tmp;
         req.limit_nofile = unit->config.service.limit_nofile;
+        req.limit_cpu = unit->config.service.limit_cpu;
+        req.limit_fsize = unit->config.service.limit_fsize;
+        req.limit_data = unit->config.service.limit_data;
+        req.limit_stack = unit->config.service.limit_stack;
+        req.limit_core = unit->config.service.limit_core;
+        req.limit_rss = unit->config.service.limit_rss;
+        req.limit_as = unit->config.service.limit_as;
+        req.limit_nproc = unit->config.service.limit_nproc;
+        req.limit_memlock = unit->config.service.limit_memlock;
+        req.limit_locks = unit->config.service.limit_locks;
+        req.limit_sigpending = unit->config.service.limit_sigpending;
+        req.limit_msgqueue = unit->config.service.limit_msgqueue;
+        req.limit_nice = unit->config.service.limit_nice;
+        req.limit_rtprio = unit->config.service.limit_rtprio;
+        req.limit_rttime = unit->config.service.limit_rttime;
         req.kill_mode = unit->config.service.kill_mode;
         req.standard_input = unit->config.service.standard_input;
         req.standard_output = unit->config.service.standard_output;

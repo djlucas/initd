@@ -208,6 +208,8 @@ Unit types **not supported** (use traditional alternatives):
 - `TimeoutStartSec=`, `TimeoutStopSec=` - Startup/shutdown timeouts
 - `PrivateTmp=` - Private /tmp namespace (Linux only)
 - `LimitNOFILE=` - File descriptor limit (portable)
+- `LimitCPU=`, `LimitFSIZE=`, `LimitDATA=`, `LimitSTACK=`, `LimitCORE=`, `LimitRSS=`, `LimitAS=`, `LimitNPROC=`, `LimitMEMLOCK=`, `LimitLOCKS=` - Resource limits (portable)
+- `LimitSIGPENDING=`, `LimitMSGQUEUE=`, `LimitNICE=`, `LimitRTPRIO=`, `LimitRTTIME=` - Real-time limits (Linux only)
 - `KillMode=` - process, control-group, mixed, none (portable)
 - `ExecStopPost=`, `ExecCondition=` - additional lifecycle hooks
 - `PIDFile=` - adopt forked services using PID files
@@ -385,7 +387,7 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Run all tests (24 test suites, 185 individual tests: 20 non-privileged, 4 privileged)
+# Run all tests (24 test suites, 186 individual tests: 20 non-privileged, 4 privileged)
 ninja -C build test
 
 # Run privileged tests (requires root)

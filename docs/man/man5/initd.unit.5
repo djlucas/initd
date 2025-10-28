@@ -358,6 +358,89 @@ Maximum number of open file descriptors for the service. May be a number or
 .B infinity
 to remove the limit. Default: inherit from system.
 .TP
+.B LimitCPU=
+Maximum CPU time in seconds. May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_CPU. Default: inherit from system.
+.TP
+.B LimitFSIZE=
+Maximum file size in bytes that the process may create. May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_FSIZE. Default: inherit from system.
+.TP
+.B LimitDATA=
+Maximum size of the process's data segment in bytes. May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_DATA. Default: inherit from system.
+.TP
+.B LimitSTACK=
+Maximum size of the process stack in bytes. May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_STACK. Default: inherit from system.
+.TP
+.B LimitCORE=
+Maximum size of core files in bytes. Set to 0 to disable core dumps. May be
+.B infinity
+to remove the limit. Corresponds to RLIMIT_CORE. Default: inherit from system.
+.TP
+.B LimitRSS=
+Maximum resident set size in bytes (deprecated on Linux). May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_RSS. Default: inherit from system.
+.TP
+.B LimitAS=
+Maximum size of the process's virtual memory (address space) in bytes. May be a
+number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_AS. Default: inherit from system.
+.TP
+.B LimitNPROC=
+Maximum number of processes that can be created. May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_NPROC. Default: inherit from system.
+.TP
+.B LimitMEMLOCK=
+Maximum number of bytes that may be locked into memory. May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_MEMLOCK. Default: inherit from system.
+.TP
+.B LimitLOCKS=
+Maximum number of file locks (obsolete on Linux since kernel 2.4.25). May be a
+number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_LOCKS. Default: inherit from system.
+.TP
+.B LimitSIGPENDING=
+Maximum number of queued signals (Linux only). May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_SIGPENDING. Not supported on BSD or
+Hurd. Default: inherit from system.
+.TP
+.B LimitMSGQUEUE=
+Maximum number of bytes in POSIX message queues (Linux only). May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_MSGQUEUE. Not supported on BSD or
+Hurd. Default: inherit from system.
+.TP
+.B LimitNICE=
+Maximum nice priority for the process (Linux only). May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_NICE. Not supported on BSD or Hurd.
+Default: inherit from system.
+.TP
+.B LimitRTPRIO=
+Maximum real-time scheduling priority (Linux only). May be a number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_RTPRIO. Not supported on BSD or Hurd.
+Default: inherit from system.
+.TP
+.B LimitRTTIME=
+Maximum CPU time for real-time tasks in microseconds (Linux only). May be a
+number or
+.B infinity
+to remove the limit. Corresponds to RLIMIT_RTTIME. Not supported on BSD or Hurd.
+Default: inherit from system.
+.TP
 .B KillMode=
 Specifies how processes of this service should be terminated. One of:
 .RS
@@ -659,9 +742,18 @@ Many advanced systemd directives are not supported
 only works on Linux (uses mount namespaces)
 .IP \(bu
 .B KillMode=
-and
-.B LimitNOFILE=
-are portable (POSIX standard)
+and most
+.B Limit*
+directives are portable (POSIX standard)
+.IP \(bu
+.BR LimitSIGPENDING= ", " LimitMSGQUEUE= ", " LimitNICE= ", " LimitRTPRIO= ", and " LimitRTTIME=
+are Linux-only (not available on BSD or Hurd)
+.IP \(bu
+.B LimitRSS=
+is deprecated on Linux but available on BSD
+.IP \(bu
+.B LimitLOCKS=
+is obsolete on Linux (since kernel 2.4.25) but may work on other platforms
 .IP \(bu
 Services run in process groups for proper lifecycle management
 .SH AUTHOR

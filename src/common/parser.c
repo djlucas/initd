@@ -83,6 +83,14 @@ static size_t base64_decode(const char *input, size_t input_len, char *output, s
     return out_pos;
 }
 
+/* Parse resource limit value (handles "infinity" and numeric values) */
+static long parse_limit_value(const char *value) {
+    if (strcmp(value, "infinity") == 0) {
+        return 0; /* 0 = unlimited */
+    }
+    return atol(value);
+}
+
 /* Current section being parsed */
 enum parse_section {
     SECTION_NONE,
@@ -348,6 +356,36 @@ static int parse_service_key(struct service_section *service, const char *key, c
         } else {
             service->limit_nofile = atoi(value);
         }
+    } else if (strcmp(key, "LimitCPU") == 0) {
+        service->limit_cpu = parse_limit_value(value);
+    } else if (strcmp(key, "LimitFSIZE") == 0) {
+        service->limit_fsize = parse_limit_value(value);
+    } else if (strcmp(key, "LimitDATA") == 0) {
+        service->limit_data = parse_limit_value(value);
+    } else if (strcmp(key, "LimitSTACK") == 0) {
+        service->limit_stack = parse_limit_value(value);
+    } else if (strcmp(key, "LimitCORE") == 0) {
+        service->limit_core = parse_limit_value(value);
+    } else if (strcmp(key, "LimitRSS") == 0) {
+        service->limit_rss = parse_limit_value(value);
+    } else if (strcmp(key, "LimitAS") == 0) {
+        service->limit_as = parse_limit_value(value);
+    } else if (strcmp(key, "LimitNPROC") == 0) {
+        service->limit_nproc = parse_limit_value(value);
+    } else if (strcmp(key, "LimitMEMLOCK") == 0) {
+        service->limit_memlock = parse_limit_value(value);
+    } else if (strcmp(key, "LimitLOCKS") == 0) {
+        service->limit_locks = parse_limit_value(value);
+    } else if (strcmp(key, "LimitSIGPENDING") == 0) {
+        service->limit_sigpending = parse_limit_value(value);
+    } else if (strcmp(key, "LimitMSGQUEUE") == 0) {
+        service->limit_msgqueue = parse_limit_value(value);
+    } else if (strcmp(key, "LimitNICE") == 0) {
+        service->limit_nice = parse_limit_value(value);
+    } else if (strcmp(key, "LimitRTPRIO") == 0) {
+        service->limit_rtprio = parse_limit_value(value);
+    } else if (strcmp(key, "LimitRTTIME") == 0) {
+        service->limit_rttime = parse_limit_value(value);
     } else if (strcmp(key, "StandardInput") == 0) {
         if (strcmp(value, "null") == 0) service->standard_input = STDIO_NULL;
         else if (strcmp(value, "tty") == 0) service->standard_input = STDIO_TTY;
@@ -569,6 +607,21 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     /* Set defaults for new fields */
     unit->config.service.kill_mode = KILL_PROCESS;  /* Default: only kill main process */
     unit->config.service.limit_nofile = -1;         /* Default: not set (inherit system default) */
+    unit->config.service.limit_cpu = -1;
+    unit->config.service.limit_fsize = -1;
+    unit->config.service.limit_data = -1;
+    unit->config.service.limit_stack = -1;
+    unit->config.service.limit_core = -1;
+    unit->config.service.limit_rss = -1;
+    unit->config.service.limit_as = -1;
+    unit->config.service.limit_nproc = -1;
+    unit->config.service.limit_memlock = -1;
+    unit->config.service.limit_locks = -1;
+    unit->config.service.limit_sigpending = -1;
+    unit->config.service.limit_msgqueue = -1;
+    unit->config.service.limit_nice = -1;
+    unit->config.service.limit_rtprio = -1;
+    unit->config.service.limit_rttime = -1;
     unit->config.service.private_tmp = false;        /* Default: no private /tmp */
     unit->config.service.runtime_max_sec = 0;        /* Default: unlimited */
     unit->unit.default_dependencies = true;          /* Default: implicit dependencies enabled */

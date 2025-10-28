@@ -180,6 +180,21 @@ struct service_section {
    enum standard_io standard_error;
    enum kill_mode kill_mode;
    int limit_nofile;    /* -1 = not set, 0 = unlimited (infinity) */
+   long limit_cpu;      /* LimitCPU= (-1 = not set, 0 = unlimited) */
+   long limit_fsize;    /* LimitFSIZE= */
+   long limit_data;     /* LimitDATA= */
+   long limit_stack;    /* LimitSTACK= */
+   long limit_core;     /* LimitCORE= */
+   long limit_rss;      /* LimitRSS= (deprecated on Linux) */
+   long limit_as;       /* LimitAS= */
+   long limit_nproc;    /* LimitNPROC= */
+   long limit_memlock;  /* LimitMEMLOCK= */
+   long limit_locks;    /* LimitLOCKS= (obsolete on Linux) */
+   long limit_sigpending; /* LimitSIGPENDING= (Linux only) */
+   long limit_msgqueue; /* LimitMSGQUEUE= (Linux only) */
+   long limit_nice;     /* LimitNICE= (Linux only) */
+   long limit_rtprio;   /* LimitRTPRIO= (Linux only) */
+   long limit_rttime;   /* LimitRTTIME= (Linux only) */
    int runtime_max_sec; /* 0 = no limit */
     int restart_prevent_statuses[MAX_RESTART_STATUS];
     int restart_force_statuses[MAX_RESTART_STATUS];

@@ -382,31 +382,103 @@ int setup_service_environment(const struct service_section *service) {
     }
 #endif
 
-    /* LimitNOFILE - Set file descriptor limit */
-    if (service->limit_nofile >= 0) {
-        struct rlimit rlim;
-
-        if (service->limit_nofile == 0) {
-            /* infinity - set to maximum */
-            rlim.rlim_cur = RLIM_INFINITY;
-            rlim.rlim_max = RLIM_INFINITY;
-        } else {
-            rlim.rlim_cur = service->limit_nofile;
-            rlim.rlim_max = service->limit_nofile;
-        }
-
-        if (setrlimit(RLIMIT_NOFILE, &rlim) < 0) {
-            log_msg(LOG_ERR, "init", "Failed to set RLIMIT_NOFILE to %d: %s",
-                     service->limit_nofile, strerror(errno));
-            return -1;
-        }
-
-        if (service->limit_nofile == 0) {
-            log_msg(LOG_INFO, "init", "Set RLIMIT_NOFILE to infinity");
-        } else {
-            log_msg(LOG_INFO, "init", "Set RLIMIT_NOFILE to %d", service->limit_nofile);
-        }
+    /* Helper macro for setting resource limits */
+#define SET_RLIMIT(name, rlimit_const, value, warn_msg) \
+    if (value >= 0) { \
+        if (warn_msg) { \
+            log_msg(LOG_WARNING, "init", "%s", warn_msg); \
+        } \
+        struct rlimit rlim; \
+        if (value == 0) { \
+            rlim.rlim_cur = RLIM_INFINITY; \
+            rlim.rlim_max = RLIM_INFINITY; \
+        } else { \
+            rlim.rlim_cur = (rlim_t)value; \
+            rlim.rlim_max = (rlim_t)value; \
+        } \
+        if (setrlimit(rlimit_const, &rlim) < 0) { \
+            log_msg(LOG_ERR, "init", "Failed to set " name ": %s", strerror(errno)); \
+            return -1; \
+        } \
     }
+
+    /* LimitNOFILE - Set file descriptor limit */
+    SET_RLIMIT("RLIMIT_NOFILE", RLIMIT_NOFILE, service->limit_nofile, NULL);
+
+    /* LimitCPU - CPU time limit */
+    SET_RLIMIT("RLIMIT_CPU", RLIMIT_CPU, service->limit_cpu, NULL);
+
+    /* LimitFSIZE - File size limit */
+    SET_RLIMIT("RLIMIT_FSIZE", RLIMIT_FSIZE, service->limit_fsize, NULL);
+
+    /* LimitDATA - Data segment size limit */
+    SET_RLIMIT("RLIMIT_DATA", RLIMIT_DATA, service->limit_data, NULL);
+
+    /* LimitSTACK - Stack size limit */
+    SET_RLIMIT("RLIMIT_STACK", RLIMIT_STACK, service->limit_stack, NULL);
+
+    /* LimitCORE - Core dump size limit */
+    SET_RLIMIT("RLIMIT_CORE", RLIMIT_CORE, service->limit_core, NULL);
+
+    /* LimitRSS - Resident set size (deprecated on Linux) */
+#ifdef __linux__
+    SET_RLIMIT("RLIMIT_RSS", RLIMIT_RSS, service->limit_rss, "LimitRSS= is deprecated on Linux");
+#else
+    SET_RLIMIT("RLIMIT_RSS", RLIMIT_RSS, service->limit_rss, NULL);
+#endif
+
+    /* LimitAS - Address space limit */
+    SET_RLIMIT("RLIMIT_AS", RLIMIT_AS, service->limit_as, NULL);
+
+    /* LimitNPROC - Process limit */
+    SET_RLIMIT("RLIMIT_NPROC", RLIMIT_NPROC, service->limit_nproc, NULL);
+
+    /* LimitMEMLOCK - Locked memory limit */
+    SET_RLIMIT("RLIMIT_MEMLOCK", RLIMIT_MEMLOCK, service->limit_memlock, NULL);
+
+    /* LimitLOCKS - File locks (obsolete on Linux) */
+#ifdef __linux__
+    SET_RLIMIT("RLIMIT_LOCKS", RLIMIT_LOCKS, service->limit_locks, "LimitLOCKS= is obsolete on Linux (since kernel 2.4.25)");
+#else
+    SET_RLIMIT("RLIMIT_LOCKS", RLIMIT_LOCKS, service->limit_locks, NULL);
+#endif
+
+    /* Linux-only limits */
+#ifdef __linux__
+    /* LimitSIGPENDING - Pending signals limit (Linux only) */
+    SET_RLIMIT("RLIMIT_SIGPENDING", RLIMIT_SIGPENDING, service->limit_sigpending, NULL);
+
+    /* LimitMSGQUEUE - Message queue bytes (Linux only) */
+    SET_RLIMIT("RLIMIT_MSGQUEUE", RLIMIT_MSGQUEUE, service->limit_msgqueue, NULL);
+
+    /* LimitNICE - Nice priority (Linux only) */
+    SET_RLIMIT("RLIMIT_NICE", RLIMIT_NICE, service->limit_nice, NULL);
+
+    /* LimitRTPRIO - Real-time priority (Linux only) */
+    SET_RLIMIT("RLIMIT_RTPRIO", RLIMIT_RTPRIO, service->limit_rtprio, NULL);
+
+    /* LimitRTTIME - Real-time CPU time (Linux only) */
+    SET_RLIMIT("RLIMIT_RTTIME", RLIMIT_RTTIME, service->limit_rttime, NULL);
+#else
+    /* Warn if Linux-only limits are used on other platforms */
+    if (service->limit_sigpending >= 0) {
+        log_msg(LOG_WARNING, "init", "LimitSIGPENDING= not supported on this platform");
+    }
+    if (service->limit_msgqueue >= 0) {
+        log_msg(LOG_WARNING, "init", "LimitMSGQUEUE= not supported on this platform");
+    }
+    if (service->limit_nice >= 0) {
+        log_msg(LOG_WARNING, "init", "LimitNICE= not supported on this platform");
+    }
+    if (service->limit_rtprio >= 0) {
+        log_msg(LOG_WARNING, "init", "LimitRTPRIO= not supported on this platform");
+    }
+    if (service->limit_rttime >= 0) {
+        log_msg(LOG_WARNING, "init", "LimitRTTIME= not supported on this platform");
+    }
+#endif
+
+#undef SET_RLIMIT
 
     return 0;
 }

@@ -1,4 +1,4 @@
-/* test-service-features.c - Test PrivateTmp, LimitNOFILE, KillMode
+/* test-service-features.c - Test PrivateTmp, Limit* directives, KillMode
  *
  * Copyright (c) 2025 DJ Lucas
  * SPDX-License-Identifier: MIT
@@ -111,6 +111,95 @@ static void test_parse_limit_nofile(void) {
     cleanup_temp_file(path3);
 
     printf("✓ LimitNOFILE parsing works\n");
+}
+
+/* Test parsing all Limit* directives */
+static void test_parse_all_limits(void) {
+    struct unit_file unit = {0};
+
+    /* Test all limit directives with numeric values */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "LimitCPU=300\n"
+        "LimitFSIZE=1073741824\n"
+        "LimitDATA=536870912\n"
+        "LimitSTACK=8388608\n"
+        "LimitCORE=0\n"
+        "LimitRSS=268435456\n"
+        "LimitAS=1073741824\n"
+        "LimitNPROC=512\n"
+        "LimitMEMLOCK=65536\n"
+        "LimitLOCKS=1024\n"
+        "LimitSIGPENDING=4096\n"
+        "LimitMSGQUEUE=819200\n"
+        "LimitNICE=0\n"
+        "LimitRTPRIO=50\n"
+        "LimitRTTIME=1000000\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.limit_cpu == 300);
+    assert(unit.config.service.limit_fsize == 1073741824);
+    assert(unit.config.service.limit_data == 536870912);
+    assert(unit.config.service.limit_stack == 8388608);
+    assert(unit.config.service.limit_core == 0);
+    assert(unit.config.service.limit_rss == 268435456);
+    assert(unit.config.service.limit_as == 1073741824);
+    assert(unit.config.service.limit_nproc == 512);
+    assert(unit.config.service.limit_memlock == 65536);
+    assert(unit.config.service.limit_locks == 1024);
+    assert(unit.config.service.limit_sigpending == 4096);
+    assert(unit.config.service.limit_msgqueue == 819200);
+    assert(unit.config.service.limit_nice == 0);
+    assert(unit.config.service.limit_rtprio == 50);
+    assert(unit.config.service.limit_rttime == 1000000);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test infinity values */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "LimitCPU=infinity\n"
+        "LimitFSIZE=infinity\n"
+        "LimitCORE=infinity\n"
+        "LimitAS=infinity\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.limit_cpu == 0);     /* 0 = infinity */
+    assert(unit.config.service.limit_fsize == 0);
+    assert(unit.config.service.limit_core == 0);
+    assert(unit.config.service.limit_as == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default values (not set) */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.limit_cpu == -1);    /* -1 = not set */
+    assert(unit.config.service.limit_fsize == -1);
+    assert(unit.config.service.limit_data == -1);
+    assert(unit.config.service.limit_stack == -1);
+    assert(unit.config.service.limit_core == -1);
+    assert(unit.config.service.limit_rss == -1);
+    assert(unit.config.service.limit_as == -1);
+    assert(unit.config.service.limit_nproc == -1);
+    assert(unit.config.service.limit_memlock == -1);
+    assert(unit.config.service.limit_locks == -1);
+    assert(unit.config.service.limit_sigpending == -1);
+    assert(unit.config.service.limit_msgqueue == -1);
+    assert(unit.config.service.limit_nice == -1);
+    assert(unit.config.service.limit_rtprio == -1);
+    assert(unit.config.service.limit_rttime == -1);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ All Limit* directives parsing works\n");
 }
 
 /* Test parsing KillMode */
@@ -673,10 +762,11 @@ static void test_root_directory_directive(void) {
 }
 
 int main(void) {
-    printf("Testing service features (PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory)...\n");
+    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
+    test_parse_all_limits();
     test_parse_kill_mode();
     test_combined_features();
     test_parse_remain_after_exit();

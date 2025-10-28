@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (24 test suites, 185 individual tests; 4 marked privileged)
+# Build and run all tests (24 test suites, 186 individual tests; 4 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -270,10 +270,11 @@ Tests socket activator IPC communication:
 - Socket status request serialization
 - Socket activation notification serialization
 
-### test-service-features (19 tests)
+### test-service-features (20 tests)
 Tests service directive parsing:
 - **PrivateTmp parsing** - Tests true/false/yes/1 parsing
 - **LimitNOFILE parsing** - Tests numeric values, "infinity", and default (-1)
+- **All Limit* directives parsing** - Tests all 15 resource limit directives with numeric values, "infinity", and defaults
 - **KillMode parsing** - Tests all four modes (process, control-group, mixed, none) and default
 - **Combined features** - Tests all three directives together in one service file
 - **RemainAfterExit parsing** - Tests yes/no/true/false parsing and default behavior
@@ -294,6 +295,7 @@ Tests service directive parsing:
 **Key features tested:**
 - PrivateTmp=true|false (default: false)
 - LimitNOFILE=N|infinity (default: -1 = not set)
+- LimitCPU / LimitFSIZE / LimitDATA / LimitSTACK / LimitCORE / LimitRSS / LimitAS / LimitNPROC / LimitMEMLOCK / LimitLOCKS / LimitSIGPENDING / LimitMSGQUEUE / LimitNICE / LimitRTPRIO / LimitRTTIME (all support N|infinity, default: -1)
 - KillMode=process|control-group|mixed|none (default: process)
 - RemainAfterExit=yes|no (default: false)
 - StandardInput=null|tty|tty-force|inherit|file:path|socket|data (default: inherit)
@@ -377,7 +379,7 @@ Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 24 test suites, 185 individual tests - all passing ✅**
+**Total: 24 test suites, 186 individual tests - all passing ✅**
 
 **Regular tests:** 20 suites (no root required)
 **Privileged tests:** 4 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement)

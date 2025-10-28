@@ -413,7 +413,8 @@ Standard systemd INI format
 - RestartSec
 - TimeoutStartSec, TimeoutStopSec
 - PrivateTmp (Linux only - mount namespaces)
-- LimitNOFILE (portable - setrlimit)
+- LimitNOFILE, LimitCPU, LimitFSIZE, LimitDATA, LimitSTACK, LimitCORE, LimitRSS, LimitAS, LimitNPROC, LimitMEMLOCK, LimitLOCKS (portable - setrlimit)
+- LimitSIGPENDING, LimitMSGQUEUE, LimitNICE, LimitRTPRIO, LimitRTTIME (Linux only - setrlimit)
 - KillMode (portable - process groups)
 
 **[Timer]:**
@@ -460,37 +461,61 @@ PrivateTmp=true    # or false, default: false
 - Cleans up automatically when service exits
 - Reduces attack surface for privilege escalation
 
-#### LimitNOFILE (Portable)
+#### Resource Limit Directives (Limit*)
 
-**Purpose:** Control maximum number of open file descriptors
+**Purpose:** Control resource consumption via POSIX setrlimit(2)
 
 **Implementation:**
-- Uses `setrlimit(RLIMIT_NOFILE)` (POSIX standard)
+- Uses `setrlimit()` (POSIX standard) for all limits
 - Applied before dropping privileges
 - Both soft and hard limits set to same value
+- Supports numeric values or `infinity` for unlimited
 
 **Platform Support:**
-- Fully portable across all Unix-like systems
-- Uses standard POSIX setrlimit(2)
+
+*Portable limits (all Unix-like systems):*
+- `LimitNOFILE=` - File descriptor limit (RLIMIT_NOFILE)
+- `LimitCPU=` - CPU time in seconds (RLIMIT_CPU)
+- `LimitFSIZE=` - Maximum file size in bytes (RLIMIT_FSIZE)
+- `LimitDATA=` - Data segment size in bytes (RLIMIT_DATA)
+- `LimitSTACK=` - Stack size in bytes (RLIMIT_STACK)
+- `LimitCORE=` - Core dump size in bytes (RLIMIT_CORE)
+- `LimitAS=` - Address space size in bytes (RLIMIT_AS)
+- `LimitNPROC=` - Maximum number of processes (RLIMIT_NPROC)
+- `LimitMEMLOCK=` - Locked memory in bytes (RLIMIT_MEMLOCK)
+
+*Platform-specific limits:*
+- `LimitRSS=` - Resident set size (RLIMIT_RSS, deprecated on Linux)
+- `LimitLOCKS=` - File locks (RLIMIT_LOCKS, obsolete on Linux since 2.4.25)
+- `LimitSIGPENDING=` - Queued signals (RLIMIT_SIGPENDING, Linux only)
+- `LimitMSGQUEUE=` - POSIX message queue bytes (RLIMIT_MSGQUEUE, Linux only)
+- `LimitNICE=` - Nice priority (RLIMIT_NICE, Linux only)
+- `LimitRTPRIO=` - Real-time priority (RLIMIT_RTPRIO, Linux only)
+- `LimitRTTIME=` - Real-time CPU time in microseconds (RLIMIT_RTTIME, Linux only)
 
 **Usage:**
 ```ini
 [Service]
 ExecStart=/usr/bin/myapp
-LimitNOFILE=65536       # Set to specific value
+LimitNOFILE=65536       # File descriptors
+LimitCPU=300            # 5 minutes CPU time
+LimitFSIZE=1073741824   # 1GB max file size
+LimitCORE=0             # Disable core dumps
+LimitNPROC=512          # Max 512 processes
 # or
 LimitNOFILE=infinity    # Remove limit (sets RLIM_INFINITY)
 ```
 
 **Values:**
-- Numeric: Specific limit (e.g., `65536`)
-- `infinity`: Unlimited file descriptors
+- Numeric: Specific limit (resource-dependent units)
+- `infinity`: Unlimited (sets RLIM_INFINITY)
 - Default: `-1` (not set, inherits system default)
 
 **Common Use Cases:**
-- Database servers (need many connections)
-- Web servers (many concurrent requests)
-- File servers (many open files)
+- Database servers: High `LimitNOFILE` for many connections
+- Web servers: `LimitNOFILE` for concurrent requests
+- Security: `LimitCORE=0` to disable core dumps
+- Resource control: `LimitCPU`, `LimitAS`, `LimitNPROC` for containment
 
 #### KillMode (Portable)
 
@@ -1286,19 +1311,6 @@ Notes:
   RootImage=
   MountFlags=
   MemoryLimit=
-  LimitCPU=
-  LimitFSIZE=
-  LimitDATA=
-  LimitSTACK=
-  LimitCORE=
-  LimitRSS=
-  LimitNPROC=
-  LimitMEMLOCK=
-  LimitSIGPENDING=
-  LimitMSGQUEUE=
-  LimitNICE=
-  LimitRTPRIO=
-  LimitRTTIME=
 
 [Timer]
   AccuracySec=
@@ -1428,7 +1440,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**24 test suites, 185 individual tests - all passing**
+**24 test suites, 186 individual tests - all passing**
 
 1. **calendar parser** - Calendar expression parsing
 2. **unit file parser** - Unit file parsing & validation
@@ -1442,7 +1454,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 10. **integration** - End-to-end workflows
 11. **timer IPC protocol** - Timer daemon IPC communication
 12. **socket IPC protocol** - Socket daemon IPC communication
-13. **service features** - PrivateTmp, LimitNOFILE, KillMode, RemainAfterExit, StandardInput/Output/Error parsing
+13. **service features** - PrivateTmp, all Limit* directives (16 total), KillMode, RemainAfterExit, StandardInput/Output/Error parsing
 14. **service registry** - DoS prevention and rate limiting (includes 62s timing test)
 15. **timer inactivity notify** - OnUnitInactiveSec rescheduling
 16. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
@@ -1465,7 +1477,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - ✅ Logging system (buffering, syslog)
 - ✅ Socket activation
 - ✅ Calendar expressions
-- ✅ Service directives (PrivateTmp, LimitNOFILE, KillMode parsing)
+- ✅ Service directives (PrivateTmp, all Limit* directives, KillMode parsing)
 - ✅ Service registry (DoS prevention, rate limiting with real timing validation)
 - ✅ Integration workflows
 - ✅ Privileged operations (enable, disable, convert systemd units)
