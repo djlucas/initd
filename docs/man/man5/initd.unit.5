@@ -409,6 +409,14 @@ Restart policy. One of:
 Time to wait before restarting a service. Takes a time value in seconds
 (optionally with unit suffix: s, min, h). Default: 100ms.
 .TP
+.B RestartMaxDelaySec=
+Maximum delay for exponential backoff when restarting a service. When set,
+the restart delay starts at RestartSec and doubles with each restart until
+it reaches this maximum value. For example, with RestartSec=1 and
+RestartMaxDelaySec=60, delays will be: 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s...
+This prevents rapid restart loops while allowing eventual recovery. Default: 0
+(no exponential backoff, constant RestartSec delay).
+.TP
 .B RestartPreventExitStatus=
 Space-separated list of numeric exit codes that should never trigger a
 restart even when Restart= would do so. Values outside the range 0-255 are
@@ -659,6 +667,26 @@ does not change the current working directory, so the service automatically
 changes to / within the chroot after the chroot call. This provides
 filesystem isolation for security hardening. Available on all POSIX systems
 (Linux, BSD, Hurd). Example: RootDirectory=/var/chroot/myservice
+.TP
+.B RestrictSUIDSGID=
+Boolean. If true, ensures any execve() calls cannot gain privileges via
+setuid/setgid file mode bits. Implemented using
+.BR prctl(PR_SET_NO_NEW_PRIVS)
+on Linux and
+.BR procctl(PROC_NO_NEW_PRIVS_CTL)
+on FreeBSD. Not supported on NetBSD, OpenBSD, or GNU Hurd (logs warning and
+continues). This is similar to NoNewPrivileges but specifically targets
+suid/sgid execution. Default: false.
+.TP
+.B MemoryLimit=
+Sets the maximum memory (address space) the service process may use. May be a
+number in bytes or
+.B infinity
+to remove the limit. This is a simplified alias for LimitAS that matches
+systemd's MemoryLimit directive. Uses
+.BR setrlimit(RLIMIT_AS)
+which is POSIX portable. Example: MemoryLimit=1073741824 (1 GB). Default:
+inherit from system.
 .SH [TIMER] SECTION
 The
 .B [Timer]

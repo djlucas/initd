@@ -836,6 +836,25 @@ static pid_t start_service_process(const struct service_section *service,
 #endif
         }
 
+        /* Restrict SUID/SGID if specified (same mechanism as no_new_privs) */
+        if (service->restrict_suid_sgid) {
+#ifdef __linux__
+            if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
+                log_error("supervisor", "prctl(PR_SET_NO_NEW_PRIVS): %s", strerror(errno));
+                _exit(1);
+            }
+#elif defined(__FreeBSD__)
+            int enable = PROC_NO_NEW_PRIVS_ENABLE;
+            if (procctl(P_PID, 0, PROC_NO_NEW_PRIVS_CTL, &enable) < 0) {
+                log_error("supervisor", "procctl(PROC_NO_NEW_PRIVS_CTL): %s", strerror(errno));
+                _exit(1);
+            }
+#else
+            /* NetBSD/OpenBSD/Hurd: no equivalent - log warning and continue */
+            log_warning("supervisor", "RestrictSUIDSGID= not supported on this platform");
+#endif
+        }
+
         /* Exec service using argv (NO SHELL - prevents injection) */
         execv(exec_path, argv);
 

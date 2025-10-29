@@ -478,6 +478,9 @@ int setup_service_environment(const struct service_section *service) {
     }
 #endif
 
+    /* MemoryLimit - alias for address space limit (portable) */
+    SET_RLIMIT("RLIMIT_AS", RLIMIT_AS, service->memory_limit, NULL);
+
 #undef SET_RLIMIT
 
     return 0;

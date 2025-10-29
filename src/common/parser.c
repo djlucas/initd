@@ -630,6 +630,12 @@ static int parse_service_key(struct service_section *service, const char *key, c
     } else if (strcmp(key, "RootDirectory") == 0) {
         strncpy(service->root_directory, value, sizeof(service->root_directory) - 1);
         service->root_directory[sizeof(service->root_directory) - 1] = '\0';
+    } else if (strcmp(key, "RestartMaxDelaySec") == 0) {
+        service->restart_max_delay_sec = atoi(value);
+    } else if (strcmp(key, "RestrictSUIDSGID") == 0) {
+        service->restrict_suid_sgid = parse_boolean(value);
+    } else if (strcmp(key, "MemoryLimit") == 0) {
+        service->memory_limit = parse_limit_value(value);
     } else {
         return -1; /* Unknown key */
     }
@@ -750,6 +756,9 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.private_tmp = false;        /* Default: no private /tmp */
     unit->config.service.runtime_max_sec = 0;        /* Default: unlimited */
     unit->unit.default_dependencies = true;          /* Default: implicit dependencies enabled */
+    unit->config.service.restart_max_delay_sec = 0;  /* Default: not set (no exponential backoff) */
+    unit->config.service.restrict_suid_sgid = false; /* Default: allow suid/sgid */
+    unit->config.service.memory_limit = -1;          /* Default: not set */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

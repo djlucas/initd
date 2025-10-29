@@ -240,6 +240,9 @@ struct service_section {
     mode_t umask_value;           /* UMask= (octal file creation mask) */
     bool no_new_privs;            /* NoNewPrivileges= (prevent privilege escalation on execve) */
     char root_directory[MAX_PATH]; /* RootDirectory= (chroot jail path) */
+    int restart_max_delay_sec;    /* RestartMaxDelaySec= (max exponential backoff delay, 0 = not set) */
+    bool restrict_suid_sgid;      /* RestrictSUIDSGID= (remove suid/sgid bits on exec) */
+    long memory_limit;            /* MemoryLimit= (address space limit in bytes, -1 = not set) */
 };
 
 /* [Timer] section */

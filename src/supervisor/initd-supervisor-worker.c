@@ -1442,6 +1442,7 @@ static bool condition_kernel_version(const char *value) {
 
 static bool condition_kernel_command_line(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     FILE *f = fopen("/proc/cmdline", "r");
     if (!f) {
         return false;
@@ -1465,6 +1466,7 @@ static bool condition_kernel_command_line(const char *value, const char *unit_na
 
 static bool condition_kernel_module_loaded(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Check /proc/modules first */
     FILE *f = fopen("/proc/modules", "r");
     if (f) {
@@ -1494,6 +1496,7 @@ static bool condition_kernel_module_loaded(const char *value, const char *unit_n
 
 static bool condition_security(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Check for SELinux */
     if (strcmp(value, "selinux") == 0) {
         return access("/sys/fs/selinux", F_OK) == 0;
@@ -1524,6 +1527,7 @@ static bool condition_security(const char *value, const char *unit_name) {
 
 static bool condition_capability(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Simple check: CAP_* capabilities require root or specific caps */
     /* For now, just check if running as root (uid 0) */
     /* Full implementation would use capget() to check specific capabilities */
@@ -1541,6 +1545,7 @@ static bool condition_capability(const char *value, const char *unit_name) {
 
 static bool condition_control_group_controller(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Check cgroup v2 controllers in /sys/fs/cgroup/cgroup.controllers */
     FILE *f = fopen("/sys/fs/cgroup/cgroup.controllers", "r");
     if (f) {
@@ -1577,6 +1582,7 @@ static bool condition_control_group_controller(const char *value, const char *un
 
 static bool condition_memory_pressure(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Parse PSI format: "some avg10=X.XX avg60=X.XX avg300=X.XX total=XXXXXX" */
     /* For simplicity, just check if the file exists and is readable */
     /* Full implementation would parse the percentage and compare to threshold */
@@ -1596,6 +1602,7 @@ static bool condition_memory_pressure(const char *value, const char *unit_name) 
 
 static bool condition_cpu_pressure(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     (void)value;
     FILE *f = fopen("/proc/pressure/cpu", "r");
     if (!f) {
@@ -1612,6 +1619,7 @@ static bool condition_cpu_pressure(const char *value, const char *unit_name) {
 
 static bool condition_io_pressure(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     (void)value;
     FILE *f = fopen("/proc/pressure/io", "r");
     if (!f) {
@@ -1628,6 +1636,7 @@ static bool condition_io_pressure(const char *value, const char *unit_name) {
 
 static bool condition_path_is_encrypted(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Check if path is on an encrypted filesystem (dm-crypt/LUKS) */
     /* Simple heuristic: check /sys/block/dm-NNN/dm/name for "crypt" */
     (void)value;
@@ -1667,6 +1676,7 @@ static bool condition_path_is_encrypted(const char *value, const char *unit_name
 
 static bool condition_firmware(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Check if system uses UEFI or BIOS */
     if (strcmp(value, "uefi") == 0) {
         return access("/sys/firmware/efi", F_OK) == 0;
@@ -1684,6 +1694,7 @@ static bool condition_firmware(const char *value, const char *unit_name) {
 
 static bool condition_cpu_feature(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Read /proc/cpuinfo and check for CPU features */
     FILE *f = fopen("/proc/cpuinfo", "r");
     if (!f) {
@@ -1710,6 +1721,7 @@ static bool condition_cpu_feature(const char *value, const char *unit_name) {
 
 static bool condition_version(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Compare systemd/kernel/glibc versions */
     /* For now, just return false (not implemented) */
     /* Full implementation would parse value like ">=245" and compare */
@@ -1724,6 +1736,7 @@ static bool condition_version(const char *value, const char *unit_name) {
 
 static bool condition_credential(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Check systemd credential system (/run/credentials/) */
     char cred_path[512];
     snprintf(cred_path, sizeof(cred_path), "/run/credentials/%s", value);
@@ -1737,6 +1750,7 @@ static bool condition_credential(const char *value, const char *unit_name) {
 
 static bool condition_needs_update(const char *value, const char *unit_name) {
 #ifdef __linux__
+    (void)unit_name;
     /* Check systemd update markers */
     if (strcmp(value, "/etc") == 0) {
         return access("/etc/.updated", F_OK) != 0;  /* Needs update if marker missing */
@@ -1747,7 +1761,7 @@ static bool condition_needs_update(const char *value, const char *unit_name) {
     return false;
 #else
     (void)value;
-    log_msg(LOG_WARNING, unit_name, "ConditionNeedsUpdate not supported on this platform");
+    (void)unit_name;
     return false;
 #endif
 }
@@ -1757,6 +1771,7 @@ static bool condition_first_boot(const char *value, const char *unit_name) {
     /* Check if /etc/machine-id exists and is valid */
     /* First boot = machine-id doesn't exist or is uninitialized */
     (void)value;
+    (void)unit_name;
     FILE *f = fopen("/etc/machine-id", "r");
     if (!f) {
         return true;  /* First boot: no machine-id */
@@ -1783,7 +1798,7 @@ static bool condition_first_boot(const char *value, const char *unit_name) {
     return true;  /* Empty file = first boot */
 #else
     (void)value;
-    log_msg(LOG_WARNING, unit_name, "ConditionFirstBoot not supported on this platform");
+    (void)unit_name;
     return false;
 #endif
 }
@@ -2139,6 +2154,19 @@ static void handle_service_exit(pid_t pid, int exit_status) {
     if (should_restart && !shutdown_requested) {
         int restart_sec = unit->config.service.restart_sec;
         if (restart_sec <= 0) restart_sec = 1; /* Default 1 second */
+
+        /* Apply exponential backoff if RestartMaxDelaySec is set */
+        if (unit->config.service.restart_max_delay_sec > 0 && unit->restart_count > 0) {
+            /* Exponential backoff: delay = min(restart_sec * 2^restart_count, max_delay) */
+            int backoff_delay = restart_sec;
+            for (int i = 0; i < unit->restart_count && backoff_delay < unit->config.service.restart_max_delay_sec; i++) {
+                backoff_delay *= 2;
+                if (backoff_delay > unit->config.service.restart_max_delay_sec) {
+                    backoff_delay = unit->config.service.restart_max_delay_sec;
+                }
+            }
+            restart_sec = backoff_delay;
+        }
 
         log_info("worker", "Restarting %s in %d seconds (restart count: %d)",
                  unit->name, restart_sec, unit->restart_count + 1);

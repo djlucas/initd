@@ -1256,9 +1256,6 @@ Notes:
 #### TODO: Other systemd directives
 
 [Service]
-
-[Service]
-  RestartMaxDelaySec=
   TimeoutAbortSec=
   TimeoutStartFailureMode=
   LogLevelMax=
@@ -1271,10 +1268,8 @@ Notes:
   DeviceAllow=
   ProtectKernelTunables=
   ProtectControlGroups=
-  RestrictSUIDSGID=
   RootImage=
   MountFlags=
-  MemoryLimit=
 
 [Timer]
   AccuracySec=

@@ -761,8 +761,131 @@ static void test_root_directory_directive(void) {
     printf("✓ RootDirectory directive parsing works\n");
 }
 
+/* Test MemoryLimit */
+static void test_memory_limit_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test numeric value */
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "MemoryLimit=1073741824\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.memory_limit == 1073741824);  /* 1 GB */
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    /* Test infinity */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "MemoryLimit=infinity\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.memory_limit == 0);  /* 0 = unlimited */
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default (not set) */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.memory_limit == -1);  /* -1 = not set */
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ MemoryLimit directive parsing works\n");
+}
+
+/* Test RestrictSUIDSGID */
+static void test_restrict_suid_sgid_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test default (false) */
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.restrict_suid_sgid == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    /* Test RestrictSUIDSGID=no */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "RestrictSUIDSGID=no\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.restrict_suid_sgid == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test RestrictSUIDSGID=yes */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "RestrictSUIDSGID=yes\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.restrict_suid_sgid == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ RestrictSUIDSGID directive parsing works\n");
+}
+
+/* Test RestartMaxDelaySec */
+static void test_restart_max_delay_sec_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test numeric value */
+    char *path = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "RestartMaxDelaySec=300\n"
+    );
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.service.restart_max_delay_sec == 300);
+    free_unit_file(&unit);
+    cleanup_temp_file(path);
+
+    /* Test another value */
+    memset(&unit, 0, sizeof(unit));
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+        "RestartMaxDelaySec=60\n"
+    );
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.restart_max_delay_sec == 60);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default (not set) */
+    memset(&unit, 0, sizeof(unit));
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.restart_max_delay_sec == 0);  /* 0 = not set */
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ RestartMaxDelaySec directive parsing works\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory)...\n");
+    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -783,6 +906,9 @@ int main(void) {
     test_umask_directive();
     test_no_new_privs_directive();
     test_root_directory_directive();
+    test_memory_limit_directive();
+    test_restrict_suid_sgid_directive();
+    test_restart_max_delay_sec_directive();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;
