@@ -370,8 +370,27 @@ static int stop_service(struct unit_file *unit) {
             waited++;
         }
 
-        /* Timeout - send SIGKILL */
-        /* fprintf(stderr, "worker: %s stop timeout, sending SIGKILL\n", unit->name); */
+        /* Timeout - if TimeoutAbortSec is set, send SIGABRT first, then SIGKILL */
+        if (unit->config.service.timeout_abort_sec > 0) {
+            /* fprintf(stderr, "worker: %s stop timeout, sending SIGABRT\n", unit->name); */
+            kill(unit->pid, SIGABRT);
+
+            /* Wait for TimeoutAbortSec before SIGKILL */
+            int abort_timeout = unit->config.service.timeout_abort_sec;
+            waited = 0;
+            while (waited < abort_timeout) {
+                if (kill(unit->pid, 0) < 0) {
+                    /* Process is gone */
+                    unit->pid = 0;
+                    return 0;
+                }
+                sleep(1);
+                waited++;
+            }
+        }
+
+        /* Final kill with SIGKILL */
+        /* fprintf(stderr, "worker: %s sending SIGKILL\n", unit->name); */
         kill(unit->pid, SIGKILL);
         sleep(1); /* Give it a moment */
         unit->pid = 0;
@@ -3028,6 +3047,64 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
             unit->start_visit_state = DEP_VISIT_NONE;
             return -1;
         }
+
+        /* Monitor start timeout if configured
+         * For Type=oneshot: Wait for process to complete within timeout
+         * For Type=simple/forking: This feature is less useful without sd_notify,
+         * but we implement it as: if process dies within timeout, it's a failure */
+        int timeout_start = unit->config.service.timeout_start_sec;
+        if (timeout_start > 0 && unit->config.service.type == SERVICE_ONESHOT) {
+            /* For oneshot services, wait for completion or timeout */
+            int waited = 0;
+            while (waited < timeout_start) {
+                if (kill(unit->pid, 0) < 0) {
+                    /* Process completed - check exit status will be done elsewhere */
+                    break;
+                }
+                sleep(1);
+                waited++;
+            }
+
+            /* Check if process is still running after timeout */
+            if (kill(unit->pid, 0) == 0) {
+                /* Process still running - exceeded timeout, kill it per TimeoutStartFailureMode */
+                log_service_failed(unit->name, unit->unit.description,
+                                   "start timeout expired (oneshot did not complete)");
+
+                int failure_mode = unit->config.service.timeout_start_failure_mode;
+                int signal_to_send = SIGTERM;  /* Default: terminate */
+
+                if (failure_mode == 1) {
+                    signal_to_send = SIGABRT;  /* abort */
+                } else if (failure_mode == 2) {
+                    signal_to_send = SIGKILL;  /* kill */
+                }
+
+                kill(unit->pid, signal_to_send);
+
+                /* Wait briefly for process to die */
+                int kill_waited = 0;
+                while (kill_waited < 5) {
+                    if (kill(unit->pid, 0) < 0) {
+                        break;
+                    }
+                    sleep(1);
+                    kill_waited++;
+                }
+
+                /* Final SIGKILL if still alive and we didn't already use SIGKILL */
+                if (signal_to_send != SIGKILL && kill(unit->pid, 0) == 0) {
+                    kill(unit->pid, SIGKILL);
+                }
+
+                unit->state = STATE_FAILED;
+                unit->pid = 0;
+                trigger_on_failure(unit);
+                unit->start_visit_state = DEP_VISIT_NONE;
+                return -1;
+            }
+        }
+
         /* Service started successfully - log it */
         log_service_started(unit->name, unit->unit.description);
     } else if (unit->type == UNIT_TARGET) {

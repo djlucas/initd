@@ -1256,8 +1256,6 @@ Notes:
 #### TODO: Other systemd directives
 
 [Service]
-  TimeoutAbortSec=
-  TimeoutStartFailureMode=
   LogLevelMax=
   ProtectSystem=
   ProtectHome=

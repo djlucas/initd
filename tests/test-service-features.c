@@ -884,8 +884,94 @@ static void test_restart_max_delay_sec_directive(void) {
     printf("✓ RestartMaxDelaySec directive parsing works\n");
 }
 
+/* Test TimeoutAbortSec directive */
+static void test_timeout_abort_sec_directive(void) {
+    struct unit_file unit = {0};
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "TimeoutAbortSec=10\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.timeout_abort_sec == 10);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "TimeoutAbortSec=0\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.timeout_abort_sec == 0);  /* 0 = use TimeoutStopSec */
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default (not set) */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.timeout_abort_sec == 0);  /* 0 = not set, use TimeoutStopSec */
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ TimeoutAbortSec directive parsing works\n");
+}
+
+/* Test TimeoutStartFailureMode directive */
+static void test_timeout_start_failure_mode_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test "terminate" */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "TimeoutStartFailureMode=terminate\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.timeout_start_failure_mode == 0);  /* 0 = terminate */
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test "abort" */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "TimeoutStartFailureMode=abort\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.timeout_start_failure_mode == 1);  /* 1 = abort */
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test "kill" */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "TimeoutStartFailureMode=kill\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.timeout_start_failure_mode == 2);  /* 2 = kill */
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test default (not set) */
+    char *path4 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.timeout_start_failure_mode == 0);  /* 0 = default (terminate) */
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    printf("✓ TimeoutStartFailureMode directive parsing works\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec)...\n");
+    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec, TimeoutAbortSec, TimeoutStartFailureMode)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -909,6 +995,8 @@ int main(void) {
     test_memory_limit_directive();
     test_restrict_suid_sgid_directive();
     test_restart_max_delay_sec_directive();
+    test_timeout_abort_sec_directive();
+    test_timeout_start_failure_mode_directive();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

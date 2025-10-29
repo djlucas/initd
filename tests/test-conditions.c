@@ -31,10 +31,10 @@ static char *create_temp_unit_file(const char *content) {
 }
 
 /* Cleanup temp file */
-static void cleanup_temp_file(char *path) {
+static void cleanup_temp_file(const char *path) {
     if (path) {
         unlink(path);
-        free(path);
+        free((void *)path);
     }
 }
 

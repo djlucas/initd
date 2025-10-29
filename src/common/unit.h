@@ -243,6 +243,8 @@ struct service_section {
     int restart_max_delay_sec;    /* RestartMaxDelaySec= (max exponential backoff delay, 0 = not set) */
     bool restrict_suid_sgid;      /* RestrictSUIDSGID= (remove suid/sgid bits on exec) */
     long memory_limit;            /* MemoryLimit= (address space limit in bytes, -1 = not set) */
+    int timeout_abort_sec;        /* TimeoutAbortSec= (timeout for abort signal, 0 = use TimeoutStopSec) */
+    int timeout_start_failure_mode; /* TimeoutStartFailureMode= (0=terminate, 1=abort, 2=kill) */
 };
 
 /* [Timer] section */

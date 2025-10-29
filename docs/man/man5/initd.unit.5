@@ -428,12 +428,34 @@ Restart=no. Values outside the range 0-255 are ignored.
 .SS Timeout Configuration
 .TP
 .B TimeoutStartSec=
-Time to wait for service startup. If the service does not become active
-within this time, it is considered failed. Default: 90s.
+Time to wait for service startup. For Type=oneshot services, if the service
+does not complete within this time, it is killed according to
+TimeoutStartFailureMode. For Type=simple services, this is primarily useful
+as a monitoring period to detect immediate crashes. Default: 90s.
 .TP
 .B TimeoutStopSec=
 Time to wait for service shutdown. If the service does not stop within
-this time, it is forcefully terminated with SIGKILL. Default: 90s.
+this time, it is terminated with SIGABRT (if TimeoutAbortSec is set) or
+SIGKILL. Default: 90s.
+.TP
+.B TimeoutAbortSec=
+Configures an intermediate timeout for service stop operations. When
+TimeoutStopSec expires, the service is first sent SIGABRT instead of SIGKILL.
+If the service does not terminate within TimeoutAbortSec, SIGKILL is sent.
+This allows services to generate core dumps on stop timeout. If set to 0 or
+not set, SIGKILL is sent immediately when TimeoutStopSec expires. Default: 0
+(not set).
+.TP
+.B TimeoutStartFailureMode=
+Configures which signal to send when a startup timeout occurs (TimeoutStartSec
+expires). Valid values are
+.B terminate
+(send SIGTERM),
+.B abort
+(send SIGABRT for core dump), and
+.B kill
+(send SIGKILL immediately). This is primarily relevant for Type=oneshot
+services that may hang during initialization. Default: terminate.
 .TP
 .B RemainAfterExit=
 Boolean. If true, the service is considered active even after the process

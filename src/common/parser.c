@@ -636,6 +636,16 @@ static int parse_service_key(struct service_section *service, const char *key, c
         service->restrict_suid_sgid = parse_boolean(value);
     } else if (strcmp(key, "MemoryLimit") == 0) {
         service->memory_limit = parse_limit_value(value);
+    } else if (strcmp(key, "TimeoutAbortSec") == 0) {
+        service->timeout_abort_sec = atoi(value);
+    } else if (strcmp(key, "TimeoutStartFailureMode") == 0) {
+        if (strcmp(value, "terminate") == 0) {
+            service->timeout_start_failure_mode = 0;
+        } else if (strcmp(value, "abort") == 0) {
+            service->timeout_start_failure_mode = 1;
+        } else if (strcmp(value, "kill") == 0) {
+            service->timeout_start_failure_mode = 2;
+        }
     } else {
         return -1; /* Unknown key */
     }
@@ -759,6 +769,8 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.restart_max_delay_sec = 0;  /* Default: not set (no exponential backoff) */
     unit->config.service.restrict_suid_sgid = false; /* Default: allow suid/sgid */
     unit->config.service.memory_limit = -1;          /* Default: not set */
+    unit->config.service.timeout_abort_sec = 0;      /* Default: use TimeoutStopSec */
+    unit->config.service.timeout_start_failure_mode = 0;  /* Default: terminate */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
