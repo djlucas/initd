@@ -970,8 +970,247 @@ static void test_timeout_start_failure_mode_directive(void) {
     printf("✓ TimeoutStartFailureMode directive parsing works\n");
 }
 
+/* Test ProtectSystem directive */
+static void test_protect_system_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test no */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectSystem=no\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.protect_system == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test yes */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectSystem=yes\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.protect_system == 1);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test full */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectSystem=full\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.protect_system == 2);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test strict */
+    char *path4 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectSystem=strict\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.protect_system == 3);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    /* Test default */
+    char *path5 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path5, &unit) == 0);
+    assert(unit.config.service.protect_system == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path5);
+
+    printf("✓ ProtectSystem directive parsing works\n");
+}
+
+/* Test ProtectHome directive */
+static void test_protect_home_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test no */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectHome=no\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.protect_home == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test yes */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectHome=yes\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.protect_home == 1);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test read-only */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectHome=read-only\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.protect_home == 2);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test tmpfs */
+    char *path4 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectHome=tmpfs\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.protect_home == 3);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    /* Test default */
+    char *path5 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path5, &unit) == 0);
+    assert(unit.config.service.protect_home == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path5);
+
+    printf("✓ ProtectHome directive parsing works\n");
+}
+
+/* Test PrivateDevices directive */
+static void test_private_devices_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test yes */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "PrivateDevices=yes\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.private_devices == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test no */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "PrivateDevices=no\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.private_devices == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.private_devices == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ PrivateDevices directive parsing works\n");
+}
+
+/* Test ProtectKernelTunables directive */
+static void test_protect_kernel_tunables_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test yes */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectKernelTunables=yes\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.protect_kernel_tunables == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test no */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectKernelTunables=no\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.protect_kernel_tunables == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.protect_kernel_tunables == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ ProtectKernelTunables directive parsing works\n");
+}
+
+/* Test ProtectControlGroups directive */
+static void test_protect_control_groups_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test yes */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectControlGroups=yes\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.protect_control_groups == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test no */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "ProtectControlGroups=no\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.protect_control_groups == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.protect_control_groups == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("✓ ProtectControlGroups directive parsing works\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec, TimeoutAbortSec, TimeoutStartFailureMode)...\n");
+    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec, TimeoutAbortSec, TimeoutStartFailureMode, ProtectSystem, ProtectHome, PrivateDevices, ProtectKernelTunables, ProtectControlGroups)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -997,6 +1236,11 @@ int main(void) {
     test_restart_max_delay_sec_directive();
     test_timeout_abort_sec_directive();
     test_timeout_start_failure_mode_directive();
+    test_protect_system_directive();
+    test_protect_home_directive();
+    test_private_devices_directive();
+    test_protect_kernel_tunables_directive();
+    test_protect_control_groups_directive();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

@@ -646,6 +646,32 @@ static int parse_service_key(struct service_section *service, const char *key, c
         } else if (strcmp(value, "kill") == 0) {
             service->timeout_start_failure_mode = 2;
         }
+    } else if (strcmp(key, "ProtectSystem") == 0) {
+        if (strcmp(value, "no") == 0 || strcmp(value, "false") == 0) {
+            service->protect_system = 0;
+        } else if (strcmp(value, "yes") == 0 || strcmp(value, "true") == 0) {
+            service->protect_system = 1;
+        } else if (strcmp(value, "full") == 0) {
+            service->protect_system = 2;
+        } else if (strcmp(value, "strict") == 0) {
+            service->protect_system = 3;
+        }
+    } else if (strcmp(key, "ProtectHome") == 0) {
+        if (strcmp(value, "no") == 0 || strcmp(value, "false") == 0) {
+            service->protect_home = 0;
+        } else if (strcmp(value, "yes") == 0 || strcmp(value, "true") == 0) {
+            service->protect_home = 1;
+        } else if (strcmp(value, "read-only") == 0) {
+            service->protect_home = 2;
+        } else if (strcmp(value, "tmpfs") == 0) {
+            service->protect_home = 3;
+        }
+    } else if (strcmp(key, "PrivateDevices") == 0) {
+        service->private_devices = parse_boolean(value);
+    } else if (strcmp(key, "ProtectKernelTunables") == 0) {
+        service->protect_kernel_tunables = parse_boolean(value);
+    } else if (strcmp(key, "ProtectControlGroups") == 0) {
+        service->protect_control_groups = parse_boolean(value);
     } else {
         return -1; /* Unknown key */
     }
@@ -771,6 +797,11 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.memory_limit = -1;          /* Default: not set */
     unit->config.service.timeout_abort_sec = 0;      /* Default: use TimeoutStopSec */
     unit->config.service.timeout_start_failure_mode = 0;  /* Default: terminate */
+    unit->config.service.protect_system = 0;         /* Default: no protection */
+    unit->config.service.protect_home = 0;           /* Default: no protection */
+    unit->config.service.private_devices = false;    /* Default: use host /dev */
+    unit->config.service.protect_kernel_tunables = false; /* Default: writable /proc/sys, /sys */
+    unit->config.service.protect_control_groups = false;  /* Default: writable /sys/fs/cgroup */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

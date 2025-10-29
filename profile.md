@@ -1257,15 +1257,10 @@ Notes:
 
 [Service]
   LogLevelMax=
-  ProtectSystem=
-  ProtectHome=
   CapabilityBoundingSet=
   AmbientCapabilities=
   DynamicUser=
-  PrivateDevices=
   DeviceAllow=
-  ProtectKernelTunables=
-  ProtectControlGroups=
   RootImage=
   MountFlags=
 

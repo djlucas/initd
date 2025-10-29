@@ -709,6 +709,55 @@ systemd's MemoryLimit directive. Uses
 .BR setrlimit(RLIMIT_AS)
 which is POSIX portable. Example: MemoryLimit=1073741824 (1 GB). Default:
 inherit from system.
+.TP
+.B ProtectSystem=
+Makes various system directories read-only for the service. Valid values:
+.B no
+(default, no protection),
+.B yes
+or
+.B true
+(make /usr and /boot read-only),
+.B full
+(also make /etc read-only), and
+.B strict
+(make entire / read-only except /dev, /proc, /sys). Uses mount namespaces on
+Linux. Not supported on other platforms (logs warning). Provides defense in
+depth against service compromise. Default: no.
+.TP
+.B ProtectHome=
+Restricts service access to home directories. Valid values:
+.B no
+(default, full access),
+.B yes
+or
+.B true
+(make /home and /root inaccessible),
+.B read-only
+(mount /home and /root read-only), and
+.B tmpfs
+(mount empty tmpfs over /home and /root). Uses mount namespaces on Linux. Not
+supported on other platforms (logs warning). Prevents services from accessing
+user data. Default: no.
+.TP
+.B PrivateDevices=
+Boolean. If true, sets up a minimal private /dev filesystem with only essential
+device nodes (null, zero, full, random, urandom, tty). Prevents services from
+accessing physical devices, USB devices, etc. Uses mount namespaces on Linux.
+Not supported on other platforms (logs warning). Useful for services that don't
+need hardware access. Default: false.
+.TP
+.B ProtectKernelTunables=
+Boolean. If true, makes /proc/sys and /sys read-only for the service. Prevents
+the service from modifying kernel parameters or sysfs attributes. Uses mount
+namespaces on Linux. Not supported on other platforms (logs warning). Hardens
+services against kernel exploitation. Default: false.
+.TP
+.B ProtectControlGroups=
+Boolean. If true, makes /sys/fs/cgroup read-only for the service. Prevents the
+service from modifying cgroup settings. Uses mount namespaces on Linux. Not
+supported on other platforms (logs warning). Prevents privilege escalation via
+cgroup manipulation. Default: false.
 .SH [TIMER] SECTION
 The
 .B [Timer]

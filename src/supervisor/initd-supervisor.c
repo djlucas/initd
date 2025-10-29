@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE  /* for unshare(), CLONE_NEWNS */
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE
 #include <stdio.h>
@@ -36,6 +37,8 @@
 #include <sys/statfs.h>
 #include <linux/magic.h>
 #include <sys/prctl.h>
+#include <sched.h>       /* for unshare(), CLONE_NEWNS */
+#include <sys/sysmacros.h> /* for makedev() */
 #endif
 #ifdef __FreeBSD__
 #include <sys/procctl.h>
@@ -770,6 +773,127 @@ static pid_t start_service_process(const struct service_section *service,
             _exit(1);
         }
 
+        /* Set up mount namespace for sandboxing directives (Linux-only) */
+#ifdef __linux__
+        if (service->protect_system > 0 || service->protect_home > 0 ||
+            service->private_devices || service->protect_kernel_tunables ||
+            service->protect_control_groups) {
+
+            /* Create new mount namespace */
+            if (unshare(CLONE_NEWNS) < 0) {
+                log_error("supervisor", "unshare(CLONE_NEWNS): %s", strerror(errno));
+                _exit(1);
+            }
+
+            /* Make all mounts private to prevent propagation */
+            if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) < 0) {
+                log_error("supervisor", "mount(MS_PRIVATE): %s", strerror(errno));
+                _exit(1);
+            }
+
+            /* ProtectSystem= - make system directories read-only */
+            if (service->protect_system >= 1) {
+                /* yes/true: protect /usr and /boot */
+                const char *sys_dirs[] = {"/usr", "/boot", NULL};
+                for (int i = 0; sys_dirs[i]; i++) {
+                    struct stat st;
+                    if (stat(sys_dirs[i], &st) == 0) {
+                        if (mount(sys_dirs[i], sys_dirs[i], NULL, MS_BIND | MS_RDONLY | MS_REMOUNT, NULL) < 0) {
+                            log_warn("supervisor", "mount(%s, MS_RDONLY): %s", sys_dirs[i], strerror(errno));
+                        }
+                    }
+                }
+            }
+            if (service->protect_system >= 2) {
+                /* full: also protect /etc */
+                struct stat st;
+                if (stat("/etc", &st) == 0) {
+                    if (mount("/etc", "/etc", NULL, MS_BIND | MS_RDONLY | MS_REMOUNT, NULL) < 0) {
+                        log_warn("supervisor", "mount(/etc, MS_RDONLY): %s", strerror(errno));
+                    }
+                }
+            }
+            if (service->protect_system >= 3) {
+                /* strict: make entire / read-only except /dev, /proc, /sys */
+                if (mount("/", "/", NULL, MS_BIND | MS_RDONLY | MS_REMOUNT, NULL) < 0) {
+                    log_warn("supervisor", "mount(/, MS_RDONLY): %s", strerror(errno));
+                }
+            }
+
+            /* ProtectHome= - restrict access to home directories */
+            if (service->protect_home >= 1) {
+                const char *home_dirs[] = {"/home", "/root", NULL};
+                for (int i = 0; home_dirs[i]; i++) {
+                    struct stat st;
+                    if (stat(home_dirs[i], &st) == 0) {
+                        if (service->protect_home == 1) {
+                            /* yes: make inaccessible (bind mount empty dir) */
+                            if (mount("tmpfs", home_dirs[i], "tmpfs", MS_NOSUID | MS_NODEV | MS_STRICTATIME, "mode=000") < 0) {
+                                log_warn("supervisor", "mount(%s, tmpfs): %s", home_dirs[i], strerror(errno));
+                            }
+                        } else if (service->protect_home == 2) {
+                            /* read-only */
+                            if (mount(home_dirs[i], home_dirs[i], NULL, MS_BIND | MS_RDONLY | MS_REMOUNT, NULL) < 0) {
+                                log_warn("supervisor", "mount(%s, MS_RDONLY): %s", home_dirs[i], strerror(errno));
+                            }
+                        } else if (service->protect_home == 3) {
+                            /* tmpfs: mount empty tmpfs */
+                            if (mount("tmpfs", home_dirs[i], "tmpfs", MS_NOSUID | MS_NODEV | MS_STRICTATIME, "mode=0755") < 0) {
+                                log_warn("supervisor", "mount(%s, tmpfs): %s", home_dirs[i], strerror(errno));
+                            }
+                        }
+                    }
+                }
+            }
+
+            /* PrivateDevices= - mount minimal /dev */
+            if (service->private_devices) {
+                if (mount("tmpfs", "/dev", "tmpfs", MS_NOSUID | MS_STRICTATIME, "mode=0755") < 0) {
+                    log_warn("supervisor", "mount(/dev, tmpfs): %s", strerror(errno));
+                }
+                /* Create essential device nodes: null, zero, full, random, urandom, tty */
+                const char *devs[] = {"null", "zero", "full", "random", "urandom", "tty", NULL};
+                for (int i = 0; devs[i]; i++) {
+                    char path[64];
+                    snprintf(path, sizeof(path), "/dev/%s", devs[i]);
+                    mknod(path, S_IFCHR | 0666, makedev(1, i));
+                }
+            }
+
+            /* ProtectKernelTunables= - make /proc/sys and /sys read-only */
+            if (service->protect_kernel_tunables) {
+                struct stat st;
+                if (stat("/proc/sys", &st) == 0) {
+                    if (mount("/proc/sys", "/proc/sys", NULL, MS_BIND | MS_RDONLY | MS_REMOUNT, NULL) < 0) {
+                        log_warn("supervisor", "mount(/proc/sys, MS_RDONLY): %s", strerror(errno));
+                    }
+                }
+                if (stat("/sys", &st) == 0) {
+                    if (mount("/sys", "/sys", NULL, MS_BIND | MS_RDONLY | MS_REMOUNT, NULL) < 0) {
+                        log_warn("supervisor", "mount(/sys, MS_RDONLY): %s", strerror(errno));
+                    }
+                }
+            }
+
+            /* ProtectControlGroups= - make /sys/fs/cgroup read-only */
+            if (service->protect_control_groups) {
+                struct stat st;
+                if (stat("/sys/fs/cgroup", &st) == 0) {
+                    if (mount("/sys/fs/cgroup", "/sys/fs/cgroup", NULL, MS_BIND | MS_RDONLY | MS_REMOUNT, NULL) < 0) {
+                        log_warn("supervisor", "mount(/sys/fs/cgroup, MS_RDONLY): %s", strerror(errno));
+                    }
+                }
+            }
+        }
+#else
+        /* Warn on non-Linux platforms */
+        if (service->protect_system > 0 || service->protect_home > 0 ||
+            service->private_devices || service->protect_kernel_tunables ||
+            service->protect_control_groups) {
+            log_warn("supervisor", "Sandboxing directives (ProtectSystem, ProtectHome, etc.) not supported on this platform");
+        }
+#endif
+
         /* chroot if RootDirectory is specified (must be done before dropping privileges) */
         if (service->root_directory[0] != '\0') {
             if (chroot(service->root_directory) < 0) {
@@ -832,7 +956,7 @@ static pid_t start_service_process(const struct service_section *service,
             }
 #else
             /* OpenBSD/Hurd: no equivalent - log warning and continue */
-            log_warning("supervisor", "NoNewPrivileges= not supported on this platform");
+            log_warn("supervisor", "NoNewPrivileges= not supported on this platform");
 #endif
         }
 
@@ -851,7 +975,7 @@ static pid_t start_service_process(const struct service_section *service,
             }
 #else
             /* NetBSD/OpenBSD/Hurd: no equivalent - log warning and continue */
-            log_warning("supervisor", "RestrictSUIDSGID= not supported on this platform");
+            log_warn("supervisor", "RestrictSUIDSGID= not supported on this platform");
 #endif
         }
 

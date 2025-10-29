@@ -245,6 +245,11 @@ struct service_section {
     long memory_limit;            /* MemoryLimit= (address space limit in bytes, -1 = not set) */
     int timeout_abort_sec;        /* TimeoutAbortSec= (timeout for abort signal, 0 = use TimeoutStopSec) */
     int timeout_start_failure_mode; /* TimeoutStartFailureMode= (0=terminate, 1=abort, 2=kill) */
+    int protect_system;           /* ProtectSystem= (0=no, 1=yes, 2=full, 3=strict) */
+    int protect_home;             /* ProtectHome= (0=no, 1=yes, 2=read-only, 3=tmpfs) */
+    bool private_devices;         /* PrivateDevices= (mount private /dev with minimal nodes) */
+    bool protect_kernel_tunables; /* ProtectKernelTunables= (make /proc/sys, /sys read-only) */
+    bool protect_control_groups;  /* ProtectControlGroups= (make /sys/fs/cgroup read-only) */
 };
 
 /* [Timer] section */

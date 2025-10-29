@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (26 test suites, 218 individual tests; 4 marked privileged)
+# Build and run all tests (26 test suites, 223 individual tests; 4 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -270,7 +270,7 @@ Tests socket activator IPC communication:
 - Socket status request serialization
 - Socket activation notification serialization
 
-### test-service-features (25 tests)
+### test-service-features (30 tests)
 Tests service directive parsing:
 - **PrivateTmp parsing** - Tests true/false/yes/1 parsing
 - **LimitNOFILE parsing** - Tests numeric values, "infinity", and default (-1)
@@ -296,6 +296,11 @@ Tests service directive parsing:
 - **RestartMaxDelaySec directive** - Tests numeric values and default (0 = no exponential backoff)
 - **TimeoutAbortSec directive** - Tests numeric values and default (0 = use TimeoutStopSec)
 - **TimeoutStartFailureMode directive** - Tests terminate/abort/kill modes and default (terminate)
+- **ProtectSystem directive** - Tests no/yes/full/strict modes and default (no)
+- **ProtectHome directive** - Tests no/yes/read-only/tmpfs modes and default (no)
+- **PrivateDevices directive** - Tests yes/no parsing and default (false)
+- **ProtectKernelTunables directive** - Tests yes/no parsing and default (false)
+- **ProtectControlGroups directive** - Tests yes/no parsing and default (false)
 
 **Key features tested:**
 - PrivateTmp=true|false (default: false)
@@ -444,7 +449,7 @@ Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 26 test suites, 218 individual tests - all passing ✅**
+**Total: 26 test suites, 223 individual tests - all passing ✅**
 
 **Regular tests:** 22 suites (no root required)
 **Privileged tests:** 4 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement)
