@@ -341,6 +341,66 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
         add_condition(unit, CONDITION_KERNEL_VERSION, value, false);
     } else if (strcmp(key, "AssertKernelVersion") == 0) {
         add_condition(unit, CONDITION_KERNEL_VERSION, value, true);
+    } else if (strcmp(key, "ConditionKernelCommandLine") == 0) {
+        add_condition(unit, CONDITION_KERNEL_COMMAND_LINE, value, false);
+    } else if (strcmp(key, "AssertKernelCommandLine") == 0) {
+        add_condition(unit, CONDITION_KERNEL_COMMAND_LINE, value, true);
+    } else if (strcmp(key, "ConditionKernelModuleLoaded") == 0) {
+        add_condition(unit, CONDITION_KERNEL_MODULE_LOADED, value, false);
+    } else if (strcmp(key, "AssertKernelModuleLoaded") == 0) {
+        add_condition(unit, CONDITION_KERNEL_MODULE_LOADED, value, true);
+    } else if (strcmp(key, "ConditionSecurity") == 0) {
+        add_condition(unit, CONDITION_SECURITY, value, false);
+    } else if (strcmp(key, "AssertSecurity") == 0) {
+        add_condition(unit, CONDITION_SECURITY, value, true);
+    } else if (strcmp(key, "ConditionCapability") == 0) {
+        add_condition(unit, CONDITION_CAPABILITY, value, false);
+    } else if (strcmp(key, "AssertCapability") == 0) {
+        add_condition(unit, CONDITION_CAPABILITY, value, true);
+    } else if (strcmp(key, "ConditionControlGroupController") == 0) {
+        add_condition(unit, CONDITION_CONTROL_GROUP_CONTROLLER, value, false);
+    } else if (strcmp(key, "AssertControlGroupController") == 0) {
+        add_condition(unit, CONDITION_CONTROL_GROUP_CONTROLLER, value, true);
+    } else if (strcmp(key, "ConditionMemoryPressure") == 0) {
+        add_condition(unit, CONDITION_MEMORY_PRESSURE, value, false);
+    } else if (strcmp(key, "AssertMemoryPressure") == 0) {
+        add_condition(unit, CONDITION_MEMORY_PRESSURE, value, true);
+    } else if (strcmp(key, "ConditionCPUPressure") == 0) {
+        add_condition(unit, CONDITION_CPU_PRESSURE, value, false);
+    } else if (strcmp(key, "AssertCPUPressure") == 0) {
+        add_condition(unit, CONDITION_CPU_PRESSURE, value, true);
+    } else if (strcmp(key, "ConditionIOPressure") == 0) {
+        add_condition(unit, CONDITION_IO_PRESSURE, value, false);
+    } else if (strcmp(key, "AssertIOPressure") == 0) {
+        add_condition(unit, CONDITION_IO_PRESSURE, value, true);
+    } else if (strcmp(key, "ConditionPathIsEncrypted") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_ENCRYPTED, value, false);
+    } else if (strcmp(key, "AssertPathIsEncrypted") == 0) {
+        add_condition(unit, CONDITION_PATH_IS_ENCRYPTED, value, true);
+    } else if (strcmp(key, "ConditionFirmware") == 0) {
+        add_condition(unit, CONDITION_FIRMWARE, value, false);
+    } else if (strcmp(key, "AssertFirmware") == 0) {
+        add_condition(unit, CONDITION_FIRMWARE, value, true);
+    } else if (strcmp(key, "ConditionCPUFeature") == 0) {
+        add_condition(unit, CONDITION_CPU_FEATURE, value, false);
+    } else if (strcmp(key, "AssertCPUFeature") == 0) {
+        add_condition(unit, CONDITION_CPU_FEATURE, value, true);
+    } else if (strcmp(key, "ConditionVersion") == 0) {
+        add_condition(unit, CONDITION_VERSION, value, false);
+    } else if (strcmp(key, "AssertVersion") == 0) {
+        add_condition(unit, CONDITION_VERSION, value, true);
+    } else if (strcmp(key, "ConditionCredential") == 0) {
+        add_condition(unit, CONDITION_CREDENTIAL, value, false);
+    } else if (strcmp(key, "AssertCredential") == 0) {
+        add_condition(unit, CONDITION_CREDENTIAL, value, true);
+    } else if (strcmp(key, "ConditionNeedsUpdate") == 0) {
+        add_condition(unit, CONDITION_NEEDS_UPDATE, value, false);
+    } else if (strcmp(key, "AssertNeedsUpdate") == 0) {
+        add_condition(unit, CONDITION_NEEDS_UPDATE, value, true);
+    } else if (strcmp(key, "ConditionFirstBoot") == 0) {
+        add_condition(unit, CONDITION_FIRST_BOOT, value, false);
+    } else if (strcmp(key, "AssertFirstBoot") == 0) {
+        add_condition(unit, CONDITION_FIRST_BOOT, value, true);
     } else {
         return -1; /* Unknown key */
     }

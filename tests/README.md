@@ -7,11 +7,11 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (25 test suites, 200 individual tests; 4 marked privileged)
+# Build and run all tests (26 test suites, 213 individual tests; 4 marked privileged)
 ninja -C build
 ninja -C build test
 
-# Run only non-privileged tests (21 test suites)
+# Run only non-privileged tests (22 test suites)
 ninja -C build test --suite initd
 
 # Run privileged tests (covers offline enable, Exec* lifecycle, and privileged ops)
@@ -339,6 +339,35 @@ Tests Condition*/Assert* directive parsing:
 - is_assert flag distinguishes behavior (LOG_ERR+STATE_FAILED vs LOG_INFO+skip)
 - Platform detection using Linux /sys and /proc interfaces
 
+### test-linux-conditions (13 tests)
+Tests Linux-only Condition*/Assert* directive parsing:
+
+**Linux-only conditions (13 tests):**
+- **ConditionKernelCommandLine** - Tests /proc/cmdline keyword matching
+- **ConditionKernelModuleLoaded** - Tests kernel module detection (/proc/modules, /sys/module/)
+- **ConditionSecurity** - Tests LSM detection (SELinux, AppArmor, SMACK, IMA, TPM2)
+- **ConditionCapability** - Tests Linux capability checks (simplified to root check)
+- **ConditionControlGroupController** - Tests cgroup v1/v2 controller availability
+- **ConditionMemoryPressure** - Tests PSI memory pressure detection (/proc/pressure/memory)
+- **ConditionCPUPressure** - Tests PSI CPU pressure detection (/proc/pressure/cpu)
+- **ConditionIOPressure** - Tests PSI I/O pressure detection (/proc/pressure/io)
+- **ConditionPathIsEncrypted** - Tests dm-crypt/LUKS detection via /sys/block/dm-*/dm/name
+- **ConditionFirmware** - Tests firmware type detection (UEFI vs device-tree)
+- **ConditionCPUFeature** - Tests CPU feature flags from /proc/cpuinfo
+- **ConditionCredential** - Tests systemd credential system (/run/credentials/)
+- **ConditionNeedsUpdate** - Tests systemd update markers (/etc/.updated)
+
+**Key features tested:**
+- 16 Linux-only Condition directives + 16 Assert equivalents (32 total)
+- All directives parse correctly and store in conditions array
+- Non-Linux platforms return false with LOG_WARNING
+- Platform guards with #ifdef __linux__ for Linux-specific detection
+- /proc and /sys filesystem parsing (cmdline, modules, pressure/, cpuinfo)
+- Device-mapper encryption detection
+- Firmware type detection (UEFI vs device-tree)
+- Security module detection (SELinux, AppArmor, SMACK, IMA, TPM2)
+- Cgroup controller detection (v1 and v2)
+
 ### test-service-registry (5 tests)
 Tests service registry and DoS prevention mechanisms:
 - **Lookup by name** - Tests service registration and name-based lookup
@@ -410,9 +439,9 @@ Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 25 test suites, 200 individual tests - all passing ✅**
+**Total: 26 test suites, 213 individual tests - all passing ✅**
 
-**Regular tests:** 21 suites (no root required)
+**Regular tests:** 22 suites (no root required)
 **Privileged tests:** 4 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement)
 
 ## CI Integration

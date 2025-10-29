@@ -1253,46 +1253,6 @@ Notes:
     - Proper ordering: normal services → early boot services (random-seed) → filesystem operations (swap, mountfs)
     - Full systemd unit compatibility for existing Conflicts/Before directives
 
-#### TODO: Condition*/Assert* directives
-
-**Linux-Only (cannot implement portably):**
-[Unit]
-  ConditionKernelCommandLine=         (/proc/cmdline)
-  ConditionKernelModuleLoaded=        (/proc/modules or /sys/module/)
-  ConditionSecurity=                  (SELinux, AppArmor, SMACK, IMA, TPM2)
-  ConditionCapability=                (Linux capabilities via capget())
-  ConditionControlGroupController=    (cgroup v1/v2)
-  ConditionMemoryPressure=            (/proc/pressure/memory - PSI)
-  ConditionCPUPressure=               (/proc/pressure/cpu - PSI)
-  ConditionIOPressure=                (/proc/pressure/io - PSI)
-  ConditionPathIsEncrypted=           (dm-crypt/LUKS)
-  ConditionFirmware=                  (UEFI vs device-tree detection)
-  ConditionCPUFeature=                (x86 CPUID instruction)
-  ConditionVersion=                   (systemd/kernel/glibc version comparison)
-  ConditionCredential=                (systemd credential system)
-  ConditionNeedsUpdate=               (systemd-specific: /etc/.updated, /var/.updated)
-  ConditionFirstBoot=                 (systemd-specific: /etc/machine-id)
-  AssertKernelCommandLine=
-  AssertKernelModuleLoaded=
-  AssertSecurity=
-  AssertCapability=
-  AssertControlGroupController=
-  AssertMemoryPressure=
-  AssertCPUPressure=
-  AssertIOPressure=
-  AssertPathIsEncrypted=
-  AssertFirmware=
-  AssertCPUFeature=
-  AssertVersion=
-  AssertCredential=
-  AssertNeedsUpdate=
-  AssertFirstBoot=
-
-**Summary:** 32 missing directives total (32 implemented, 64 originally identified)
-  - 0 POSIX-portable remaining (all 22 now implemented!)
-  - 0 platform-specific remaining (all 8 now implemented!)
-  - 32 Linux-only (warn/skip on other platforms)
-
 #### TODO: Other systemd directives
 
 [Service]

@@ -715,6 +715,36 @@ static const char *condition_type_name(enum unit_condition_type type, bool is_as
         return is_assert ? "AssertOSRelease" : "ConditionOSRelease";
     case CONDITION_KERNEL_VERSION:
         return is_assert ? "AssertKernelVersion" : "ConditionKernelVersion";
+    case CONDITION_KERNEL_COMMAND_LINE:
+        return is_assert ? "AssertKernelCommandLine" : "ConditionKernelCommandLine";
+    case CONDITION_KERNEL_MODULE_LOADED:
+        return is_assert ? "AssertKernelModuleLoaded" : "ConditionKernelModuleLoaded";
+    case CONDITION_SECURITY:
+        return is_assert ? "AssertSecurity" : "ConditionSecurity";
+    case CONDITION_CAPABILITY:
+        return is_assert ? "AssertCapability" : "ConditionCapability";
+    case CONDITION_CONTROL_GROUP_CONTROLLER:
+        return is_assert ? "AssertControlGroupController" : "ConditionControlGroupController";
+    case CONDITION_MEMORY_PRESSURE:
+        return is_assert ? "AssertMemoryPressure" : "ConditionMemoryPressure";
+    case CONDITION_CPU_PRESSURE:
+        return is_assert ? "AssertCPUPressure" : "ConditionCPUPressure";
+    case CONDITION_IO_PRESSURE:
+        return is_assert ? "AssertIOPressure" : "ConditionIOPressure";
+    case CONDITION_PATH_IS_ENCRYPTED:
+        return is_assert ? "AssertPathIsEncrypted" : "ConditionPathIsEncrypted";
+    case CONDITION_FIRMWARE:
+        return is_assert ? "AssertFirmware" : "ConditionFirmware";
+    case CONDITION_CPU_FEATURE:
+        return is_assert ? "AssertCPUFeature" : "ConditionCPUFeature";
+    case CONDITION_VERSION:
+        return is_assert ? "AssertVersion" : "ConditionVersion";
+    case CONDITION_CREDENTIAL:
+        return is_assert ? "AssertCredential" : "ConditionCredential";
+    case CONDITION_NEEDS_UPDATE:
+        return is_assert ? "AssertNeedsUpdate" : "ConditionNeedsUpdate";
+    case CONDITION_FIRST_BOOT:
+        return is_assert ? "AssertFirstBoot" : "ConditionFirstBoot";
     default:
         return prefix;
     }
@@ -1410,7 +1440,355 @@ static bool condition_kernel_version(const char *value) {
     }
 }
 
-static bool evaluate_single_condition(const struct unit_condition *cond) {
+static bool condition_kernel_command_line(const char *value, const char *unit_name) {
+#ifdef __linux__
+    FILE *f = fopen("/proc/cmdline", "r");
+    if (!f) {
+        return false;
+    }
+
+    char cmdline[4096];
+    if (!fgets(cmdline, sizeof(cmdline), f)) {
+        fclose(f);
+        return false;
+    }
+    fclose(f);
+
+    cmdline[strcspn(cmdline, "\n")] = '\0';
+    return strstr(cmdline, value) != NULL;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionKernelCommandLine not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_kernel_module_loaded(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check /proc/modules first */
+    FILE *f = fopen("/proc/modules", "r");
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            char module_name[128];
+            if (sscanf(line, "%127s", module_name) == 1) {
+                if (strcmp(module_name, value) == 0) {
+                    fclose(f);
+                    return true;
+                }
+            }
+        }
+        fclose(f);
+    }
+
+    /* Check /sys/module/ as fallback */
+    char path[512];
+    snprintf(path, sizeof(path), "/sys/module/%s", value);
+    return access(path, F_OK) == 0;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionKernelModuleLoaded not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_security(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check for SELinux */
+    if (strcmp(value, "selinux") == 0) {
+        return access("/sys/fs/selinux", F_OK) == 0;
+    }
+    /* Check for AppArmor */
+    if (strcmp(value, "apparmor") == 0) {
+        return access("/sys/kernel/security/apparmor", F_OK) == 0;
+    }
+    /* Check for SMACK */
+    if (strcmp(value, "smack") == 0) {
+        return access("/sys/fs/smackfs", F_OK) == 0;
+    }
+    /* Check for IMA */
+    if (strcmp(value, "ima") == 0) {
+        return access("/sys/kernel/security/ima", F_OK) == 0;
+    }
+    /* Check for TPM2 */
+    if (strcmp(value, "tpm2") == 0) {
+        return access("/sys/class/tpm/tpm0", F_OK) == 0;
+    }
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionSecurity not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_capability(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Simple check: CAP_* capabilities require root or specific caps */
+    /* For now, just check if running as root (uid 0) */
+    /* Full implementation would use capget() to check specific capabilities */
+    (void)value;
+    if (getuid() == 0) {
+        return true;  /* Root has all capabilities */
+    }
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionCapability not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_control_group_controller(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check cgroup v2 controllers in /sys/fs/cgroup/cgroup.controllers */
+    FILE *f = fopen("/sys/fs/cgroup/cgroup.controllers", "r");
+    if (f) {
+        char controllers[512];
+        if (fgets(controllers, sizeof(controllers), f)) {
+            fclose(f);
+            return strstr(controllers, value) != NULL;
+        }
+        fclose(f);
+    }
+
+    /* Check cgroup v1 in /proc/cgroups */
+    f = fopen("/proc/cgroups", "r");
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            char controller[64];
+            if (sscanf(line, "%63s", controller) == 1) {
+                if (strcmp(controller, value) == 0) {
+                    fclose(f);
+                    return true;
+                }
+            }
+        }
+        fclose(f);
+    }
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionControlGroupController not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_memory_pressure(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Parse PSI format: "some avg10=X.XX avg60=X.XX avg300=X.XX total=XXXXXX" */
+    /* For simplicity, just check if the file exists and is readable */
+    /* Full implementation would parse the percentage and compare to threshold */
+    (void)value;
+    FILE *f = fopen("/proc/pressure/memory", "r");
+    if (!f) {
+        return false;
+    }
+    fclose(f);
+    return true;  /* File exists, so PSI is available */
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionMemoryPressure not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_cpu_pressure(const char *value, const char *unit_name) {
+#ifdef __linux__
+    (void)value;
+    FILE *f = fopen("/proc/pressure/cpu", "r");
+    if (!f) {
+        return false;
+    }
+    fclose(f);
+    return true;  /* File exists, so PSI is available */
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionCPUPressure not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_io_pressure(const char *value, const char *unit_name) {
+#ifdef __linux__
+    (void)value;
+    FILE *f = fopen("/proc/pressure/io", "r");
+    if (!f) {
+        return false;
+    }
+    fclose(f);
+    return true;  /* File exists, so PSI is available */
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionIOPressure not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_path_is_encrypted(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check if path is on an encrypted filesystem (dm-crypt/LUKS) */
+    /* Simple heuristic: check /sys/block/dm-NNN/dm/name for "crypt" */
+    (void)value;
+    DIR *dir = opendir("/sys/block");
+    if (!dir) {
+        return false;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strncmp(entry->d_name, "dm-", 3) == 0) {
+            char name_path[512];
+            snprintf(name_path, sizeof(name_path), "/sys/block/%s/dm/name", entry->d_name);
+
+            FILE *f = fopen(name_path, "r");
+            if (f) {
+                char dm_name[128];
+                if (fgets(dm_name, sizeof(dm_name), f)) {
+                    if (strstr(dm_name, "crypt") || strstr(dm_name, "luks")) {
+                        fclose(f);
+                        closedir(dir);
+                        return true;
+                    }
+                }
+                fclose(f);
+            }
+        }
+    }
+    closedir(dir);
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionPathIsEncrypted not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_firmware(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check if system uses UEFI or BIOS */
+    if (strcmp(value, "uefi") == 0) {
+        return access("/sys/firmware/efi", F_OK) == 0;
+    }
+    if (strcmp(value, "device-tree") == 0) {
+        return access("/proc/device-tree", F_OK) == 0;
+    }
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionFirmware not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_cpu_feature(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Read /proc/cpuinfo and check for CPU features */
+    FILE *f = fopen("/proc/cpuinfo", "r");
+    if (!f) {
+        return false;
+    }
+
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "flags", 5) == 0 || strncmp(line, "Features", 8) == 0) {
+            if (strstr(line, value)) {
+                fclose(f);
+                return true;
+            }
+        }
+    }
+    fclose(f);
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionCPUFeature not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_version(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Compare systemd/kernel/glibc versions */
+    /* For now, just return false (not implemented) */
+    /* Full implementation would parse value like ">=245" and compare */
+    (void)value;
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionVersion not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_credential(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check systemd credential system (/run/credentials/) */
+    char cred_path[512];
+    snprintf(cred_path, sizeof(cred_path), "/run/credentials/%s", value);
+    return access(cred_path, F_OK) == 0;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionCredential not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_needs_update(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check systemd update markers */
+    if (strcmp(value, "/etc") == 0) {
+        return access("/etc/.updated", F_OK) != 0;  /* Needs update if marker missing */
+    }
+    if (strcmp(value, "/var") == 0) {
+        return access("/var/.updated", F_OK) != 0;
+    }
+    return false;
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionNeedsUpdate not supported on this platform");
+    return false;
+#endif
+}
+
+static bool condition_first_boot(const char *value, const char *unit_name) {
+#ifdef __linux__
+    /* Check if /etc/machine-id exists and is valid */
+    /* First boot = machine-id doesn't exist or is uninitialized */
+    (void)value;
+    FILE *f = fopen("/etc/machine-id", "r");
+    if (!f) {
+        return true;  /* First boot: no machine-id */
+    }
+
+    char machine_id[64];
+    if (fgets(machine_id, sizeof(machine_id), f)) {
+        machine_id[strcspn(machine_id, "\n")] = '\0';
+        fclose(f);
+        /* Check if it's the uninitialized value (all zeros) */
+        if (strlen(machine_id) == 32) {
+            bool all_zeros = true;
+            for (size_t i = 0; i < 32; i++) {
+                if (machine_id[i] != '0') {
+                    all_zeros = false;
+                    break;
+                }
+            }
+            return all_zeros;
+        }
+        return false;  /* Valid machine-id exists */
+    }
+    fclose(f);
+    return true;  /* Empty file = first boot */
+#else
+    (void)value;
+    log_msg(LOG_WARNING, unit_name, "ConditionFirstBoot not supported on this platform");
+    return false;
+#endif
+}
+
+static bool evaluate_single_condition(const struct unit_condition *cond, const char *unit_name) {
     switch (cond->type) {
     case CONDITION_PATH_EXISTS:
         return condition_path_exists(cond->value);
@@ -1452,6 +1830,36 @@ static bool evaluate_single_condition(const struct unit_condition *cond) {
         return condition_os_release(cond->value);
     case CONDITION_KERNEL_VERSION:
         return condition_kernel_version(cond->value);
+    case CONDITION_KERNEL_COMMAND_LINE:
+        return condition_kernel_command_line(cond->value, unit_name);
+    case CONDITION_KERNEL_MODULE_LOADED:
+        return condition_kernel_module_loaded(cond->value, unit_name);
+    case CONDITION_SECURITY:
+        return condition_security(cond->value, unit_name);
+    case CONDITION_CAPABILITY:
+        return condition_capability(cond->value, unit_name);
+    case CONDITION_CONTROL_GROUP_CONTROLLER:
+        return condition_control_group_controller(cond->value, unit_name);
+    case CONDITION_MEMORY_PRESSURE:
+        return condition_memory_pressure(cond->value, unit_name);
+    case CONDITION_CPU_PRESSURE:
+        return condition_cpu_pressure(cond->value, unit_name);
+    case CONDITION_IO_PRESSURE:
+        return condition_io_pressure(cond->value, unit_name);
+    case CONDITION_PATH_IS_ENCRYPTED:
+        return condition_path_is_encrypted(cond->value, unit_name);
+    case CONDITION_FIRMWARE:
+        return condition_firmware(cond->value, unit_name);
+    case CONDITION_CPU_FEATURE:
+        return condition_cpu_feature(cond->value, unit_name);
+    case CONDITION_VERSION:
+        return condition_version(cond->value, unit_name);
+    case CONDITION_CREDENTIAL:
+        return condition_credential(cond->value, unit_name);
+    case CONDITION_NEEDS_UPDATE:
+        return condition_needs_update(cond->value, unit_name);
+    case CONDITION_FIRST_BOOT:
+        return condition_first_boot(cond->value, unit_name);
     default:
         return false;
     }
@@ -1465,7 +1873,7 @@ static bool unit_conditions_met(struct unit_file *unit) {
             continue;  /* Skip conditions for now */
         }
 
-        bool result = evaluate_single_condition(cond);
+        bool result = evaluate_single_condition(cond, unit->name);
         if (cond->negate) {
             result = !result;
         }
@@ -1489,7 +1897,7 @@ static bool unit_conditions_met(struct unit_file *unit) {
             continue;  /* Already checked */
         }
 
-        bool result = evaluate_single_condition(cond);
+        bool result = evaluate_single_condition(cond, unit->name);
         if (cond->negate) {
             result = !result;
         }

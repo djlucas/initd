@@ -221,7 +221,92 @@ Kernel version comparison. Format: \fBOP VERSION\fR where OP is \fB>=\fR,
 Uses \fBuname()\fR for detection. Version format varies by OS. Prefix with
 \fB!\fR to invert.
 .TP
-.B AssertPathExists=, AssertPathExistsGlob=, AssertPathIsDirectory=, AssertPathIsSymbolicLink=, AssertPathIsMountPoint=, AssertPathIsReadWrite=, AssertDirectoryNotEmpty=, AssertFileIsExecutable=, AssertFileNotEmpty=, AssertUser=, AssertGroup=, AssertHost=, AssertArchitecture=, AssertMemory=, AssertCPUs=, AssertEnvironment=, AssertVirtualization=, AssertACPower=, AssertOSRelease=, AssertKernelVersion=
+.B ConditionKernelCommandLine=
+Kernel command line parameter check (Linux only). Checks \fB/proc/cmdline\fR
+for the specified keyword. Example: \fBConditionKernelCommandLine=quiet\fR.
+On non-Linux platforms, logs a warning and returns false. Prefix with \fB!\fR
+to invert.
+.TP
+.B ConditionKernelModuleLoaded=
+Kernel module loaded check (Linux only). Checks \fB/proc/modules\fR and
+\fB/sys/module/\fR for the specified module name. Example:
+\fBConditionKernelModuleLoaded=ext4\fR. On non-Linux platforms, logs a warning
+and returns false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionSecurity=
+Linux Security Module detection (Linux only). Detects active LSMs: \fBselinux\fR,
+\fBapparmor\fR, \fBsmack\fR, \fBima\fR, \fBtpm2\fR. Checks
+\fB/sys/fs/selinux\fR, \fB/sys/kernel/security/apparmor\fR,
+\fB/sys/kernel/security/smack\fR, \fB/sys/kernel/security/ima\fR, and
+\fB/sys/class/tpm\fR. On non-Linux platforms, logs a warning and returns false.
+Prefix with \fB!\fR to invert.
+.TP
+.B ConditionCapability=
+Linux capability check (Linux only). Currently simplified to root check. Will
+check for specific Linux capabilities in future implementation. On non-Linux
+platforms, logs a warning and returns false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionControlGroupController=
+Cgroup controller availability check (Linux only). Checks for cgroup v1
+controllers in \fB/proc/cgroups\fR and cgroup v2 controllers in
+\fB/sys/fs/cgroup/cgroup.controllers\fR. Example:
+\fBConditionControlGroupController=memory\fR. On non-Linux platforms, logs a
+warning and returns false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionMemoryPressure=
+Memory pressure check via PSI (Linux only). Checks
+\fB/proc/pressure/memory\fR for pressure stall information. On non-Linux
+platforms, logs a warning and returns false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionCPUPressure=
+CPU pressure check via PSI (Linux only). Checks \fB/proc/pressure/cpu\fR for
+pressure stall information. On non-Linux platforms, logs a warning and returns
+false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionIOPressure=
+I/O pressure check via PSI (Linux only). Checks \fB/proc/pressure/io\fR for
+pressure stall information. On non-Linux platforms, logs a warning and returns
+false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionPathIsEncrypted=
+Path encryption check (Linux only). Detects if a path is on an encrypted
+device via dm-crypt/LUKS. Checks \fB/sys/block/dm-*/dm/name\fR for crypt
+devices. On non-Linux platforms, logs a warning and returns false. Prefix with
+\fB!\fR to invert.
+.TP
+.B ConditionFirmware=
+Firmware type detection (Linux only). Detects \fBuefi\fR (via
+\fB/sys/firmware/efi\fR) or \fBdevice-tree\fR (via
+\fB/proc/device-tree\fR). On non-Linux platforms, logs a warning and returns
+false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionCPUFeature=
+CPU feature flag check (Linux only). Checks \fB/proc/cpuinfo\fR for CPU
+feature flags. Example: \fBConditionCPUFeature=avx2\fR. On non-Linux platforms,
+logs a warning and returns false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionVersion=
+Version comparison check (Linux only). Compares systemd/kernel/library versions.
+Currently a stub implementation. On non-Linux platforms, logs a warning and
+returns false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionCredential=
+Systemd credential check (Linux only). Checks for credentials in
+\fB/run/credentials/\fR. Example: \fBConditionCredential=my-secret\fR. On
+non-Linux platforms, logs a warning and returns false. Prefix with \fB!\fR to
+invert.
+.TP
+.B ConditionNeedsUpdate=
+Update marker check (Linux only). Checks for systemd update markers in
+\fB/etc/.updated\fR or \fB/var/.updated\fR. On non-Linux platforms, logs a
+warning and returns false. Prefix with \fB!\fR to invert.
+.TP
+.B ConditionFirstBoot=
+First boot detection (Linux only). Validates \fB/etc/machine-id\fR for
+systemd-style first boot detection. On non-Linux platforms, logs a warning and
+returns false. Prefix with \fB!\fR to invert.
+.TP
+.B AssertPathExists=, AssertPathExistsGlob=, AssertPathIsDirectory=, AssertPathIsSymbolicLink=, AssertPathIsMountPoint=, AssertPathIsReadWrite=, AssertDirectoryNotEmpty=, AssertFileIsExecutable=, AssertFileNotEmpty=, AssertUser=, AssertGroup=, AssertHost=, AssertArchitecture=, AssertMemory=, AssertCPUs=, AssertEnvironment=, AssertVirtualization=, AssertACPower=, AssertOSRelease=, AssertKernelVersion=, AssertKernelCommandLine=, AssertKernelModuleLoaded=, AssertSecurity=, AssertCapability=, AssertControlGroupController=, AssertMemoryPressure=, AssertCPUPressure=, AssertIOPressure=, AssertPathIsEncrypted=, AssertFirmware=, AssertCPUFeature=, AssertVersion=, AssertCredential=, AssertNeedsUpdate=, AssertFirstBoot=
 Assert equivalents of Condition directives. Unlike conditions which silently skip
 unit activation, failed assertions abort the start job with error logging (state
 becomes failed). Use assertions for critical requirements that indicate
