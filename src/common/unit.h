@@ -20,6 +20,7 @@
 #define MAX_RESTART_STATUS 16
 #define MAX_INSTALL_ENTRIES MAX_DEPS
 #define MAX_DEVICE_ALLOW 16
+#define MAX_CAPABILITIES 64
 #define INITD_DEFAULT_START_LIMIT_INTERVAL_SEC 60
 #define INITD_DEFAULT_START_LIMIT_BURST 5
 #define INITD_MIN_RESTART_INTERVAL_SEC 1
@@ -265,6 +266,10 @@ struct service_section {
     bool dynamic_user;            /* DynamicUser= (allocate ephemeral UID/GID) */
     struct device_allow device_allow[MAX_DEVICE_ALLOW]; /* DeviceAllow= (cgroup device whitelist) */
     int device_allow_count;       /* Number of DeviceAllow entries */
+    char *capability_bounding_set[MAX_CAPABILITIES]; /* CapabilityBoundingSet= (Linux capabilities to keep) */
+    int capability_bounding_set_count;  /* Number of bounding set capabilities */
+    char *ambient_capabilities[MAX_CAPABILITIES]; /* AmbientCapabilities= (Linux ambient capabilities) */
+    int ambient_capabilities_count;     /* Number of ambient capabilities */
 };
 
 /* [Timer] section */

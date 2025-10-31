@@ -43,6 +43,9 @@
 #ifdef __FreeBSD__
 #include <sys/procctl.h>
 #endif
+#if defined(__linux__) && defined(__HAVE_LIBCAP__)
+#include <sys/capability.h>
+#endif
 #include "../common/ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
@@ -957,6 +960,81 @@ static pid_t start_service_process(const struct service_section *service,
                 _exit(1);
             }
         }
+
+        /* Set up Linux capabilities (must be before dropping privileges) */
+#if defined(__linux__) && defined(__HAVE_LIBCAP__)
+        /* Linux with libcap - set up capabilities */
+        if (service->capability_bounding_set_count > 0 || service->ambient_capabilities_count > 0) {
+            cap_t caps = cap_get_proc();
+            if (!caps) {
+                log_error("supervisor", "Failed to get current capabilities: %s", strerror(errno));
+                exit(1);
+            }
+
+            /* Set capability bounding set */
+            if (service->capability_bounding_set_count > 0) {
+                /* Build capability set from names */
+                cap_value_t cap_vals[MAX_CAPABILITIES];
+                int cap_count = 0;
+
+                for (int i = 0; i < service->capability_bounding_set_count; i++) {
+                    if (cap_from_name(service->capability_bounding_set[i], &cap_vals[cap_count]) == 0) {
+                        cap_count++;
+                    } else {
+                        log_warn("supervisor", "Unknown capability: %s", service->capability_bounding_set[i]);
+                    }
+                }
+
+                if (cap_count > 0) {
+                    if (cap_set_flag(caps, CAP_PERMITTED, cap_count, cap_vals, CAP_SET) < 0 ||
+                        cap_set_flag(caps, CAP_EFFECTIVE, cap_count, cap_vals, CAP_SET) < 0) {
+                        log_error("supervisor", "Failed to set capability flags: %s", strerror(errno));
+                        cap_free(caps);
+                        exit(1);
+                    }
+
+                    if (cap_set_proc(caps) < 0) {
+                        log_error("supervisor", "Failed to set process capabilities: %s", strerror(errno));
+                        cap_free(caps);
+                        exit(1);
+                    }
+
+                    log_debug("supervisor", "Set %d capabilities in bounding set", cap_count);
+                }
+            }
+
+            /* Set ambient capabilities (requires Linux 4.3+) */
+            if (service->ambient_capabilities_count > 0) {
+                for (int i = 0; i < service->ambient_capabilities_count; i++) {
+                    cap_value_t cap_val;
+                    if (cap_from_name(service->ambient_capabilities[i], &cap_val) == 0) {
+                        if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, cap_val, 0, 0) < 0) {
+                            log_warn("supervisor", "Failed to raise ambient capability %s: %s",
+                                   service->ambient_capabilities[i], strerror(errno));
+                        } else {
+                            log_debug("supervisor", "Raised ambient capability: %s",
+                                    service->ambient_capabilities[i]);
+                        }
+                    } else {
+                        log_warn("supervisor", "Unknown ambient capability: %s",
+                               service->ambient_capabilities[i]);
+                    }
+                }
+            }
+
+            cap_free(caps);
+        }
+#elif defined(__linux__)
+        /* Linux but no libcap compiled in */
+        if (service->capability_bounding_set_count > 0 || service->ambient_capabilities_count > 0) {
+            log_warn("supervisor", "Capability directives configured but libcap support not compiled in");
+        }
+#else
+        /* Non-Linux platforms (BSD, Hurd) */
+        if (service->capability_bounding_set_count > 0 || service->ambient_capabilities_count > 0) {
+            log_warn("supervisor", "Capability directives not supported on non-Linux platforms");
+        }
+#endif
 
         /* Drop privileges using VALIDATED UID/GID from master's unit file parsing */
         if (validated_gid != 0) {

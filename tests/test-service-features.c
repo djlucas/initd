@@ -1402,8 +1402,65 @@ static void test_log_level_max_directive(void) {
     printf("  ✓ LogLevelMax directive parsing\n");
 }
 
+static void test_capability_directives(void) {
+    struct unit_file unit = {0};
+
+    /* Test CapabilityBoundingSet with single capability */
+    char *path1 = create_temp_unit_file("[Service]\nCapabilityBoundingSet=CAP_NET_ADMIN\n");
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.capability_bounding_set_count == 1);
+    assert(strcmp(unit.config.service.capability_bounding_set[0], "CAP_NET_ADMIN") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test CapabilityBoundingSet with multiple capabilities */
+    char *path2 = create_temp_unit_file("[Service]\nCapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_TIME CAP_NET_BIND_SERVICE\n");
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.capability_bounding_set_count == 3);
+    assert(strcmp(unit.config.service.capability_bounding_set[0], "CAP_NET_ADMIN") == 0);
+    assert(strcmp(unit.config.service.capability_bounding_set[1], "CAP_SYS_TIME") == 0);
+    assert(strcmp(unit.config.service.capability_bounding_set[2], "CAP_NET_BIND_SERVICE") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test AmbientCapabilities with single capability */
+    char *path3 = create_temp_unit_file("[Service]\nAmbientCapabilities=CAP_NET_RAW\n");
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.ambient_capabilities_count == 1);
+    assert(strcmp(unit.config.service.ambient_capabilities[0], "CAP_NET_RAW") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test AmbientCapabilities with multiple capabilities */
+    char *path4 = create_temp_unit_file("[Service]\nAmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_RAW\n");
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.ambient_capabilities_count == 2);
+    assert(strcmp(unit.config.service.ambient_capabilities[0], "CAP_NET_BIND_SERVICE") == 0);
+    assert(strcmp(unit.config.service.ambient_capabilities[1], "CAP_NET_RAW") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    /* Test both directives together */
+    char *path5 = create_temp_unit_file("[Service]\nCapabilityBoundingSet=CAP_NET_ADMIN\nAmbientCapabilities=CAP_NET_BIND_SERVICE\n");
+    assert(parse_unit_file(path5, &unit) == 0);
+    assert(unit.config.service.capability_bounding_set_count == 1);
+    assert(unit.config.service.ambient_capabilities_count == 1);
+    free_unit_file(&unit);
+    cleanup_temp_file(path5);
+
+    /* Test default (no capabilities) */
+    char *path6 = create_temp_unit_file("[Service]\nExecStart=/bin/true\n");
+    assert(parse_unit_file(path6, &unit) == 0);
+    assert(unit.config.service.capability_bounding_set_count == 0);
+    assert(unit.config.service.ambient_capabilities_count == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path6);
+
+    printf("  ✓ Capability directive parsing\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec, TimeoutAbortSec, TimeoutStartFailureMode, ProtectSystem, ProtectHome, PrivateDevices, ProtectKernelTunables, ProtectControlGroups, MountFlags, DynamicUser, DeviceAllow, RootImage, LogLevelMax)...\n");
+    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec, TimeoutAbortSec, TimeoutStartFailureMode, ProtectSystem, ProtectHome, PrivateDevices, ProtectKernelTunables, ProtectControlGroups, MountFlags, DynamicUser, DeviceAllow, RootImage, LogLevelMax, Capabilities)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -1439,6 +1496,7 @@ int main(void) {
     test_device_allow_directive();
     test_root_image_directive();
     test_log_level_max_directive();
+    test_capability_directives();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

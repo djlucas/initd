@@ -11,6 +11,12 @@ project('initd', 'c',
   ]
 )
 
+# Optional dependencies
+libcap_dep = dependency('libcap', required: false)
+if libcap_dep.found()
+  add_project_arguments('-D__HAVE_LIBCAP__', language: 'c')
+endif
+
 # Subdirectories
 subdir('src/common')
 subdir('src/init')

@@ -670,6 +670,22 @@ emergency, alert, critical, error, and warning messages, suppressing notice,
 info, and debug output. Note: Currently parsed but filtering not yet enforced;
 all output is forwarded. Default: not set (no filtering).
 .TP
+.B CapabilityBoundingSet=
+Restricts the set of capabilities the service can acquire. Takes a
+space-separated list of Linux capability names (e.g., CAP_NET_ADMIN,
+CAP_SYS_TIME, CAP_NET_BIND_SERVICE). The service and its children cannot gain
+capabilities outside this set. Linux-only. Requires libcap support at compile
+time; when libcap is unavailable or on non-Linux platforms, a warning is
+logged. Default: empty (no capability restrictions).
+.TP
+.B AmbientCapabilities=
+Grants ambient capabilities to the service process. Takes a space-separated
+list of Linux capability names. Ambient capabilities are preserved across
+execve() when transitioning to a non-root user, enabling unprivileged
+processes to retain specific capabilities. Requires Linux kernel 4.3+ and
+libcap support at compile time. When libcap is unavailable or on non-Linux
+platforms, a warning is logged. Default: empty (no ambient capabilities).
+.TP
 .B UMask=
 Sets the file mode creation mask (umask) for the service process in octal
 notation. Determines default permissions for created files and directories.

@@ -7,11 +7,16 @@ supervisor_c_args = [
 ]
 
 # Build initd-supervisor (privileged daemon)
+supervisor_deps = [common_dep, privileged_ops_dep]
+if libcap_dep.found()
+  supervisor_deps += libcap_dep
+endif
+
 supervisor = executable(
   'initd-supervisor',
   supervisor_sources,
   c_args: supervisor_c_args,
-  dependencies: [common_dep, privileged_ops_dep],
+  dependencies: supervisor_deps,
   install: true,
   install_dir: get_option('sbindir'),
 )

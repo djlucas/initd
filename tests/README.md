@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (26 test suites, 239 individual tests; 4 marked privileged)
+# Build and run all tests (26 test suites, 245 individual tests; 4 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -270,7 +270,7 @@ Tests socket activator IPC communication:
 - Socket status request serialization
 - Socket activation notification serialization
 
-### test-service-features (35 tests)
+### test-service-features (36 tests)
 Tests service directive parsing:
 - **PrivateTmp parsing** - Tests true/false/yes/1 parsing
 - **LimitNOFILE parsing** - Tests numeric values, "infinity", and default (-1)
@@ -306,6 +306,7 @@ Tests service directive parsing:
 - **DeviceAllow directive** - Tests device path and permission parsing (r/w/m), multiple entries, and default (empty)
 - **RootImage directive** - Tests absolute path parsing and default (empty)
 - **LogLevelMax directive** - Tests named levels, numeric levels, and default (-1)
+- **Capability directives** - Tests CapabilityBoundingSet and AmbientCapabilities parsing with single/multiple capabilities
 
 **Key features tested:**
 - PrivateTmp=true|false (default: false)

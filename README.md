@@ -387,7 +387,7 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Run all tests (26 test suites, 239 individual tests: 22 non-privileged, 4 privileged)
+# Run all tests (26 test suites, 245 individual tests: 22 non-privileged, 4 privileged)
 ninja -C build test
 
 # Run privileged tests (requires root)
@@ -478,6 +478,7 @@ Analysis results are saved to `analysis-output/` with individual log files for r
 - Meson (build system generator)
 - Ninja (build tool)
 - pkg-config
+- libcap (optional, for CapabilityBoundingSet= and AmbientCapabilities= support on Linux)
 
 ### Testing
 - cppcheck

@@ -732,6 +732,38 @@ static int parse_service_key(struct service_section *service, const char *key, c
         entry->mknod = (strchr(perms, 'm') != NULL);
 
         service->device_allow_count++;
+    } else if (strcmp(key, "CapabilityBoundingSet") == 0) {
+        /* Parse space-separated capability names: CAP_NET_ADMIN CAP_SYS_TIME */
+        char *value_copy = strdup(value);
+        if (!value_copy) return -1;
+
+        char *token = strtok(value_copy, " ");
+        while (token && service->capability_bounding_set_count < MAX_CAPABILITIES) {
+            service->capability_bounding_set[service->capability_bounding_set_count] = strdup(token);
+            if (!service->capability_bounding_set[service->capability_bounding_set_count]) {
+                free(value_copy);
+                return -1;
+            }
+            service->capability_bounding_set_count++;
+            token = strtok(NULL, " ");
+        }
+        free(value_copy);
+    } else if (strcmp(key, "AmbientCapabilities") == 0) {
+        /* Parse space-separated capability names: CAP_NET_BIND_SERVICE CAP_NET_RAW */
+        char *value_copy = strdup(value);
+        if (!value_copy) return -1;
+
+        char *token = strtok(value_copy, " ");
+        while (token && service->ambient_capabilities_count < MAX_CAPABILITIES) {
+            service->ambient_capabilities[service->ambient_capabilities_count] = strdup(token);
+            if (!service->ambient_capabilities[service->ambient_capabilities_count]) {
+                free(value_copy);
+                return -1;
+            }
+            service->ambient_capabilities_count++;
+            token = strtok(NULL, " ");
+        }
+        free(value_copy);
     } else {
         return -1; /* Unknown key */
     }
@@ -866,6 +898,8 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.dynamic_user = false;       /* Default: use configured User=/Group= */
     unit->config.service.device_allow_count = 0;     /* Default: no device whitelist */
     unit->config.service.log_level_max = -1;         /* Default: not set (no filtering) */
+    unit->config.service.capability_bounding_set_count = 0;  /* Default: no capability restrictions */
+    unit->config.service.ambient_capabilities_count = 0;     /* Default: no ambient capabilities */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1031,6 +1065,12 @@ void free_unit_file(struct unit_file *unit) {
             free(unit->config.service.environment[i]);
         }
         free(unit->config.service.pid_file);
+        for (int i = 0; i < unit->config.service.capability_bounding_set_count; i++) {
+            free(unit->config.service.capability_bounding_set[i]);
+        }
+        for (int i = 0; i < unit->config.service.ambient_capabilities_count; i++) {
+            free(unit->config.service.ambient_capabilities[i]);
+        }
     }
 
     /* Free [Timer] fields */

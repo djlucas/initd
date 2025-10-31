@@ -1256,9 +1256,6 @@ Notes:
 #### TODO: Other systemd directives
 
 [Service]
-  CapabilityBoundingSet=
-  AmbientCapabilities=
-
 [Timer]
   AccuracySec=
   Unit=

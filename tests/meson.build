@@ -128,6 +128,10 @@ test_timer_notify = executable(
   c_args: ['-DUNIT_TEST']
 )
 
+test_exec_lifecycle_deps = [common_dep, privileged_ops_dep]
+if libcap_dep.found()
+  test_exec_lifecycle_deps += libcap_dep
+endif
 test_exec_lifecycle = executable(
   'test-exec-lifecycle',
   [
@@ -136,7 +140,7 @@ test_exec_lifecycle = executable(
     '../src/supervisor/process-tracking.c',
     '../src/supervisor/service-registry.c',
   ],
-  dependencies: [common_dep, privileged_ops_dep],
+  dependencies: test_exec_lifecycle_deps,
   c_args: ['-DUNIT_TEST']
 )
 
