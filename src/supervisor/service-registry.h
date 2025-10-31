@@ -50,6 +50,8 @@ struct service_record {
     int stdout_fd;      /* stdout pipe for output capture (-1 if none) */
     int stderr_fd;      /* stderr pipe for output capture (-1 if none) */
     struct restart_tracker restart_info;  /* DoS prevention: restart rate limiting */
+    time_t start_time;  /* When service started (for RuntimeMaxSec=) */
+    int runtime_max_sec; /* RuntimeMaxSec= timeout (0 = no limit) */
 #ifdef __linux__
     char cgroup_path[256];  /* Linux-only: cgroup v2 path (future use) */
 #endif
@@ -63,7 +65,7 @@ void service_registry_init(void);
  * stdout_fd and stderr_fd are pipe file descriptors for output capture (-1 if not used)
  */
 int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode,
-                    int stdout_fd, int stderr_fd);
+                    int stdout_fd, int stderr_fd, int runtime_max_sec);
 
 /* Lookup a service in the registry */
 struct service_record *lookup_service(pid_t pid);
@@ -109,5 +111,11 @@ int has_registry_capacity(void);
  * Returns pointer to internal registry array
  */
 struct service_record *get_all_services(int *count);
+
+/* Check and enforce RuntimeMaxSec= timeouts
+ * Returns PID of service to kill, or 0 if none
+ * If a PID is returned, unit_name_out is filled with the service name
+ */
+pid_t check_runtime_timeout(char *unit_name_out, size_t unit_name_size);
 
 #endif /* SERVICE_REGISTRY_H */

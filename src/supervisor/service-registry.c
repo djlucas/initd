@@ -66,7 +66,7 @@ void service_registry_init(void) {
 
 /* Add a service to the registry */
 int register_service(pid_t pid, const char *unit_name, const char *unit_path, int kill_mode,
-                    int stdout_fd, int stderr_fd) {
+                    int stdout_fd, int stderr_fd, int runtime_max_sec) {
     for (int i = 0; i < MAX_SERVICES; i++) {
         if (!service_registry[i].in_use) {
             service_registry[i].pid = pid;
@@ -75,6 +75,8 @@ int register_service(pid_t pid, const char *unit_name, const char *unit_path, in
             service_registry[i].in_use = 1;
             service_registry[i].stdout_fd = stdout_fd;
             service_registry[i].stderr_fd = stderr_fd;
+            service_registry[i].start_time = time(NULL);
+            service_registry[i].runtime_max_sec = runtime_max_sec;
             strncpy(service_registry[i].unit_name, unit_name, sizeof(service_registry[i].unit_name) - 1);
             service_registry[i].unit_name[sizeof(service_registry[i].unit_name) - 1] = '\0';
             if (unit_path) {
@@ -390,5 +392,26 @@ int service_registry_update_pid(const char *unit_name, pid_t new_pid) {
 
     svc->pid = new_pid;
     svc->pgid = new_pid;
+    return 0;
+}
+
+/* Check and enforce RuntimeMaxSec= timeouts
+ * Returns PID of service to kill, or 0 if none
+ */
+pid_t check_runtime_timeout(char *unit_name_out, size_t unit_name_size) {
+    time_t now = time(NULL);
+
+    for (int i = 0; i < MAX_SERVICES; i++) {
+        if (service_registry[i].in_use && service_registry[i].runtime_max_sec > 0) {
+            time_t runtime = now - service_registry[i].start_time;
+            if (runtime >= service_registry[i].runtime_max_sec) {
+                if (unit_name_out && unit_name_size > 0) {
+                    strncpy(unit_name_out, service_registry[i].unit_name, unit_name_size - 1);
+                    unit_name_out[unit_name_size - 1] = '\0';
+                }
+                return service_registry[i].pid;
+            }
+        }
+    }
     return 0;
 }

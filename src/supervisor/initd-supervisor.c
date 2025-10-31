@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <syslog.h>
 #ifdef __linux__
 #include <sys/reboot.h>
@@ -1220,6 +1221,19 @@ static pid_t start_service_process(const struct service_section *service,
             }
         }
 
+        /* Set memory limit if specified (using setrlimit for address space) */
+        if (service->memory_limit > 0) {
+            struct rlimit rlim;
+            rlim.rlim_cur = service->memory_limit;
+            rlim.rlim_max = service->memory_limit;
+            if (setrlimit(RLIMIT_AS, &rlim) < 0) {
+                log_warn("supervisor", "Failed to set memory limit to %ld bytes: %s",
+                        service->memory_limit, strerror(errno));
+            } else {
+                log_debug("supervisor", "Set memory limit to %ld bytes", service->memory_limit);
+            }
+        }
+
         /* Set umask if specified */
         if (service->umask_value != 0) {
             umask(service->umask_value);
@@ -1529,7 +1543,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         }
 
         /* Register service in the registry to prevent arbitrary kill() attacks */
-        if (register_service(pid, req->unit_name, unit.path, kill_mode, stdout_fd, stderr_fd) < 0) {
+        if (register_service(pid, req->unit_name, unit.path, kill_mode, stdout_fd, stderr_fd, unit.config.service.runtime_max_sec) < 0) {
             /* Registry full - kill the service we just started */
             close(stdout_fd);
             close(stderr_fd);
@@ -2153,6 +2167,15 @@ static int main_loop(void) {
             if (errno == EINTR) continue;
             log_error("supervisor", "select: %s", strerror(errno));
             break;
+        }
+
+        /* Check for RuntimeMaxSec= timeouts */
+        char timeout_unit[256];
+        pid_t timeout_pid = check_runtime_timeout(timeout_unit, sizeof(timeout_unit));
+        if (timeout_pid > 0) {
+            log_info("supervisor", "Service %s exceeded RuntimeMaxSec, terminating", timeout_unit);
+            process_tracking_signal_process(timeout_pid, SIGTERM);
+            /* The service will be reaped in the normal SIGCHLD handler */
         }
 
         /* Handle IPC request from worker */
