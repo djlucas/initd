@@ -19,6 +19,7 @@
 #define MAX_EXEC_COMMANDS 16
 #define MAX_RESTART_STATUS 16
 #define MAX_INSTALL_ENTRIES MAX_DEPS
+#define MAX_DEVICE_ALLOW 16
 #define INITD_DEFAULT_START_LIMIT_INTERVAL_SEC 60
 #define INITD_DEFAULT_START_LIMIT_BURST 5
 #define INITD_MIN_RESTART_INTERVAL_SEC 1
@@ -175,6 +176,14 @@ enum standard_io {
     STDIO_DATA           /* Read from embedded data (StandardInputText/Data) */
 };
 
+/* Device access control for cgroup device controller */
+struct device_allow {
+    char path[MAX_PATH];  /* Device path or pattern (e.g., /dev/sda, block-*, char-usb) */
+    bool read;            /* Allow read access */
+    bool write;           /* Allow write access */
+    bool mknod;           /* Allow mknod (create device nodes) */
+};
+
 /* [Service] section */
 struct service_section {
     enum service_type type;
@@ -237,9 +246,11 @@ struct service_section {
     int syslog_facility;          /* SyslogFacility= (LOG_USER, LOG_DAEMON, etc.) */
     int syslog_level;             /* SyslogLevel= (LOG_INFO, LOG_DEBUG, etc.) */
     bool syslog_level_prefix;     /* SyslogLevelPrefix= */
+    int log_level_max;            /* LogLevelMax= (maximum log level to forward, -1 = not set) */
     mode_t umask_value;           /* UMask= (octal file creation mask) */
     bool no_new_privs;            /* NoNewPrivileges= (prevent privilege escalation on execve) */
     char root_directory[MAX_PATH]; /* RootDirectory= (chroot jail path) */
+    char root_image[MAX_PATH];    /* RootImage= (disk image to mount as root) */
     int restart_max_delay_sec;    /* RestartMaxDelaySec= (max exponential backoff delay, 0 = not set) */
     bool restrict_suid_sgid;      /* RestrictSUIDSGID= (remove suid/sgid bits on exec) */
     long memory_limit;            /* MemoryLimit= (address space limit in bytes, -1 = not set) */
@@ -250,6 +261,10 @@ struct service_section {
     bool private_devices;         /* PrivateDevices= (mount private /dev with minimal nodes) */
     bool protect_kernel_tunables; /* ProtectKernelTunables= (make /proc/sys, /sys read-only) */
     bool protect_control_groups;  /* ProtectControlGroups= (make /sys/fs/cgroup read-only) */
+    int mount_flags;              /* MountFlags= (0=shared, 1=slave, 2=private) */
+    bool dynamic_user;            /* DynamicUser= (allocate ephemeral UID/GID) */
+    struct device_allow device_allow[MAX_DEVICE_ALLOW]; /* DeviceAllow= (cgroup device whitelist) */
+    int device_allow_count;       /* Number of DeviceAllow entries */
 };
 
 /* [Timer] section */

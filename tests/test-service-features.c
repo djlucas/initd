@@ -1209,8 +1209,201 @@ static void test_protect_control_groups_directive(void) {
     printf("✓ ProtectControlGroups directive parsing works\n");
 }
 
+/* Test MountFlags directive */
+static void test_mount_flags_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test shared */
+    char *path1 = create_temp_unit_file(
+        "[Service]\n"
+        "MountFlags=shared\n"
+    );
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.mount_flags == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test slave */
+    char *path2 = create_temp_unit_file(
+        "[Service]\n"
+        "MountFlags=slave\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.mount_flags == 1);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test private */
+    char *path3 = create_temp_unit_file(
+        "[Service]\n"
+        "MountFlags=private\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.mount_flags == 2);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test default */
+    char *path4 = create_temp_unit_file(
+        "[Service]\n"
+        "ExecStart=/bin/true\n"
+    );
+    memset(&unit, 0, sizeof(unit));
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.mount_flags == 2);  /* Default: private */
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    printf("✓ MountFlags directive parsing works\n");
+}
+
+static void test_dynamic_user_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test DynamicUser=yes */
+    char *path1 = create_temp_unit_file("[Service]\nDynamicUser=yes\n");
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.dynamic_user == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test DynamicUser=no */
+    char *path2 = create_temp_unit_file("[Service]\nDynamicUser=no\n");
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.dynamic_user == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test DynamicUser=true */
+    char *path3 = create_temp_unit_file("[Service]\nDynamicUser=true\n");
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.dynamic_user == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test default (should be false) */
+    char *path4 = create_temp_unit_file("[Service]\nExecStart=/bin/true\n");
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.dynamic_user == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    printf("  ✓ DynamicUser directive parsing\n");
+}
+
+static void test_device_allow_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test single DeviceAllow with rwm permissions */
+    char *path1 = create_temp_unit_file("[Service]\nDeviceAllow=/dev/sda rwm\n");
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.device_allow_count == 1);
+    assert(strcmp(unit.config.service.device_allow[0].path, "/dev/sda") == 0);
+    assert(unit.config.service.device_allow[0].read == true);
+    assert(unit.config.service.device_allow[0].write == true);
+    assert(unit.config.service.device_allow[0].mknod == true);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test DeviceAllow with read-only permission */
+    char *path2 = create_temp_unit_file("[Service]\nDeviceAllow=/dev/null r\n");
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.device_allow_count == 1);
+    assert(strcmp(unit.config.service.device_allow[0].path, "/dev/null") == 0);
+    assert(unit.config.service.device_allow[0].read == true);
+    assert(unit.config.service.device_allow[0].write == false);
+    assert(unit.config.service.device_allow[0].mknod == false);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test multiple DeviceAllow entries */
+    char *path3 = create_temp_unit_file("[Service]\nDeviceAllow=/dev/sda rw\nDeviceAllow=/dev/null r\nDeviceAllow=block-* r\n");
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.device_allow_count == 3);
+    assert(strcmp(unit.config.service.device_allow[0].path, "/dev/sda") == 0);
+    assert(unit.config.service.device_allow[0].read == true);
+    assert(unit.config.service.device_allow[0].write == true);
+    assert(unit.config.service.device_allow[0].mknod == false);
+    assert(strcmp(unit.config.service.device_allow[1].path, "/dev/null") == 0);
+    assert(strcmp(unit.config.service.device_allow[2].path, "block-*") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test default (no DeviceAllow) */
+    char *path4 = create_temp_unit_file("[Service]\nExecStart=/bin/true\n");
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.device_allow_count == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    printf("  ✓ DeviceAllow directive parsing\n");
+}
+
+static void test_root_image_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test RootImage with absolute path */
+    char *path1 = create_temp_unit_file("[Service]\nRootImage=/var/images/myapp.img\n");
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(strcmp(unit.config.service.root_image, "/var/images/myapp.img") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test RootImage with different path */
+    char *path2 = create_temp_unit_file("[Service]\nRootImage=/srv/rootfs.squashfs\n");
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(strcmp(unit.config.service.root_image, "/srv/rootfs.squashfs") == 0);
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test default (no RootImage) */
+    char *path3 = create_temp_unit_file("[Service]\nExecStart=/bin/true\n");
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.root_image[0] == '\0');
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    printf("  ✓ RootImage directive parsing\n");
+}
+
+static void test_log_level_max_directive(void) {
+    struct unit_file unit = {0};
+
+    /* Test LogLevelMax with named level */
+    char *path1 = create_temp_unit_file("[Service]\nLogLevelMax=warning\n");
+    assert(parse_unit_file(path1, &unit) == 0);
+    assert(unit.config.service.log_level_max == LOG_WARNING);
+    free_unit_file(&unit);
+    cleanup_temp_file(path1);
+
+    /* Test LogLevelMax with numeric level */
+    char *path2 = create_temp_unit_file("[Service]\nLogLevelMax=3\n");
+    assert(parse_unit_file(path2, &unit) == 0);
+    assert(unit.config.service.log_level_max == 3); /* LOG_ERR */
+    free_unit_file(&unit);
+    cleanup_temp_file(path2);
+
+    /* Test LogLevelMax=debug */
+    char *path3 = create_temp_unit_file("[Service]\nLogLevelMax=debug\n");
+    assert(parse_unit_file(path3, &unit) == 0);
+    assert(unit.config.service.log_level_max == LOG_DEBUG);
+    free_unit_file(&unit);
+    cleanup_temp_file(path3);
+
+    /* Test default (not set) */
+    char *path4 = create_temp_unit_file("[Service]\nExecStart=/bin/true\n");
+    assert(parse_unit_file(path4, &unit) == 0);
+    assert(unit.config.service.log_level_max == -1);
+    free_unit_file(&unit);
+    cleanup_temp_file(path4);
+
+    printf("  ✓ LogLevelMax directive parsing\n");
+}
+
 int main(void) {
-    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec, TimeoutAbortSec, TimeoutStartFailureMode, ProtectSystem, ProtectHome, PrivateDevices, ProtectKernelTunables, ProtectControlGroups)...\n");
+    printf("Testing service features (PrivateTmp, Limit* directives, KillMode, RemainAfterExit, StandardInput/Output/Error, Syslog, UMask, NoNewPrivileges, RootDirectory, MemoryLimit, RestrictSUIDSGID, RestartMaxDelaySec, TimeoutAbortSec, TimeoutStartFailureMode, ProtectSystem, ProtectHome, PrivateDevices, ProtectKernelTunables, ProtectControlGroups, MountFlags, DynamicUser, DeviceAllow, RootImage, LogLevelMax)...\n");
 
     test_parse_private_tmp();
     test_parse_limit_nofile();
@@ -1241,6 +1434,11 @@ int main(void) {
     test_private_devices_directive();
     test_protect_kernel_tunables_directive();
     test_protect_control_groups_directive();
+    test_mount_flags_directive();
+    test_dynamic_user_directive();
+    test_device_allow_directive();
+    test_root_image_directive();
+    test_log_level_max_directive();
 
     printf("\n✓ All service feature tests passed!\n");
     return 0;

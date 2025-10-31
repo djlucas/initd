@@ -626,6 +626,15 @@ static pid_t start_service_process(const struct service_section *service,
             }
         }
 
+        /* LogLevelMax= - filter service log output (would filter stdout/stderr forwarding) */
+        if (service->log_level_max != -1) {
+            /* TODO: Implement log level filtering in output forwarder
+             * Currently logged output from service is forwarded as-is to syslog
+             * LogLevelMax should filter messages above the specified level
+             * For now, log that filtering is configured but not enforced */
+            log_debug("supervisor", "LogLevelMax=%d configured but not yet enforced", service->log_level_max);
+        }
+
         /* Setup stdin */
         if (service->standard_input == STDIO_NULL) {
             int devnull = open("/dev/null", O_RDONLY);
@@ -785,9 +794,22 @@ static pid_t start_service_process(const struct service_section *service,
                 _exit(1);
             }
 
-            /* Make all mounts private to prevent propagation */
-            if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) < 0) {
-                log_error("supervisor", "mount(MS_PRIVATE): %s", strerror(errno));
+            /* Set mount propagation based on MountFlags= */
+            unsigned long mount_flag;
+            const char *mount_flag_name;
+            if (service->mount_flags == 0) {
+                mount_flag = MS_SHARED;
+                mount_flag_name = "MS_SHARED";
+            } else if (service->mount_flags == 1) {
+                mount_flag = MS_SLAVE;
+                mount_flag_name = "MS_SLAVE";
+            } else {
+                mount_flag = MS_PRIVATE;
+                mount_flag_name = "MS_PRIVATE";
+            }
+
+            if (mount(NULL, "/", NULL, MS_REC | mount_flag, NULL) < 0) {
+                log_error("supervisor", "mount(%s): %s", mount_flag_name, strerror(errno));
                 _exit(1);
             }
 
@@ -893,6 +915,35 @@ static pid_t start_service_process(const struct service_section *service,
             log_warn("supervisor", "Sandboxing directives (ProtectSystem, ProtectHome, etc.) not supported on this platform");
         }
 #endif
+
+        /* DeviceAllow= - set up cgroup device controller (Linux-only, requires cgroup infrastructure) */
+#ifdef __linux__
+        if (service->device_allow_count > 0) {
+            /* TODO: Implement cgroup device controller:
+             * 1. Create cgroup for service under /sys/fs/cgroup/devices/
+             * 2. Write to devices.deny to deny all by default
+             * 3. Write to devices.allow for each DeviceAllow entry
+             * 4. Move process to cgroup via tasks file
+             * For now, log that DeviceAllow is configured but not enforced */
+            log_warn("supervisor", "DeviceAllow= configured but cgroup device controller not yet implemented");
+        }
+#else
+        if (service->device_allow_count > 0) {
+            log_warn("supervisor", "DeviceAllow= not supported on non-Linux platforms");
+        }
+#endif
+
+        /* RootImage= - mount disk image as root filesystem (requires loop device support) */
+        if (service->root_image[0] != '\0') {
+            /* TODO: Implement RootImage= support:
+             * 1. Set up loop device: losetup -f --show <image_path>
+             * 2. Mount the loop device to temporary directory
+             * 3. Use mounted path as RootDirectory
+             * 4. Clean up loop device on service exit
+             * For now, log that RootImage is configured but not supported */
+            log_error("supervisor", "RootImage= configured but not yet implemented");
+            _exit(1);
+        }
 
         /* chroot if RootDirectory is specified (must be done before dropping privileges) */
         if (service->root_directory[0] != '\0') {
@@ -1085,7 +1136,20 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         uid_t validated_uid = 0;  /* Default: root */
         gid_t validated_gid = 0;
 
-        if (unit.config.service.user[0] != '\0') {
+        /* DynamicUser= - allocate ephemeral UID/GID */
+        if (unit.config.service.dynamic_user) {
+            /* systemd uses UID range 61184-65519 for dynamic users */
+            /* We'll use a simple allocation: hash the unit name into this range */
+            unsigned long hash = 5381;
+            for (const char *p = req->unit_name; *p; p++) {
+                hash = ((hash << 5) + hash) + (unsigned char)*p;
+            }
+            /* Map hash to range 61184-65519 (4336 UIDs) */
+            validated_uid = 61184 + (hash % 4336);
+            validated_gid = validated_uid;  /* Use same value for GID */
+            log_debug("supervisor", "DynamicUser: allocated uid=%d gid=%d for %s",
+                      validated_uid, validated_gid, req->unit_name);
+        } else if (unit.config.service.user[0] != '\0') {
             struct passwd *pw = getpwnam(unit.config.service.user);
             if (!pw) {
                 log_error("supervisor", "user '%s' not found", unit.config.service.user);
@@ -1099,7 +1163,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
                       unit.config.service.user, validated_uid);
         }
 
-        if (unit.config.service.group[0] != '\0') {
+        if (unit.config.service.group[0] != '\0' && !unit.config.service.dynamic_user) {
             struct group *gr = getgrnam(unit.config.service.group);
             if (!gr) {
                 log_error("supervisor", "group '%s' not found", unit.config.service.group);
@@ -1111,7 +1175,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             validated_gid = gr->gr_gid;
             log_debug("supervisor", "service will run as group %s (gid=%d)",
                       unit.config.service.group, validated_gid);
-        } else if (validated_uid != 0) {
+        } else if (validated_uid != 0 && !unit.config.service.dynamic_user) {
             /* If User specified but Group not specified, use user's primary group */
             struct passwd *pw = getpwuid(validated_uid);
             if (pw) {

@@ -661,6 +661,15 @@ emerg, alert, crit, err, warning, notice, info, debug. Default: info.
 Boolean. If true, parse BSD syslog priority prefix from service output
 (e.g., "<3>" for LOG_ERR). Default: false.
 .TP
+.B LogLevelMax=
+Sets the maximum log level to forward from the service's output. Messages with
+a priority higher (numerically) than this level will be filtered out. Accepts
+syslog level names (emerg, alert, crit, err, warning, notice, info, debug) or
+numeric values (0-7). For example, LogLevelMax=warning will forward only
+emergency, alert, critical, error, and warning messages, suppressing notice,
+info, and debug output. Note: Currently parsed but filtering not yet enforced;
+all output is forwarded. Default: not set (no filtering).
+.TP
 .B UMask=
 Sets the file mode creation mask (umask) for the service process in octal
 notation. Determines default permissions for created files and directories.
@@ -758,6 +767,51 @@ Boolean. If true, makes /sys/fs/cgroup read-only for the service. Prevents the
 service from modifying cgroup settings. Uses mount namespaces on Linux. Not
 supported on other platforms (logs warning). Prevents privilege escalation via
 cgroup manipulation. Default: false.
+.TP
+.B MountFlags=
+Controls mount propagation for the service's mount namespace. Valid values:
+.B shared
+(mount and unmount events propagate bidirectionally between service and host),
+.B slave
+(mount and unmount events propagate from host to service, but not vice versa),
+and
+.B private
+(mount and unmount events do not propagate in either direction). Uses mount
+namespaces on Linux (requires one of the Protect* or PrivateDevices directives
+to be enabled to create a mount namespace). Not supported on other platforms.
+Default: private.
+.TP
+.B DynamicUser=
+Takes a boolean value. If enabled, allocates an ephemeral UID/GID from the
+reserved range 61184-65519 for this service. The allocation is deterministic
+based on the unit name (same unit always gets the same UID). Both UID and GID
+are set to the same value. When enabled, any configured
+.B User=
+or
+.B Group=
+settings are ignored. This provides a form of privilege separation and reduces
+the attack surface since the dynamic user has no persistent home directory or
+login shell. Default: false.
+.TP
+.B DeviceAllow=
+Controls access to device nodes through the Linux cgroup device controller.
+Takes a device path or pattern followed by a space and permission flags.
+Device paths can be absolute (e.g., /dev/sda) or patterns (e.g., block-*,
+char-usb). Permission flags: 'r' (read), 'w' (write), 'm' (mknod/create nodes).
+Example: DeviceAllow=/dev/sda rw. Can be specified multiple times to allow
+access to multiple devices. Requires cgroup device controller support (Linux
+only). Note: Full enforcement requires cgroup infrastructure implementation;
+currently parsed but not yet enforced. Default: empty (no device whitelist).
+.TP
+.B RootImage=
+Takes an absolute path to a disk image file to use as the root filesystem for
+the service. The image is mounted via a loop device and used similar to
+.B RootDirectory=.
+Supports various image formats (raw, qcow2, squashfs, etc.) depending on kernel
+support. The service sees the mounted image as its root filesystem, providing
+strong isolation. Note: Requires loop device support and is not yet implemented;
+currently parsed but attempting to use will cause service startup to fail.
+Default: empty (use host root filesystem).
 .SH [TIMER] SECTION
 The
 .B [Timer]

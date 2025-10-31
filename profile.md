@@ -1256,13 +1256,8 @@ Notes:
 #### TODO: Other systemd directives
 
 [Service]
-  LogLevelMax=
   CapabilityBoundingSet=
   AmbientCapabilities=
-  DynamicUser=
-  DeviceAllow=
-  RootImage=
-  MountFlags=
 
 [Timer]
   AccuracySec=

@@ -618,6 +618,25 @@ static int parse_service_key(struct service_section *service, const char *key, c
         else service->syslog_level = LOG_INFO; /* Default */
     } else if (strcmp(key, "SyslogLevelPrefix") == 0) {
         service->syslog_level_prefix = parse_boolean(value);
+    } else if (strcmp(key, "LogLevelMax") == 0) {
+        /* Parse level name to LOG_* constant (same as SyslogLevel) */
+        if (strcmp(value, "emerg") == 0) service->log_level_max = LOG_EMERG;
+        else if (strcmp(value, "alert") == 0) service->log_level_max = LOG_ALERT;
+        else if (strcmp(value, "crit") == 0) service->log_level_max = LOG_CRIT;
+        else if (strcmp(value, "err") == 0) service->log_level_max = LOG_ERR;
+        else if (strcmp(value, "warning") == 0) service->log_level_max = LOG_WARNING;
+        else if (strcmp(value, "notice") == 0) service->log_level_max = LOG_NOTICE;
+        else if (strcmp(value, "info") == 0) service->log_level_max = LOG_INFO;
+        else if (strcmp(value, "debug") == 0) service->log_level_max = LOG_DEBUG;
+        else {
+            /* Try parsing as numeric value (0-7) */
+            int level = atoi(value);
+            if (level >= 0 && level <= 7) {
+                service->log_level_max = level;
+            } else {
+                service->log_level_max = LOG_DEBUG; /* Default: allow all */
+            }
+        }
     } else if (strcmp(key, "UMask") == 0) {
         /* Parse octal umask value */
         char *endptr;
@@ -630,6 +649,9 @@ static int parse_service_key(struct service_section *service, const char *key, c
     } else if (strcmp(key, "RootDirectory") == 0) {
         strncpy(service->root_directory, value, sizeof(service->root_directory) - 1);
         service->root_directory[sizeof(service->root_directory) - 1] = '\0';
+    } else if (strcmp(key, "RootImage") == 0) {
+        strncpy(service->root_image, value, sizeof(service->root_image) - 1);
+        service->root_image[sizeof(service->root_image) - 1] = '\0';
     } else if (strcmp(key, "RestartMaxDelaySec") == 0) {
         service->restart_max_delay_sec = atoi(value);
     } else if (strcmp(key, "RestrictSUIDSGID") == 0) {
@@ -672,6 +694,44 @@ static int parse_service_key(struct service_section *service, const char *key, c
         service->protect_kernel_tunables = parse_boolean(value);
     } else if (strcmp(key, "ProtectControlGroups") == 0) {
         service->protect_control_groups = parse_boolean(value);
+    } else if (strcmp(key, "MountFlags") == 0) {
+        if (strcmp(value, "shared") == 0) {
+            service->mount_flags = 0;
+        } else if (strcmp(value, "slave") == 0) {
+            service->mount_flags = 1;
+        } else if (strcmp(value, "private") == 0) {
+            service->mount_flags = 2;
+        }
+    } else if (strcmp(key, "DynamicUser") == 0) {
+        service->dynamic_user = parse_boolean(value);
+    } else if (strcmp(key, "DeviceAllow") == 0) {
+        /* Format: DeviceAllow=/dev/sda rwm or DeviceAllow=block-* r */
+        if (service->device_allow_count >= MAX_DEVICE_ALLOW) {
+            return -1; /* Too many DeviceAllow entries */
+        }
+
+        /* Parse device path and permissions */
+        char *space = strchr(value, ' ');
+        if (!space) {
+            return -1; /* Invalid format */
+        }
+
+        struct device_allow *entry = &service->device_allow[service->device_allow_count];
+        size_t path_len = space - value;
+        if (path_len >= MAX_PATH) {
+            return -1; /* Path too long */
+        }
+
+        strncpy(entry->path, value, path_len);
+        entry->path[path_len] = '\0';
+
+        /* Parse permissions (r, w, m) */
+        const char *perms = space + 1;
+        entry->read = (strchr(perms, 'r') != NULL);
+        entry->write = (strchr(perms, 'w') != NULL);
+        entry->mknod = (strchr(perms, 'm') != NULL);
+
+        service->device_allow_count++;
     } else {
         return -1; /* Unknown key */
     }
@@ -802,6 +862,10 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.private_devices = false;    /* Default: use host /dev */
     unit->config.service.protect_kernel_tunables = false; /* Default: writable /proc/sys, /sys */
     unit->config.service.protect_control_groups = false;  /* Default: writable /sys/fs/cgroup */
+    unit->config.service.mount_flags = 2;            /* Default: private (most restrictive) */
+    unit->config.service.dynamic_user = false;       /* Default: use configured User=/Group= */
+    unit->config.service.device_allow_count = 0;     /* Default: no device whitelist */
+    unit->config.service.log_level_max = -1;         /* Default: not set (no filtering) */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
