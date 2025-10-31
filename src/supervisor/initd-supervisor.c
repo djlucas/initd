@@ -36,6 +36,7 @@
 #include <sys/mount.h>
 #include <sys/statfs.h>
 #include <linux/magic.h>
+#include <linux/loop.h>
 #include <sys/prctl.h>
 #include <sched.h>       /* for unshare(), CLONE_NEWNS */
 #include <sys/sysmacros.h> /* for makedev() */
@@ -551,6 +552,7 @@ static pid_t start_worker(int worker_fd) {
  * On success, *stdout_pipe_fd and *stderr_pipe_fd are set to pipe read ends
  */
 static pid_t start_service_process(const struct service_section *service,
+                                   const char *unit_name,
                                    const char *exec_path,
                                    char *const argv[],
                                    uid_t validated_uid,
@@ -629,13 +631,18 @@ static pid_t start_service_process(const struct service_section *service,
             }
         }
 
-        /* LogLevelMax= - filter service log output (would filter stdout/stderr forwarding) */
+        /* LogLevelMax= - set maximum log level for service output */
         if (service->log_level_max != -1) {
-            /* TODO: Implement log level filtering in output forwarder
-             * Currently logged output from service is forwarded as-is to syslog
-             * LogLevelMax should filter messages above the specified level
-             * For now, log that filtering is configured but not enforced */
-            log_debug("supervisor", "LogLevelMax=%d configured but not yet enforced", service->log_level_max);
+            /* Set LOG_LEVEL_MAX environment variable for the service
+             * This allows services and logging infrastructure to respect the limit */
+            char log_level_str[16];
+            snprintf(log_level_str, sizeof(log_level_str), "%d", service->log_level_max);
+            setenv("INITD_LOG_LEVEL_MAX", log_level_str, 1);
+
+            /* Also set standard syslog level limit */
+            setlogmask(LOG_UPTO(service->log_level_max));
+
+            log_debug("supervisor", "Set LogLevelMax=%d for service output", service->log_level_max);
         }
 
         /* Setup stdin */
@@ -922,13 +929,77 @@ static pid_t start_service_process(const struct service_section *service,
         /* DeviceAllow= - set up cgroup device controller (Linux-only, requires cgroup infrastructure) */
 #ifdef __linux__
         if (service->device_allow_count > 0) {
-            /* TODO: Implement cgroup device controller:
-             * 1. Create cgroup for service under /sys/fs/cgroup/devices/
-             * 2. Write to devices.deny to deny all by default
-             * 3. Write to devices.allow for each DeviceAllow entry
-             * 4. Move process to cgroup via tasks file
-             * For now, log that DeviceAllow is configured but not enforced */
-            log_warn("supervisor", "DeviceAllow= configured but cgroup device controller not yet implemented");
+            /* Create cgroup for device access control */
+            char cgroup_path[PATH_MAX - 20];  /* Leave room for file names */
+            snprintf(cgroup_path, sizeof(cgroup_path),
+                    "/sys/fs/cgroup/devices/initd.slice/%s-%d",
+                    unit_name, getpid());
+
+            /* Create cgroup directory */
+            if (mkdir(cgroup_path, 0755) < 0 && errno != EEXIST) {
+                log_error("supervisor", "Failed to create cgroup %s: %s",
+                         cgroup_path, strerror(errno));
+            } else {
+                /* Deny all devices by default */
+                char deny_path[PATH_MAX];
+                snprintf(deny_path, sizeof(deny_path), "%s/devices.deny", cgroup_path);
+                int deny_fd = open(deny_path, O_WRONLY);
+                if (deny_fd >= 0) {
+                    write(deny_fd, "a", 1);
+                    close(deny_fd);
+                }
+
+                /* Allow specified devices */
+                char allow_path[PATH_MAX];
+                snprintf(allow_path, sizeof(allow_path), "%s/devices.allow", cgroup_path);
+                int allow_fd = open(allow_path, O_WRONLY);
+                if (allow_fd >= 0) {
+                    for (int i = 0; i < service->device_allow_count; i++) {
+                        const struct device_allow *dev = &service->device_allow[i];
+                        char allow_rule[256];
+
+                        /* Format: type major:minor permissions */
+                        char perms[4] = {0};
+                        int perm_idx = 0;
+                        if (dev->read) perms[perm_idx++] = 'r';
+                        if (dev->write) perms[perm_idx++] = 'w';
+                        if (dev->mknod) perms[perm_idx++] = 'm';
+
+                        /* Get device major/minor numbers */
+                        struct stat st;
+                        if (stat(dev->path, &st) == 0 && S_ISBLK(st.st_mode)) {
+                            snprintf(allow_rule, sizeof(allow_rule), "b %u:%u %s\n",
+                                   major(st.st_rdev), minor(st.st_rdev), perms);
+                        } else if (stat(dev->path, &st) == 0 && S_ISCHR(st.st_mode)) {
+                            snprintf(allow_rule, sizeof(allow_rule), "c %u:%u %s\n",
+                                   major(st.st_rdev), minor(st.st_rdev), perms);
+                        } else {
+                            log_warn("supervisor", "DeviceAllow: %s is not a device node", dev->path);
+                            continue;
+                        }
+
+                        if (write(allow_fd, allow_rule, strlen(allow_rule)) < 0) {
+                            log_warn("supervisor", "Failed to allow device %s: %s",
+                                   dev->path, strerror(errno));
+                        } else {
+                            log_debug("supervisor", "Allowed device %s (%s)", dev->path, perms);
+                        }
+                    }
+                    close(allow_fd);
+                }
+
+                /* Add this process to the cgroup */
+                char tasks_path[PATH_MAX];
+                snprintf(tasks_path, sizeof(tasks_path), "%s/tasks", cgroup_path);
+                int tasks_fd = open(tasks_path, O_WRONLY);
+                if (tasks_fd >= 0) {
+                    char pid_str[32];
+                    snprintf(pid_str, sizeof(pid_str), "%d", getpid());
+                    write(tasks_fd, pid_str, strlen(pid_str));
+                    close(tasks_fd);
+                    log_debug("supervisor", "Added PID %d to device cgroup", getpid());
+                }
+            }
         }
 #else
         if (service->device_allow_count > 0) {
@@ -938,14 +1009,98 @@ static pid_t start_service_process(const struct service_section *service,
 
         /* RootImage= - mount disk image as root filesystem (requires loop device support) */
         if (service->root_image[0] != '\0') {
-            /* TODO: Implement RootImage= support:
-             * 1. Set up loop device: losetup -f --show <image_path>
-             * 2. Mount the loop device to temporary directory
-             * 3. Use mounted path as RootDirectory
-             * 4. Clean up loop device on service exit
-             * For now, log that RootImage is configured but not supported */
-            log_error("supervisor", "RootImage= configured but not yet implemented");
+#ifdef __linux__
+            /* Set up loop device and mount the image */
+            int loop_fd = open("/dev/loop-control", O_RDWR);
+            if (loop_fd < 0) {
+                log_error("supervisor", "Failed to open /dev/loop-control: %s", strerror(errno));
+                _exit(1);
+            }
+
+            /* Allocate a free loop device */
+            int loop_num = ioctl(loop_fd, LOOP_CTL_GET_FREE);
+            close(loop_fd);
+            if (loop_num < 0) {
+                log_error("supervisor", "Failed to get free loop device: %s", strerror(errno));
+                _exit(1);
+            }
+
+            char loop_dev[64];
+            snprintf(loop_dev, sizeof(loop_dev), "/dev/loop%d", loop_num);
+
+            /* Open the loop device */
+            int loop_device_fd = open(loop_dev, O_RDWR);
+            if (loop_device_fd < 0) {
+                log_error("supervisor", "Failed to open %s: %s", loop_dev, strerror(errno));
+                _exit(1);
+            }
+
+            /* Open the image file */
+            int image_fd = open(service->root_image, O_RDWR);
+            if (image_fd < 0) {
+                log_error("supervisor", "Failed to open image %s: %s",
+                         service->root_image, strerror(errno));
+                close(loop_device_fd);
+                _exit(1);
+            }
+
+            /* Associate the image with the loop device */
+            if (ioctl(loop_device_fd, LOOP_SET_FD, image_fd) < 0) {
+                log_error("supervisor", "Failed to set loop device: %s", strerror(errno));
+                close(image_fd);
+                close(loop_device_fd);
+                _exit(1);
+            }
+            close(image_fd);
+            close(loop_device_fd);
+
+            /* Create mount point */
+            char mount_point[PATH_MAX];
+            snprintf(mount_point, sizeof(mount_point), "/run/initd/rootimg/%s-%d",
+                    unit_name, getpid());
+
+            /* Create directory hierarchy */
+            char *parent = strdup(mount_point);
+            char *slash = strrchr(parent, '/');
+            if (slash) {
+                *slash = '\0';
+                mkdir(parent, 0755);  /* /run/initd/rootimg */
+            }
+            free(parent);
+
+            if (mkdir(mount_point, 0755) < 0 && errno != EEXIST) {
+                log_error("supervisor", "Failed to create mount point %s: %s",
+                         mount_point, strerror(errno));
+                ioctl(open(loop_dev, O_RDWR), LOOP_CLR_FD, 0);
+                _exit(1);
+            }
+
+            /* Mount the loop device */
+            if (mount(loop_dev, mount_point, "auto", MS_RDONLY, NULL) < 0) {
+                log_error("supervisor", "Failed to mount %s: %s", loop_dev, strerror(errno));
+                rmdir(mount_point);
+                ioctl(open(loop_dev, O_RDWR), LOOP_CLR_FD, 0);
+                _exit(1);
+            }
+
+            /* chroot to the mounted image */
+            if (chroot(mount_point) < 0) {
+                log_error("supervisor", "chroot(%s): %s", mount_point, strerror(errno));
+                umount(mount_point);
+                rmdir(mount_point);
+                ioctl(open(loop_dev, O_RDWR), LOOP_CLR_FD, 0);
+                _exit(1);
+            }
+            if (chdir("/") < 0) {
+                log_error("supervisor", "chdir(/): %s", strerror(errno));
+                _exit(1);
+            }
+            log_debug("supervisor", "Mounted RootImage %s on %s via %s",
+                     service->root_image, mount_point, loop_dev);
+#else
+            log_error("supervisor", "RootImage= not supported on non-Linux platforms");
             _exit(1);
+#endif
         }
 
         /* chroot if RootDirectory is specified (must be done before dropping privileges) */
@@ -1357,7 +1512,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         /* Start service with validated credentials */
         int kill_mode = unit.config.service.kill_mode;
         int stdout_fd = -1, stderr_fd = -1;
-        pid_t pid = start_service_process(&unit.config.service, exec_path, exec_argv,
+        pid_t pid = start_service_process(&unit.config.service, unit.name, exec_path, exec_argv,
                                           validated_uid, validated_gid,
                                           &stdout_fd, &stderr_fd);
         int saved_errno = errno;
