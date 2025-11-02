@@ -675,6 +675,42 @@ SocketGroup=myapp     # or numeric GID
 - User/group validation prevents arbitrary uid/gid
 - Privileged operation isolated in daemon with minimal attack surface
 
+#### ExecStartPre= / ExecStartPost= / ExecStopPost= (Portable)
+
+**Purpose:** Execute commands during socket lifecycle events
+
+**Implementation:**
+- ExecStartPre= - Run before activating service (pre-start hook)
+- ExecStartPost= - Run after activating service (post-start hook)
+- ExecStopPost= - Run after service exits (cleanup hook)
+- Commands execute in unprivileged socket worker context
+- Commands must use absolute paths (security requirement)
+- Failed commands log warnings but don't prevent activation
+
+**Platform Support:**
+- All Unix-like systems via fork(2) and execv(2)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=/run/myapp.sock
+ExecStartPre=/usr/bin/logger "Activating myapp socket"
+ExecStartPost=/usr/local/bin/notify-ready myapp
+ExecStopPost=/usr/local/bin/cleanup-myapp
+```
+
+**Security:**
+- Commands run as unprivileged socket worker user (not root)
+- Absolute paths required (prevents PATH injection)
+- Path traversal protection (rejects paths containing "..")
+- Failures are non-fatal to prevent DoS
+
+**Common Use Cases:**
+- Logging socket activation events
+- Sending notifications to monitoring systems
+- Creating/removing temporary files
+- Updating external state databases
+
 #### TCP Keepalive Directives (Platform-Specific)
 
 **Purpose:** Configure TCP keepalive behavior for connection health monitoring
@@ -1490,9 +1526,6 @@ Notes:
 
   # Medium (portable, 1-2 days each)
   Accept=
-  ExecStartPre=
-  ExecStartPost=
-  ExecStopPost=
   TriggerLimitIntervalSec=
   TriggerLimitBurst=
   FileDescriptorName=

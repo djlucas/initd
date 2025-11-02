@@ -1046,6 +1046,29 @@ to control how TCP reacts to network congestion. Supported on Linux (cubic,
 reno, bbr, etc.) and FreeBSD (newreno, cubic, htcp, etc.). Not supported on
 OpenBSD, NetBSD, or macOS. Only applies to TCP sockets. Example values: "cubic",
 "bbr", "reno". Default: system default (typically "cubic" on Linux).
+.TP
+.B ExecStartPre=
+Command to execute before activating the service. Runs in the unprivileged
+socket worker context (not as root). Must specify absolute path to prevent
+PATH injection attacks. Path traversal (containing "..") is rejected.
+Command failures log warnings but do not prevent service activation. Useful
+for logging, sending notifications, or preparing resources. Example:
+ExecStartPre=/usr/bin/logger "Activating myapp socket". Default: not set.
+.TP
+.B ExecStartPost=
+Command to execute after successfully activating the service. Runs in the
+unprivileged socket worker context (not as root). Must specify absolute path.
+Path traversal is rejected. Command failures log warnings but do not affect
+the activated service. Useful for post-activation notifications or state
+updates. Example: ExecStartPost=/usr/local/bin/notify-ready myapp.
+Default: not set.
+.TP
+.B ExecStopPost=
+Command to execute after the activated service exits. Runs in the unprivileged
+socket worker context (not as root). Must specify absolute path. Path traversal
+is rejected. Command failures are logged but do not affect cleanup. Useful for
+cleanup tasks, logging service exits, or updating external state. Example:
+ExecStopPost=/usr/local/bin/cleanup-myapp. Default: not set.
 .SH [INSTALL] SECTION
 The
 .B [Install]
@@ -1189,6 +1212,8 @@ Description=SSH Socket
 ListenStream=22
 Accept=no
 IdleTimeout=5min
+ExecStartPre=/usr/bin/logger "Activating SSH socket"
+ExecStopPost=/usr/bin/logger "SSH service stopped"
 
 [Install]
 WantedBy=sockets.target

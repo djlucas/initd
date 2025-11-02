@@ -70,6 +70,9 @@ static int test_idle_kill_count = 0;
 static int test_runtime_kill_count = 0;
 #endif
 
+/* Forward declaration */
+static int run_socket_exec_command(const char *command, const char *unit_name, const char *stage);
+
 static void derive_service_name(struct socket_instance *sock) {
     /* Use Service= if specified */
     if (sock->unit->config.socket.service) {
@@ -142,6 +145,16 @@ static void mark_service_exit(pid_t pid) {
             s->last_activity = 0;
             s->runtime_max_sec = 0;
             notify_supervisor_socket_state(s, 0);
+
+            /* Run ExecStopPost if configured */
+            struct socket_section *socket_cfg = &s->unit->config.socket;
+            if (socket_cfg->exec_stop_post) {
+                if (run_socket_exec_command(socket_cfg->exec_stop_post, s->unit->name, "ExecStopPost") < 0) {
+                    log_warn("socket-worker", "ExecStopPost failed for %s", s->unit->name);
+                    /* Continue despite failure */
+                }
+            }
+
             break;
         }
     }
@@ -764,6 +777,170 @@ static int create_listen_socket(struct socket_instance *sock) {
     return -1;
 }
 
+/* Build argv array from command string (simplified from supervisor) */
+static int build_exec_argv(const char *command, char ***argv_out) {
+    if (!command || command[0] == '\0' || !argv_out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    char *copy = strdup(command);
+    if (!copy) {
+        return -1;
+    }
+
+    size_t capacity = 8;
+    size_t argc = 0;
+    char **argv = calloc(capacity, sizeof(char *));
+    if (!argv) {
+        free(copy);
+        return -1;
+    }
+
+    char *saveptr = NULL;
+    char *token = strtok_r(copy, " \t", &saveptr);
+    while (token) {
+        if (argc + 1 >= capacity) {
+            size_t new_capacity = capacity * 2;
+            char **tmp = realloc(argv, new_capacity * sizeof(char *));
+            if (!tmp) {
+                goto error;
+            }
+            argv = tmp;
+            capacity = new_capacity;
+        }
+
+        argv[argc] = strdup(token);
+        if (!argv[argc]) {
+            goto error;
+        }
+        argc++;
+
+        token = strtok_r(NULL, " \t", &saveptr);
+    }
+
+    free(copy);
+
+    if (argc == 0) {
+        free(argv);
+        errno = EINVAL;
+        return -1;
+    }
+
+    argv[argc] = NULL;
+    *argv_out = argv;
+    return 0;
+
+error:
+    for (size_t i = 0; i < argc; i++) {
+        free(argv[i]);
+    }
+    free(argv);
+    free(copy);
+    return -1;
+}
+
+/* Free argv array */
+static void free_exec_argv(char **argv) {
+    if (!argv) {
+        return;
+    }
+    for (size_t i = 0; argv[i] != NULL; i++) {
+        free(argv[i]);
+    }
+    free(argv);
+}
+
+/* Run exec command for socket lifecycle (simplified, no privilege dropping)
+ * Socket worker is already unprivileged, so commands run as worker user */
+static int run_socket_exec_command(const char *command, const char *unit_name, const char *stage) {
+    if (!command || command[0] == '\0') {
+        return 0;
+    }
+
+    char **argv = NULL;
+    if (build_exec_argv(command, &argv) < 0) {
+        log_error("socket-worker", "%s for %s failed to parse command", stage, unit_name);
+        return -1;
+    }
+
+    const char *exec_path = argv[0];
+    if (!exec_path || exec_path[0] != '/') {
+        log_error("socket-worker", "%s for %s must use absolute path", stage, unit_name);
+        free_exec_argv(argv);
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (strstr(exec_path, "..") != NULL) {
+        log_error("socket-worker", "%s for %s path contains '..'", stage, unit_name);
+        free_exec_argv(argv);
+        errno = EINVAL;
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        int saved_errno = errno;
+        log_error("socket-worker", "fork %s: %s", stage, strerror(saved_errno));
+        free_exec_argv(argv);
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (pid == 0) {
+        /* Child process */
+        if (setsid() < 0) {
+            log_error("socket-worker", "setsid (%s): %s", stage, strerror(errno));
+        }
+
+        /* Close daemon socket and other fds */
+        if (daemon_socket >= 0) {
+            close(daemon_socket);
+        }
+        if (control_socket >= 0) {
+            close(control_socket);
+        }
+        if (status_socket >= 0) {
+            close(status_socket);
+        }
+
+        /* Close listening sockets */
+        for (struct socket_instance *s = sockets; s; s = s->next) {
+            if (s->listen_fd >= 0) {
+                close(s->listen_fd);
+            }
+        }
+
+        execv(exec_path, argv);
+        log_error("socket-worker", "execv %s: %s", stage, strerror(errno));
+        _exit(1);
+    }
+
+    /* Parent */
+    free_exec_argv(argv);
+
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        int saved_errno = errno;
+        log_error("socket-worker", "waitpid %s: %s", stage, strerror(saved_errno));
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        log_error("socket-worker", "%s for %s failed (status=%d)",
+                  stage, unit_name, WEXITSTATUS(status));
+        errno = ECHILD;
+        return -1;
+    }
+
+    return 0;
+}
+
 /* Try to activate service via supervisor */
 /* Activate service directly and pass socket */
 static int activate_direct(struct socket_instance *sock) {
@@ -803,6 +980,15 @@ static int activate_direct(struct socket_instance *sock) {
     }
 
     int runtime_limit = unit.config.service.runtime_max_sec;
+
+    /* Run ExecStartPre if configured */
+    struct socket_section *socket_cfg = &sock->unit->config.socket;
+    if (socket_cfg->exec_start_pre) {
+        if (run_socket_exec_command(socket_cfg->exec_start_pre, sock->unit->name, "ExecStartPre") < 0) {
+            log_warn("socket-worker", "ExecStartPre failed for %s, continuing", sock->unit->name);
+            /* Continue despite failure - systemd behavior */
+        }
+    }
 
     /* Fork and exec service */
     pid_t pid = fork();
@@ -867,6 +1053,14 @@ static int activate_direct(struct socket_instance *sock) {
     sock->last_activity = sock->service_start;
 
     notify_supervisor_socket_state(sock, pid);
+
+    /* Run ExecStartPost if configured */
+    if (socket_cfg->exec_start_post) {
+        if (run_socket_exec_command(socket_cfg->exec_start_post, sock->unit->name, "ExecStartPost") < 0) {
+            log_warn("socket-worker", "ExecStartPost failed for %s", sock->unit->name);
+            /* Continue despite failure */
+        }
+    }
 
     return 0;
 }

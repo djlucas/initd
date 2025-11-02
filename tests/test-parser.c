@@ -660,6 +660,38 @@ void test_parse_default_dependencies(void) {
     PASS();
 }
 
+void test_parse_socket_exec_commands(void) {
+    TEST("socket Exec* lifecycle commands");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with Lifecycle Commands\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n"
+        "ExecStartPre=/usr/bin/logger \"Starting socket\"\n"
+        "ExecStartPost=/usr/local/bin/notify-ready test\n"
+        "ExecStopPost=/usr/local/bin/cleanup-test\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(strcmp(unit.config.socket.listen_stream, "/run/test.sock") == 0);
+    assert(unit.config.socket.exec_start_pre != NULL);
+    assert(strcmp(unit.config.socket.exec_start_pre, "/usr/bin/logger \"Starting socket\"") == 0);
+    assert(unit.config.socket.exec_start_post != NULL);
+    assert(strcmp(unit.config.socket.exec_start_post, "/usr/local/bin/notify-ready test") == 0);
+    assert(unit.config.socket.exec_stop_post != NULL);
+    assert(strcmp(unit.config.socket.exec_stop_post, "/usr/local/bin/cleanup-test") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -681,6 +713,7 @@ int main(void) {
     test_parse_provides();
     test_parse_allow_isolate();
     test_parse_default_dependencies();
+    test_parse_socket_exec_commands();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

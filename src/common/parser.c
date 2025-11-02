@@ -859,6 +859,12 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->transparent = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "TCPCongestion") == 0) {
         socket->tcp_congestion = strdup(value);
+    } else if (strcmp(key, "ExecStartPre") == 0) {
+        socket->exec_start_pre = strdup(value);
+    } else if (strcmp(key, "ExecStartPost") == 0) {
+        socket->exec_start_post = strdup(value);
+    } else if (strcmp(key, "ExecStopPost") == 0) {
+        socket->exec_stop_post = strdup(value);
     } else {
         return -1;
     }
@@ -1165,6 +1171,9 @@ void free_unit_file(struct unit_file *unit) {
             free(unit->config.socket.symlinks[i]);
         }
         free(unit->config.socket.tcp_congestion);
+        free(unit->config.socket.exec_start_pre);
+        free(unit->config.socket.exec_start_post);
+        free(unit->config.socket.exec_stop_post);
     }
 
     /* Free [Install] arrays */

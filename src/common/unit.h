@@ -323,6 +323,9 @@ struct socket_section {
     bool free_bind;             /* FreeBind= - IP_FREEBIND/IP_BINDANY/SO_BINDANY */
     bool transparent;           /* Transparent= - IP_TRANSPARENT (Linux only) */
     char *tcp_congestion;       /* TCPCongestion= - TCP congestion algorithm */
+    char *exec_start_pre;       /* ExecStartPre= - command before activation */
+    char *exec_start_post;      /* ExecStartPost= - command after activation */
+    char *exec_stop_post;       /* ExecStopPost= - command after service stops */
 };
 
 /* [Install] section */
