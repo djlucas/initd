@@ -68,6 +68,15 @@ static int test_runtime_kill_count = 0;
 #endif
 
 static void derive_service_name(struct socket_instance *sock) {
+    /* Use Service= if specified */
+    if (sock->unit->config.socket.service) {
+        strncpy(sock->service_name, sock->unit->config.socket.service,
+                sizeof(sock->service_name) - 1);
+        sock->service_name[sizeof(sock->service_name) - 1] = '\0';
+        return;
+    }
+
+    /* Otherwise derive from socket name (foo.socket -> foo.service) */
     const char *unit_name = sock->unit->name;
     const char *dot = strrchr(unit_name, '.');
     size_t base_len = dot && strcmp(dot, ".socket") == 0 ?
@@ -279,6 +288,73 @@ static int create_status_socket(void) {
     return fd;
 }
 
+/* Apply socket options via setsockopt */
+static int apply_socket_options(int fd, struct socket_section *s, int family) {
+    int ret;
+
+    /* KeepAlive= - SO_KEEPALIVE */
+    if (s->keep_alive) {
+        int optval = 1;
+        ret = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_KEEPALIVE: %s", strerror(errno));
+            /* Non-fatal */
+        }
+    }
+
+    /* SendBuffer= - SO_SNDBUF */
+    if (s->send_buffer > 0) {
+        ret = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &s->send_buffer, sizeof(s->send_buffer));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_SNDBUF to %d: %s",
+                     s->send_buffer, strerror(errno));
+            /* Non-fatal */
+        }
+    }
+
+    /* ReceiveBuffer= - SO_RCVBUF */
+    if (s->receive_buffer > 0) {
+        ret = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &s->receive_buffer, sizeof(s->receive_buffer));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_RCVBUF to %d: %s",
+                     s->receive_buffer, strerror(errno));
+            /* Non-fatal */
+        }
+    }
+
+    /* Broadcast= - SO_BROADCAST */
+    if (s->broadcast) {
+        int optval = 1;
+        ret = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_BROADCAST: %s", strerror(errno));
+            /* Non-fatal */
+        }
+    }
+
+    /* IPTOS= - IP_TOS (IPv4 only) */
+    if (s->ip_tos >= 0 && family == AF_INET) {
+        ret = setsockopt(fd, IPPROTO_IP, IP_TOS, &s->ip_tos, sizeof(s->ip_tos));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set IP_TOS to %d: %s",
+                     s->ip_tos, strerror(errno));
+            /* Non-fatal */
+        }
+    }
+
+    /* IPTTL= - IP_TTL (IPv4 only) */
+    if (s->ip_ttl >= 0 && family == AF_INET) {
+        ret = setsockopt(fd, IPPROTO_IP, IP_TTL, &s->ip_ttl, sizeof(s->ip_ttl));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set IP_TTL to %d: %s",
+                     s->ip_ttl, strerror(errno));
+            /* Non-fatal */
+        }
+    }
+
+    return 0;
+}
+
 /* Create listening socket from socket unit */
 static int create_listen_socket(struct socket_instance *sock) {
     struct socket_section *s = &sock->unit->config.socket;
@@ -292,6 +368,9 @@ static int create_listen_socket(struct socket_instance *sock) {
             return -1;
         }
 
+        /* Apply socket options */
+        apply_socket_options(fd, s, AF_UNIX);
+
         struct sockaddr_un addr = {0};
         addr.sun_family = AF_UNIX;
         strncpy(addr.sun_path, s->listen_stream, sizeof(addr.sun_path) - 1);
@@ -299,16 +378,51 @@ static int create_listen_socket(struct socket_instance *sock) {
         /* Remove old socket */
         unlink(s->listen_stream);
 
+        /* Create parent directory if needed with DirectoryMode= */
+        char *last_slash = strrchr(s->listen_stream, '/');
+        if (last_slash && last_slash != s->listen_stream) {
+            char dir_path[MAX_PATH];
+            size_t dir_len = last_slash - s->listen_stream;
+            if (dir_len < sizeof(dir_path)) {
+                memcpy(dir_path, s->listen_stream, dir_len);
+                dir_path[dir_len] = '\0';
+
+                struct stat st;
+                if (stat(dir_path, &st) < 0 && errno == ENOENT) {
+                    if (mkdir(dir_path, s->directory_mode) < 0 && errno != EEXIST) {
+                        log_warn("socket-worker", "mkdir %s: %s", dir_path, strerror(errno));
+                    }
+                }
+            }
+        }
+
         if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
             log_error("socket-worker", "bind: %s", strerror(errno));
             close(fd);
             return -1;
         }
 
-        if (listen(fd, 128) < 0) {
+        /* Use configured backlog */
+        if (listen(fd, s->backlog) < 0) {
             log_error("socket-worker", "listen: %s", strerror(errno));
             close(fd);
             return -1;
+        }
+
+        /* Set socket file permissions with SocketMode= */
+        if (fchmod(fd, s->socket_mode) < 0) {
+            log_warn("socket-worker", "fchmod %04o: %s", s->socket_mode, strerror(errno));
+        }
+
+        /* Symlinks= - create symlinks to the socket */
+        for (int i = 0; i < s->symlinks_count; i++) {
+            if (s->symlinks[i]) {
+                unlink(s->symlinks[i]);  /* Remove old symlink if exists */
+                if (symlink(s->listen_stream, s->symlinks[i]) < 0) {
+                    log_warn("socket-worker", "symlink %s -> %s: %s",
+                             s->symlinks[i], s->listen_stream, strerror(errno));
+                }
+            }
         }
 
         sock->is_stream = true;
@@ -340,6 +454,9 @@ static int create_listen_socket(struct socket_instance *sock) {
         int reuse = 1;
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
+        /* Apply socket options */
+        apply_socket_options(fd, s, AF_INET);
+
         struct sockaddr_in addr = {0};
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);
@@ -356,7 +473,8 @@ static int create_listen_socket(struct socket_instance *sock) {
             return -1;
         }
 
-        if (listen(fd, 128) < 0) {
+        /* Use configured backlog */
+        if (listen(fd, s->backlog) < 0) {
             log_error("socket-worker", "listen: %s", strerror(errno));
             close(fd);
             return -1;
@@ -375,16 +493,53 @@ static int create_listen_socket(struct socket_instance *sock) {
             return -1;
         }
 
+        /* Apply socket options */
+        apply_socket_options(fd, s, AF_UNIX);
+
         struct sockaddr_un addr = {0};
         addr.sun_family = AF_UNIX;
         strncpy(addr.sun_path, s->listen_datagram, sizeof(addr.sun_path) - 1);
 
         unlink(s->listen_datagram);
 
+        /* Create parent directory if needed with DirectoryMode= */
+        char *last_slash = strrchr(s->listen_datagram, '/');
+        if (last_slash && last_slash != s->listen_datagram) {
+            char dir_path[MAX_PATH];
+            size_t dir_len = last_slash - s->listen_datagram;
+            if (dir_len < sizeof(dir_path)) {
+                memcpy(dir_path, s->listen_datagram, dir_len);
+                dir_path[dir_len] = '\0';
+
+                struct stat st;
+                if (stat(dir_path, &st) < 0 && errno == ENOENT) {
+                    if (mkdir(dir_path, s->directory_mode) < 0 && errno != EEXIST) {
+                        log_warn("socket-worker", "mkdir %s: %s", dir_path, strerror(errno));
+                    }
+                }
+            }
+        }
+
         if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
             log_error("socket-worker", "bind: %s", strerror(errno));
             close(fd);
             return -1;
+        }
+
+        /* Set socket file permissions with SocketMode= */
+        if (fchmod(fd, s->socket_mode) < 0) {
+            log_warn("socket-worker", "fchmod %04o: %s", s->socket_mode, strerror(errno));
+        }
+
+        /* Symlinks= - create symlinks to the socket */
+        for (int i = 0; i < s->symlinks_count; i++) {
+            if (s->symlinks[i]) {
+                unlink(s->symlinks[i]);  /* Remove old symlink if exists */
+                if (symlink(s->listen_datagram, s->symlinks[i]) < 0) {
+                    log_warn("socket-worker", "symlink %s -> %s: %s",
+                             s->symlinks[i], s->listen_datagram, strerror(errno));
+                }
+            }
         }
 
         sock->is_stream = false;
@@ -412,6 +567,9 @@ static int create_listen_socket(struct socket_instance *sock) {
             log_error("socket-worker", "socket: %s", strerror(errno));
             return -1;
         }
+
+        /* Apply socket options */
+        apply_socket_options(fd, s, AF_INET);
 
         struct sockaddr_in addr = {0};
         addr.sin_family = AF_INET;
@@ -933,11 +1091,20 @@ static void handle_control_command(int client_fd, bool read_only) {
                     close(sock->listen_fd);
                     sock->listen_fd = -1;
                     struct socket_section *sec = &sock->unit->config.socket;
-                    if (sec->listen_stream && sec->listen_stream[0] == '/') {
-                        unlink(sec->listen_stream);
-                    }
-                    if (sec->listen_datagram && sec->listen_datagram[0] == '/') {
-                        unlink(sec->listen_datagram);
+                    /* RemoveOnStop= - remove socket files when stopped */
+                    if (sec->remove_on_stop) {
+                        if (sec->listen_stream && sec->listen_stream[0] == '/') {
+                            unlink(sec->listen_stream);
+                        }
+                        if (sec->listen_datagram && sec->listen_datagram[0] == '/') {
+                            unlink(sec->listen_datagram);
+                        }
+                        /* Remove symlinks too if they exist */
+                        for (int i = 0; i < sec->symlinks_count; i++) {
+                            if (sec->symlinks[i]) {
+                                unlink(sec->symlinks[i]);
+                            }
+                        }
                     }
                 }
                 snprintf(resp.message, sizeof(resp.message), "Disabled %s", req.unit_name);

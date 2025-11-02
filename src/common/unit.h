@@ -297,6 +297,21 @@ struct socket_section {
     char *listen_stream;
     char *listen_datagram;
     int idle_timeout;  /* Custom: kill service after idle */
+
+    /* Easy portable directives */
+    mode_t socket_mode;        /* SocketMode= - socket file permissions (default: 0666) */
+    mode_t directory_mode;     /* DirectoryMode= - directory permissions for socket path */
+    int backlog;               /* Backlog= - listen backlog (default: SOMAXCONN) */
+    char *service;             /* Service= - service to activate (default: socket name minus .socket) */
+    bool keep_alive;           /* KeepAlive= - SO_KEEPALIVE */
+    int send_buffer;           /* SendBuffer= - SO_SNDBUF (bytes, -1 = not set) */
+    int receive_buffer;        /* ReceiveBuffer= - SO_RCVBUF (bytes, -1 = not set) */
+    bool broadcast;            /* Broadcast= - SO_BROADCAST */
+    int ip_tos;                /* IPTOS= - IP_TOS (-1 = not set) */
+    int ip_ttl;                /* IPTTL= - IP_TTL (-1 = not set) */
+    bool remove_on_stop;       /* RemoveOnStop= - remove socket file on stop */
+    char *symlinks[MAX_DEPS];  /* Symlinks= - symlinks to socket */
+    int symlinks_count;
 };
 
 /* [Install] section */

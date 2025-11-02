@@ -918,6 +918,70 @@ Boolean. If true, a separate service instance is spawned for each connection
 (inetd-style). If false, all connections are passed to one service instance.
 Default: false.
 .TP
+.B SocketMode=
+File permissions for Unix domain sockets in octal notation. Example: 0600
+for owner-only access, 0666 for world read/write. Only applies to Unix
+sockets (ListenStream or ListenDatagram with filesystem paths). Default: 0666.
+.TP
+.B DirectoryMode=
+File permissions for parent directories created for Unix sockets, in octal
+notation. Used when the socket path's parent directory does not exist and
+must be created. Example: 0755 for standard directory permissions.
+Default: 0755.
+.TP
+.B Backlog=
+Maximum length of the queue for pending connections. Applies to stream
+sockets (TCP and Unix stream). May be a number or the special value
+.B SOMAXCONN
+to use the system maximum. Larger values allow more connections to queue
+during high load. Default: SOMAXCONN (system dependent, typically 128).
+.TP
+.B Service=
+Service unit to activate when connections arrive. If not specified, defaults
+to a service unit of the same name as the socket unit (e.g., foo.socket
+activates foo.service). Use this to activate a different service.
+.TP
+.B KeepAlive=
+Boolean. If true, enables SO_KEEPALIVE on the socket to detect dead
+connections via TCP keepalive probes. Only meaningful for TCP sockets.
+Default: false.
+.TP
+.B SendBuffer=
+Size in bytes for the socket send buffer (SO_SNDBUF). Larger values can
+improve performance for high-throughput connections. Example: 8192 for
+8KB, 65536 for 64KB. Default: system default.
+.TP
+.B ReceiveBuffer=
+Size in bytes for the socket receive buffer (SO_RCVBUF). Larger values can
+improve performance for high-throughput connections. Example: 8192 for
+8KB, 65536 for 64KB. Default: system default.
+.TP
+.B Broadcast=
+Boolean. If true, enables SO_BROADCAST on the socket to permit sending
+broadcast datagrams. Only meaningful for UDP sockets. Default: false.
+.TP
+.B IPTOS=
+IP Type of Service value for IPv4 sockets. Sets the TOS field in IP headers.
+Common values: 0 (normal), 16 (minimize delay), 8 (maximize throughput),
+4 (maximize reliability). Only applies to IPv4 TCP and UDP sockets.
+Default: not set.
+.TP
+.B IPTTL=
+IP Time-to-Live value for IPv4 sockets. Sets the maximum number of hops
+for packets. Valid range: 1-255. Only applies to IPv4 TCP and UDP sockets.
+Default: not set (system default, typically 64).
+.TP
+.B RemoveOnStop=
+Boolean. If true, Unix socket files are removed when the socket unit is
+stopped or disabled. If false, socket files are left in place (allowing
+manual cleanup or reuse). Only applies to Unix sockets. Default: false.
+.TP
+.B Symlinks=
+Space-separated list of symlink paths to create pointing to the Unix socket.
+Useful for compatibility when services expect a socket at multiple paths.
+Example: Symlinks=/var/run/mysocket.sock /tmp/mysocket.sock. Only applies
+to Unix sockets. Symlinks are removed when RemoveOnStop=true. Default: none.
+.TP
 .B IdleTimeout=
 Time to wait before stopping an idle service. This is an initd-specific
 extension not present in systemd. Takes a time value.

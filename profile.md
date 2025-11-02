@@ -457,6 +457,18 @@ Standard systemd INI format
 - ListenStream, ListenDatagram
 - IdleTimeout (custom extension - kill service after idle)
 - RuntimeMaxSec (from associated service unit)
+- SocketMode (Unix socket file permissions, default: 0666)
+- DirectoryMode (socket directory permissions, default: 0755)
+- Backlog (listen queue depth, default: SOMAXCONN)
+- Service (override service activation target)
+- KeepAlive (SO_KEEPALIVE socket option)
+- SendBuffer (SO_SNDBUF buffer size)
+- ReceiveBuffer (SO_RCVBUF buffer size)
+- Broadcast (SO_BROADCAST for UDP)
+- IPTOS (IP Type of Service)
+- IPTTL (IP Time to Live)
+- RemoveOnStop (remove socket files on disable)
+- Symlinks (create symlinks to socket)
 
 **[Install]:**
 - WantedBy, RequiredBy
@@ -1175,6 +1187,40 @@ init (root, PID 1)
 - Ninja
 - pkg-config
 
+### Documentation Requirements Before Commits
+
+**NEVER present a commit message without first updating all relevant documentation.**
+
+Before presenting any commit message, update:
+
+1. **profile.md** - Always update when:
+   - New features are added (update supported directives section, remove from TODO)
+   - Known bugs are fixed (update pending work section)
+   - Project goals change
+   - Architecture changes
+
+2. **tests/README.md** - Update when:
+   - New tests are added
+   - Test suites are modified
+   - Test coverage changes
+
+3. **profile.md and README.md** - Update test counts when:
+   - New test suites are added
+   - Test suite counts change
+   - Both files must have matching test counts
+
+4. **docs/** (man pages) - Update when:
+   - User-facing parsers change (unit file format, directives)
+   - Commands change (initctl, systemctl, journalctl)
+   - Command-line options are added/modified
+   - Configuration file formats change
+
+**Process:**
+1. Make code changes
+2. Update all relevant documentation
+3. Verify documentation is complete and accurate
+4. THEN present commit message for review
+
 ### Commit Message Guidelines
 
 Keep history easy to scan by using a consistent four-part structure. Wrap every
@@ -1287,38 +1333,54 @@ Notes:
 [Timer]
 
 [Socket]
-  Accept=
-  Service=
+  # Easy (Linux-only)
+  Mark=
+
+  # Medium (portable, 1-2 days each)
   SocketUser=
   SocketGroup=
-  SocketMode=
-  Backlog=
-  BindIPv6Only=
-  ListenFIFO=
-  ListenNetlink=
-  ListenSequentialPacket=
-  RemoveOnStop=
-  MaxConnections=
-  TriggerLimitBurst=
-  TriggerLimitIntervalSec=
-  PassCredentials=
-  PassSecurity=
-  FreeBind=
-  ReusePort=
-  KeepAlive=
+  Accept=
   KeepAliveTimeSec=
   KeepAliveIntervalSec=
   KeepAliveProbes=
+  ReusePort=
+  ExecStartPre=
+  ExecStartPost=
+  ExecStopPost=
+  TriggerLimitIntervalSec=
+  TriggerLimitBurst=
+  FileDescriptorName=
+  ListenFIFO=
+  ListenMessageQueue=
+  MessageQueueMaxMessages=
+  MessageQueueMessageSize=
+  FreeBind=
+  Transparent=
+  TCPCongestion=
+  PipeSize=
+
+  # Medium (Linux-only)
+  PassCredentials=
+  PassSecurity=
+
+  # Hard (portable, several days each)
+  ListenSpecial=
+
+  # Hard (Linux-only)
+  ListenNetlink=
+  ListenUSBFunction=
+  SmackLabel=
+  SmackLabelIPIn=
+  SmackLabelIPOut=
+  SELinuxContextFromNet=
+
+  # Not categorized yet (need research)
+  BindIPv6Only=
+  ListenSequentialPacket=
+  MaxConnections=
   NoDelay=
   DeferAcceptSec=
-  PipeSize=
   Priority=
-  ReceiveBuffer=
-  SendBuffer=
-  IPTOS=
-  IPTTL=
-  Mark=
-  Transparent=
 
 [Install]
 

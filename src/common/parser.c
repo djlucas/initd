@@ -17,6 +17,7 @@
 #include <strings.h>
 #include <syslog.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
 #include "unit.h"
 
 #define MAX_LINE 1024
@@ -816,6 +817,30 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->listen_datagram = strdup(value);
     } else if (strcmp(key, "IdleTimeout") == 0) {
         socket->idle_timeout = atoi(value);
+    } else if (strcmp(key, "SocketMode") == 0) {
+        socket->socket_mode = (mode_t)strtol(value, NULL, 8);  /* Octal */
+    } else if (strcmp(key, "DirectoryMode") == 0) {
+        socket->directory_mode = (mode_t)strtol(value, NULL, 8);  /* Octal */
+    } else if (strcmp(key, "Backlog") == 0) {
+        socket->backlog = atoi(value);
+    } else if (strcmp(key, "Service") == 0) {
+        socket->service = strdup(value);
+    } else if (strcmp(key, "KeepAlive") == 0) {
+        socket->keep_alive = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "SendBuffer") == 0) {
+        socket->send_buffer = atoi(value);
+    } else if (strcmp(key, "ReceiveBuffer") == 0) {
+        socket->receive_buffer = atoi(value);
+    } else if (strcmp(key, "Broadcast") == 0) {
+        socket->broadcast = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "IPTOS") == 0) {
+        socket->ip_tos = atoi(value);
+    } else if (strcmp(key, "IPTTL") == 0) {
+        socket->ip_ttl = atoi(value);
+    } else if (strcmp(key, "RemoveOnStop") == 0) {
+        socket->remove_on_stop = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "Symlinks") == 0) {
+        socket->symlinks_count = parse_list(value, socket->symlinks, MAX_DEPS);
     } else {
         return -1;
     }
@@ -920,6 +945,15 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     /* Timer defaults */
     unit->config.timer.accuracy_sec = 60;  /* Default: 1 minute (systemd default) */
     unit->config.timer.remain_after_elapse = true;  /* Default: true (systemd default) */
+
+    /* Socket defaults */
+    unit->config.socket.socket_mode = 0666;        /* Default: rw-rw-rw- */
+    unit->config.socket.directory_mode = 0755;     /* Default: rwxr-xr-x */
+    unit->config.socket.backlog = SOMAXCONN;       /* Default: system maximum */
+    unit->config.socket.send_buffer = -1;          /* Default: not set */
+    unit->config.socket.receive_buffer = -1;       /* Default: not set */
+    unit->config.socket.ip_tos = -1;               /* Default: not set */
+    unit->config.socket.ip_ttl = -1;               /* Default: not set */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1105,6 +1139,10 @@ void free_unit_file(struct unit_file *unit) {
     if (unit->type == UNIT_SOCKET) {
         free(unit->config.socket.listen_stream);
         free(unit->config.socket.listen_datagram);
+        free(unit->config.socket.service);
+        for (int i = 0; i < unit->config.socket.symlinks_count; i++) {
+            free(unit->config.socket.symlinks[i]);
+        }
     }
 
     /* Free [Install] arrays */
