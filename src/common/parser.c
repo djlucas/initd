@@ -841,6 +841,24 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->remove_on_stop = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "Symlinks") == 0) {
         socket->symlinks_count = parse_list(value, socket->symlinks, MAX_DEPS);
+    } else if (strcmp(key, "SocketUser") == 0) {
+        strncpy(socket->socket_user, value, sizeof(socket->socket_user) - 1);
+    } else if (strcmp(key, "SocketGroup") == 0) {
+        strncpy(socket->socket_group, value, sizeof(socket->socket_group) - 1);
+    } else if (strcmp(key, "KeepAliveTimeSec") == 0) {
+        socket->keep_alive_time = atoi(value);
+    } else if (strcmp(key, "KeepAliveIntervalSec") == 0) {
+        socket->keep_alive_interval = atoi(value);
+    } else if (strcmp(key, "KeepAliveProbes") == 0) {
+        socket->keep_alive_count = atoi(value);
+    } else if (strcmp(key, "ReusePort") == 0) {
+        socket->reuse_port = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "FreeBind") == 0) {
+        socket->free_bind = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "Transparent") == 0) {
+        socket->transparent = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "TCPCongestion") == 0) {
+        socket->tcp_congestion = strdup(value);
     } else {
         return -1;
     }
@@ -954,6 +972,9 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.receive_buffer = -1;       /* Default: not set */
     unit->config.socket.ip_tos = -1;               /* Default: not set */
     unit->config.socket.ip_ttl = -1;               /* Default: not set */
+    unit->config.socket.keep_alive_time = -1;      /* Default: not set */
+    unit->config.socket.keep_alive_interval = -1;  /* Default: not set */
+    unit->config.socket.keep_alive_count = -1;     /* Default: not set */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1143,6 +1164,7 @@ void free_unit_file(struct unit_file *unit) {
         for (int i = 0; i < unit->config.socket.symlinks_count; i++) {
             free(unit->config.socket.symlinks[i]);
         }
+        free(unit->config.socket.tcp_congestion);
     }
 
     /* Free [Install] arrays */

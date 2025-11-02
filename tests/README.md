@@ -268,12 +268,14 @@ Tests timer daemon IPC communication:
 - Timer status request serialization
 - Timer activation notification serialization
 
-### test-socket-ipc (5 tests)
+### test-socket-ipc (7 tests)
 Tests socket activator IPC communication:
-- Socket add request serialization
-- Socket remove request serialization
-- Socket list request serialization
-- Socket status request serialization
+- Socket enable/disable/convert request serialization
+- Socket chown request serialization (SocketUser=/SocketGroup= support)
+- Socket chown request with numeric UIDs/GIDs
+- OK/error response serialization
+- Converted unit response with path
+- Multiple request/response roundtrips
 - Socket activation notification serialization
 
 ### test-service-features (36 tests)

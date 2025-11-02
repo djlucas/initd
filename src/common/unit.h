@@ -312,6 +312,17 @@ struct socket_section {
     bool remove_on_stop;       /* RemoveOnStop= - remove socket file on stop */
     char *symlinks[MAX_DEPS];  /* Symlinks= - symlinks to socket */
     int symlinks_count;
+
+    /* Medium portable directives */
+    char socket_user[64];      /* SocketUser= - Unix socket owner (default: service user) */
+    char socket_group[64];     /* SocketGroup= - Unix socket group (default: service group) */
+    int keep_alive_time;       /* KeepAliveTimeSec= - TCP_KEEPIDLE seconds (-1 = not set) */
+    int keep_alive_interval;   /* KeepAliveIntervalSec= - TCP_KEEPINTVL seconds (-1 = not set) */
+    int keep_alive_count;      /* KeepAliveProbes= - TCP_KEEPCNT count (-1 = not set) */
+    bool reuse_port;           /* ReusePort= - SO_REUSEPORT (default: false) */
+    bool free_bind;             /* FreeBind= - IP_FREEBIND/IP_BINDANY/SO_BINDANY */
+    bool transparent;           /* Transparent= - IP_TRANSPARENT (Linux only) */
+    char *tcp_congestion;       /* TCPCongestion= - TCP congestion algorithm */
 };
 
 /* [Install] section */

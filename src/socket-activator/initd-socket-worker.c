@@ -26,12 +26,15 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <poll.h>
 #include <stdbool.h>
+#include <pwd.h>
+#include <grp.h>
 #include "../common/control.h"
 #include "../common/unit.h"
 #include "../common/scanner.h"
@@ -352,6 +355,166 @@ static int apply_socket_options(int fd, struct socket_section *s, int family) {
         }
     }
 
+    /* ReusePort= - SO_REUSEPORT (portable, but different semantics) */
+    if (s->reuse_port) {
+#ifdef SO_REUSEPORT
+        int optval = 1;
+        ret = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_REUSEPORT: %s", strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "SO_REUSEPORT not supported on this platform");
+#endif
+    }
+
+    /* KeepAliveTimeSec= - TCP keepalive idle time (TCP only) */
+    if (s->keep_alive_time > 0 && family == AF_INET) {
+#if defined(__APPLE__)
+        /* macOS uses TCP_KEEPALIVE instead of TCP_KEEPIDLE */
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &s->keep_alive_time, sizeof(s->keep_alive_time));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set TCP_KEEPALIVE to %d: %s",
+                     s->keep_alive_time, strerror(errno));
+        }
+#elif defined(TCP_KEEPIDLE) && !defined(__OpenBSD__)
+        /* Linux, FreeBSD, NetBSD */
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &s->keep_alive_time, sizeof(s->keep_alive_time));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set TCP_KEEPIDLE to %d: %s",
+                     s->keep_alive_time, strerror(errno));
+        }
+#else
+        /* OpenBSD - per-socket keepalive time not supported (sysctl only) */
+        log_warn("socket-worker", "TCP keepalive time configuration not supported on this platform");
+#endif
+    }
+
+    /* KeepAliveIntervalSec= - TCP keepalive interval (TCP only) */
+    if (s->keep_alive_interval > 0 && family == AF_INET) {
+#if defined(TCP_KEEPINTVL) && !defined(__OpenBSD__)
+        /* Linux, FreeBSD, NetBSD, macOS */
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &s->keep_alive_interval, sizeof(s->keep_alive_interval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set TCP_KEEPINTVL to %d: %s",
+                     s->keep_alive_interval, strerror(errno));
+        }
+#else
+        /* OpenBSD - per-socket keepalive interval not supported */
+        log_warn("socket-worker", "TCP keepalive interval configuration not supported on this platform");
+#endif
+    }
+
+    /* KeepAliveProbes= - TCP keepalive probe count (TCP only) */
+    if (s->keep_alive_count > 0 && family == AF_INET) {
+#if defined(TCP_KEEPCNT) && !defined(__OpenBSD__)
+        /* Linux, FreeBSD, NetBSD, macOS */
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &s->keep_alive_count, sizeof(s->keep_alive_count));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set TCP_KEEPCNT to %d: %s",
+                     s->keep_alive_count, strerror(errno));
+        }
+#else
+        /* OpenBSD - per-socket keepalive count not supported */
+        log_warn("socket-worker", "TCP keepalive probe count configuration not supported on this platform");
+#endif
+    }
+
+    /* FreeBind= - bind to non-local addresses (platform-specific) */
+    if (s->free_bind && family == AF_INET) {
+#if defined(__linux__)
+        /* Linux: IP_FREEBIND */
+        int optval = 1;
+        ret = setsockopt(fd, IPPROTO_IP, IP_FREEBIND, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set IP_FREEBIND: %s", strerror(errno));
+        }
+#elif defined(__OpenBSD__)
+        /* OpenBSD: SO_BINDANY (note SOL_SOCKET level, not IPPROTO_IP) */
+        int optval = 1;
+        ret = setsockopt(fd, SOL_SOCKET, SO_BINDANY, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_BINDANY: %s", strerror(errno));
+        }
+#elif defined(__FreeBSD__) || defined(__NetBSD__)
+        /* FreeBSD/NetBSD: IP_BINDANY */
+        int optval = 1;
+        ret = setsockopt(fd, IPPROTO_IP, IP_BINDANY, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set IP_BINDANY: %s", strerror(errno));
+        }
+#else
+        /* macOS and others - not supported */
+        log_warn("socket-worker", "FreeBind not supported on this platform");
+#endif
+    }
+
+    /* Transparent= - IP_TRANSPARENT (Linux-only) */
+    if (s->transparent && family == AF_INET) {
+#if defined(__linux__) && defined(IP_TRANSPARENT)
+        int optval = 1;
+        ret = setsockopt(fd, IPPROTO_IP, IP_TRANSPARENT, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set IP_TRANSPARENT: %s", strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "IP_TRANSPARENT not supported (Linux-only feature)");
+#endif
+    }
+
+    /* TCPCongestion= - TCP congestion control algorithm */
+    if (s->tcp_congestion && family == AF_INET) {
+#if (defined(__linux__) || defined(__FreeBSD__)) && defined(TCP_CONGESTION)
+        /* Linux and FreeBSD support TCP_CONGESTION */
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, s->tcp_congestion, strlen(s->tcp_congestion));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set TCP_CONGESTION to %s: %s",
+                     s->tcp_congestion, strerror(errno));
+        }
+#else
+        /* OpenBSD, NetBSD, macOS have limited/no support */
+        log_warn("socket-worker", "TCP_CONGESTION not supported on this platform");
+#endif
+    }
+
+    return 0;
+}
+
+/* Apply SocketUser= and SocketGroup= ownership to Unix socket
+ * Uses IPC to request privileged daemon to perform chown operation */
+static int apply_socket_ownership(const char *socket_path, struct socket_section *s) {
+    /* Skip if neither SocketUser= nor SocketGroup= is set */
+    if (s->socket_user[0] == '\0' && s->socket_group[0] == '\0') {
+        return 0;
+    }
+
+    /* Build IPC request for privileged daemon */
+    struct socket_request req = {0};
+    struct socket_response resp = {0};
+
+    req.type = SOCKET_REQ_CHOWN;
+    strncpy(req.socket_path, socket_path, sizeof(req.socket_path) - 1);
+    strncpy(req.owner, s->socket_user, sizeof(req.owner) - 1);
+    strncpy(req.group, s->socket_group, sizeof(req.group) - 1);
+
+    /* Send request to privileged daemon */
+    if (send_socket_request(daemon_socket, &req) < 0) {
+        log_warn("socket-worker", "Failed to send chown request for %s", socket_path);
+        return -1;
+    }
+
+    /* Wait for response */
+    if (recv_socket_response(daemon_socket, &resp) < 0) {
+        log_warn("socket-worker", "Failed to receive chown response for %s", socket_path);
+        return -1;
+    }
+
+    if (resp.type != SOCKET_RESP_OK) {
+        log_warn("socket-worker", "Chown failed for %s: %s",
+                 socket_path, resp.error_msg);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -413,6 +576,9 @@ static int create_listen_socket(struct socket_instance *sock) {
         if (fchmod(fd, s->socket_mode) < 0) {
             log_warn("socket-worker", "fchmod %04o: %s", s->socket_mode, strerror(errno));
         }
+
+        /* Apply SocketUser=/SocketGroup= ownership */
+        apply_socket_ownership(s->listen_stream, s);
 
         /* Symlinks= - create symlinks to the socket */
         for (int i = 0; i < s->symlinks_count; i++) {
@@ -530,6 +696,9 @@ static int create_listen_socket(struct socket_instance *sock) {
         if (fchmod(fd, s->socket_mode) < 0) {
             log_warn("socket-worker", "fchmod %04o: %s", s->socket_mode, strerror(errno));
         }
+
+        /* Apply SocketUser=/SocketGroup= ownership */
+        apply_socket_ownership(s->listen_datagram, s);
 
         /* Symlinks= - create symlinks to the socket */
         for (int i = 0; i < s->symlinks_count; i++) {

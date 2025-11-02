@@ -169,6 +169,60 @@ void test_converted_response(void) {
     PASS();
 }
 
+void test_chown_request(void) {
+    TEST("chown request");
+
+    int fds[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+
+    struct socket_request req = {0};
+    req.type = SOCKET_REQ_CHOWN;
+    strncpy(req.socket_path, "/run/test.sock", sizeof(req.socket_path) - 1);
+    strncpy(req.owner, "testuser", sizeof(req.owner) - 1);
+    strncpy(req.group, "testgroup", sizeof(req.group) - 1);
+
+    assert(send_socket_request(fds[0], &req) == 0);
+
+    struct socket_request recv_req = {0};
+    assert(recv_socket_request(fds[1], &recv_req) == 0);
+
+    assert(recv_req.type == SOCKET_REQ_CHOWN);
+    assert(strcmp(recv_req.socket_path, "/run/test.sock") == 0);
+    assert(strcmp(recv_req.owner, "testuser") == 0);
+    assert(strcmp(recv_req.group, "testgroup") == 0);
+
+    close(fds[0]);
+    close(fds[1]);
+    PASS();
+}
+
+void test_chown_numeric_ids(void) {
+    TEST("chown request with numeric IDs");
+
+    int fds[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+
+    struct socket_request req = {0};
+    req.type = SOCKET_REQ_CHOWN;
+    strncpy(req.socket_path, "/var/run/app.socket", sizeof(req.socket_path) - 1);
+    strncpy(req.owner, "1000", sizeof(req.owner) - 1);
+    strncpy(req.group, "1000", sizeof(req.group) - 1);
+
+    assert(send_socket_request(fds[0], &req) == 0);
+
+    struct socket_request recv_req = {0};
+    assert(recv_socket_request(fds[1], &recv_req) == 0);
+
+    assert(recv_req.type == SOCKET_REQ_CHOWN);
+    assert(strcmp(recv_req.socket_path, "/var/run/app.socket") == 0);
+    assert(strcmp(recv_req.owner, "1000") == 0);
+    assert(strcmp(recv_req.group, "1000") == 0);
+
+    close(fds[0]);
+    close(fds[1]);
+    PASS();
+}
+
 void test_multiple_roundtrips(void) {
     TEST("multiple request/response roundtrips");
 
@@ -229,6 +283,8 @@ int main(void) {
     test_enable_request();
     test_disable_request();
     test_convert_request();
+    test_chown_request();
+    test_chown_numeric_ids();
     test_ok_response();
     test_error_response();
     test_converted_response();

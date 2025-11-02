@@ -15,7 +15,8 @@
 enum socket_request_type {
     SOCKET_REQ_ENABLE_UNIT,     /* Enable a socket unit */
     SOCKET_REQ_DISABLE_UNIT,    /* Disable a socket unit */
-    SOCKET_REQ_CONVERT_UNIT     /* Convert systemd unit to initd */
+    SOCKET_REQ_CONVERT_UNIT,    /* Convert systemd unit to initd */
+    SOCKET_REQ_CHOWN           /* Change ownership of socket file */
 };
 
 /* Request structure */
@@ -23,6 +24,10 @@ struct socket_request {
     enum socket_request_type type;
     char unit_name[MAX_UNIT_NAME];
     char unit_path[MAX_PATH];
+    /* For SOCKET_REQ_CHOWN */
+    char socket_path[MAX_PATH];  /* Path to socket file */
+    char owner[64];              /* User name or numeric UID */
+    char group[64];              /* Group name or numeric GID */
 };
 
 /* Response types from daemon to worker */

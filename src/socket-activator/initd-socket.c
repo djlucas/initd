@@ -31,6 +31,7 @@
 #include "../common/parser.h"
 #include "../common/control.h"
 #include "../common/log-enhanced.h"
+#include "../common/path-security.h"
 
 #ifndef WORKER_PATH
 #define WORKER_PATH "/usr/libexec/initd/initd-socket-worker"
@@ -139,6 +140,21 @@ static int setup_signals(void) {
     return 0;
 }
 
+/* Validate unit path from worker is in allowed directory */
+static bool validate_unit_path_from_worker(const char *path) {
+    /* SECURITY: Worker-supplied paths must be in whitelisted directories only */
+    return validate_path_in_directory(path, "/lib/initd/system") ||
+           validate_path_in_directory(path, "/etc/initd/system") ||
+           validate_path_in_directory(path, "/usr/lib/initd/system") ||
+           validate_path_in_directory(path, "/lib/systemd/system") ||
+           validate_path_in_directory(path, "/usr/lib/systemd/system") ||
+           validate_path_in_directory(path, "/etc/systemd/system")
+#ifdef UNIT_TEST
+           || validate_path_in_directory(path, "/tmp")
+#endif
+           ;
+}
+
 /* Handle IPC request from worker */
 static void handle_request(int worker_fd) {
     struct socket_request req = {0};
@@ -155,6 +171,17 @@ static void handle_request(int worker_fd) {
     /* Parse unit file for enable/disable operations */
     if (req.type == SOCKET_REQ_ENABLE_UNIT || req.type == SOCKET_REQ_DISABLE_UNIT ||
         req.type == SOCKET_REQ_CONVERT_UNIT) {
+
+        /* SECURITY: Validate unit path is in allowed directory before parsing */
+        if (!validate_unit_path_from_worker(req.unit_path)) {
+            log_error("socket", "SECURITY: invalid unit path: %s", req.unit_path);
+            resp.type = SOCKET_RESP_ERROR;
+            resp.error_code = EACCES;
+            snprintf(resp.error_msg, sizeof(resp.error_msg),
+                    "Unit path not in allowed directory");
+            send_socket_response(worker_fd, &resp);
+            return;
+        }
 
         if (parse_unit_file(req.unit_path, &unit) < 0) {
             resp.type = SOCKET_RESP_ERROR;
@@ -195,6 +222,80 @@ static void handle_request(int worker_fd) {
             strncpy(resp.converted_path, unit.path, sizeof(resp.converted_path) - 1);
         }
         break;
+
+    case SOCKET_REQ_CHOWN: {
+        uid_t uid = -1;
+        gid_t gid = -1;
+
+        /* Validate socket path is not empty */
+        if (req.socket_path[0] == '\0') {
+            resp.type = SOCKET_RESP_ERROR;
+            resp.error_code = EINVAL;
+            snprintf(resp.error_msg, sizeof(resp.error_msg),
+                    "Empty socket path");
+            break;
+        }
+
+        /* Validate path is absolute and doesn't contain .. */
+        if (req.socket_path[0] != '/' || strstr(req.socket_path, "..")) {
+            resp.type = SOCKET_RESP_ERROR;
+            resp.error_code = EINVAL;
+            snprintf(resp.error_msg, sizeof(resp.error_msg),
+                    "Invalid socket path (must be absolute, no ..)");
+            break;
+        }
+
+        /* Look up owner if specified */
+        if (req.owner[0] != '\0') {
+            struct passwd *pw = getpwnam(req.owner);
+            if (pw) {
+                uid = pw->pw_uid;
+            } else {
+                /* Try parsing as numeric UID */
+                char *endptr;
+                long parsed_uid = strtol(req.owner, &endptr, 10);
+                if (*endptr == '\0' && parsed_uid >= 0 && parsed_uid <= INT_MAX) {
+                    uid = (uid_t)parsed_uid;
+                } else {
+                    resp.type = SOCKET_RESP_ERROR;
+                    resp.error_code = EINVAL;
+                    snprintf(resp.error_msg, sizeof(resp.error_msg),
+                            "Invalid user '%s'", req.owner);
+                    break;
+                }
+            }
+        }
+
+        /* Look up group if specified */
+        if (req.group[0] != '\0') {
+            struct group *gr = getgrnam(req.group);
+            if (gr) {
+                gid = gr->gr_gid;
+            } else {
+                /* Try parsing as numeric GID */
+                char *endptr;
+                long parsed_gid = strtol(req.group, &endptr, 10);
+                if (*endptr == '\0' && parsed_gid >= 0 && parsed_gid <= INT_MAX) {
+                    gid = (gid_t)parsed_gid;
+                } else {
+                    resp.type = SOCKET_RESP_ERROR;
+                    resp.error_code = EINVAL;
+                    snprintf(resp.error_msg, sizeof(resp.error_msg),
+                            "Invalid group '%s'", req.group);
+                    break;
+                }
+            }
+        }
+
+        /* Perform chown operation */
+        if (chown(req.socket_path, uid, gid) < 0) {
+            resp.type = SOCKET_RESP_ERROR;
+            resp.error_code = errno;
+            snprintf(resp.error_msg, sizeof(resp.error_msg),
+                    "chown failed: %s", strerror(errno));
+        }
+        break;
+    }
 
     default:
         resp.type = SOCKET_RESP_ERROR;

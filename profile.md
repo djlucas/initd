@@ -469,6 +469,15 @@ Standard systemd INI format
 - IPTTL (IP Time to Live)
 - RemoveOnStop (remove socket files on disable)
 - Symlinks (create symlinks to socket)
+- SocketUser (Unix socket owner, supports user names and numeric UIDs)
+- SocketGroup (Unix socket group, supports group names and numeric GIDs)
+- KeepAliveTimeSec (TCP keepalive idle time, platform-specific)
+- KeepAliveIntervalSec (TCP keepalive interval, platform-specific)
+- KeepAliveProbes (TCP keepalive probe count)
+- ReusePort (SO_REUSEPORT for load balancing, platform-specific behavior)
+- FreeBind (bind to non-local addresses, platform-specific socket options)
+- Transparent (IP_TRANSPARENT for transparent proxying, Linux-only)
+- TCPCongestion (TCP congestion control algorithm, Linux/FreeBSD only)
 
 **[Install]:**
 - WantedBy, RequiredBy
@@ -636,6 +645,149 @@ NoNewPrivileges=true    # or false (default)
 - Blocks setuid/setgid bits and file capabilities on execve()
 - Once set, cannot be unset (inherited across fork/exec)
 - Recommended for services that don't need to exec privileged binaries
+
+### Socket Directive Details
+
+#### SocketUser= / SocketGroup= (Portable)
+
+**Purpose:** Set ownership of Unix domain socket files for access control
+
+**Implementation:**
+- Worker validates user/group names or numeric IDs
+- Worker sends IPC request to privileged daemon (SOCKET_REQ_CHOWN)
+- Privileged daemon validates: absolute path, no "..", valid user/group
+- Privileged daemon performs chown() operation
+- Applied after socket creation and fchmod()
+
+**Platform Support:**
+- All Unix-like systems via chown(2) syscall
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=/run/myapp.sock
+SocketUser=myapp      # or numeric UID
+SocketGroup=myapp     # or numeric GID
+```
+
+**Security:**
+- Path validation prevents directory traversal attacks
+- User/group validation prevents arbitrary uid/gid
+- Privileged operation isolated in daemon with minimal attack surface
+
+#### TCP Keepalive Directives (Platform-Specific)
+
+**Purpose:** Configure TCP keepalive behavior for connection health monitoring
+
+**Implementation:**
+- KeepAliveTimeSec= - seconds before first keepalive probe
+- KeepAliveIntervalSec= - seconds between probes
+- KeepAliveProbes= - number of unacknowledged probes before dropping connection
+
+**Platform Support:**
+- Linux: TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT
+- FreeBSD/NetBSD: TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT
+- macOS: TCP_KEEPALIVE (not TCP_KEEPIDLE), TCP_KEEPINTVL, TCP_KEEPCNT
+- OpenBSD: Per-socket keepalive time not supported (sysctl only)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:8080
+KeepAlive=yes
+KeepAliveTimeSec=60
+KeepAliveIntervalSec=10
+KeepAliveProbes=3
+```
+
+#### FreeBind= (Platform-Specific)
+
+**Purpose:** Bind to non-local or not-yet-existing IP addresses
+
+**Implementation:**
+- Linux: IP_FREEBIND at IPPROTO_IP level
+- OpenBSD: SO_BINDANY at SOL_SOCKET level (different socket level!)
+- FreeBSD/NetBSD: IP_BINDANY at IPPROTO_IP level
+- macOS: Not supported
+
+**Platform Support:**
+- Linux: IP_FREEBIND
+- OpenBSD: SO_BINDANY
+- FreeBSD/NetBSD: IP_BINDANY
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=192.0.2.1:80
+FreeBind=yes
+```
+
+**Use Cases:**
+- High-availability failover (bind to VIP before it's assigned)
+- Transparent proxies
+- Network testing
+
+#### ReusePort= (Platform-Specific Behavior)
+
+**Purpose:** Allow multiple processes to bind to same address/port
+
+**Implementation:**
+- SO_REUSEPORT socket option (available on all platforms)
+- **Different semantics per platform:**
+  - Linux: Kernel load balances connections across sockets
+  - BSD/macOS: Last-bound socket wins (no load balancing)
+
+**Platform Support:**
+- All modern Unix-like systems (but behavior differs)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:8080
+ReusePort=yes
+```
+
+**Security Note:**
+- On Linux, any user can hijack root's port with ReusePort
+- Only use with trusted services
+
+#### Transparent= (Linux-Only)
+
+**Purpose:** Enable transparent proxy mode (IP_TRANSPARENT)
+
+**Implementation:**
+- Linux-only socket option at IPPROTO_IP level
+- Requires CAP_NET_ADMIN capability
+
+**Platform Support:**
+- Linux only
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:8080
+Transparent=yes
+```
+
+#### TCPCongestion= (Limited Portability)
+
+**Purpose:** Set TCP congestion control algorithm
+
+**Implementation:**
+- Linux/FreeBSD: TCP_CONGESTION socket option
+- Other platforms: Not supported
+
+**Platform Support:**
+- Linux: cubic, reno, bbr, etc.
+- FreeBSD: newreno, cubic, htcp, etc.
+- OpenBSD/NetBSD/macOS: Not supported
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:443
+TCPCongestion=bbr
+```
 
 ## Targets
 
@@ -1337,13 +1489,7 @@ Notes:
   Mark=
 
   # Medium (portable, 1-2 days each)
-  SocketUser=
-  SocketGroup=
   Accept=
-  KeepAliveTimeSec=
-  KeepAliveIntervalSec=
-  KeepAliveProbes=
-  ReusePort=
   ExecStartPre=
   ExecStartPost=
   ExecStopPost=
@@ -1354,9 +1500,6 @@ Notes:
   ListenMessageQueue=
   MessageQueueMaxMessages=
   MessageQueueMessageSize=
-  FreeBind=
-  Transparent=
-  TCPCongestion=
   PipeSize=
 
   # Medium (Linux-only)

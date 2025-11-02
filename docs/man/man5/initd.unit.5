@@ -985,6 +985,67 @@ to Unix sockets. Symlinks are removed when RemoveOnStop=true. Default: none.
 .B IdleTimeout=
 Time to wait before stopping an idle service. This is an initd-specific
 extension not present in systemd. Takes a time value.
+.TP
+.B SocketUser=
+User name or numeric UID for Unix socket ownership. When specified, the
+privileged daemon changes ownership of the socket file after creation.
+Supports both user names (e.g., "www-data") and numeric UIDs (e.g., "33").
+Only applies to Unix domain sockets. Requires privileged IPC for security.
+Default: socket is owned by the user running initd-socket-worker.
+.TP
+.B SocketGroup=
+Group name or numeric GID for Unix socket ownership. When specified, the
+privileged daemon changes group ownership of the socket file after creation.
+Supports both group names (e.g., "www-data") and numeric GIDs (e.g., "33").
+Only applies to Unix domain sockets. Requires privileged IPC for security.
+Default: socket group is the primary group of the socket worker user.
+.TP
+.B KeepAliveTimeSec=
+TCP keepalive idle time in seconds. Time before first keepalive probe is sent.
+Platform-specific implementation: Linux uses TCP_KEEPIDLE, macOS uses
+TCP_KEEPALIVE, OpenBSD does not support per-socket configuration (sysctl only).
+Only meaningful for TCP sockets when KeepAlive=true. Default: system default
+(typically 7200 seconds / 2 hours).
+.TP
+.B KeepAliveIntervalSec=
+TCP keepalive interval in seconds. Time between keepalive probes.
+Uses TCP_KEEPINTVL socket option on supported platforms (Linux, FreeBSD,
+NetBSD, macOS). OpenBSD does not support per-socket configuration.
+Only meaningful for TCP sockets when KeepAlive=true. Default: system default
+(typically 75 seconds).
+.TP
+.B KeepAliveProbes=
+Number of unacknowledged TCP keepalive probes before considering the
+connection dead. Uses TCP_KEEPCNT socket option on supported platforms
+(all modern Unix-like systems). Only meaningful for TCP sockets when
+KeepAlive=true. Default: system default (typically 9 probes).
+.TP
+.B ReusePort=
+Boolean. If true, enables SO_REUSEPORT to allow multiple processes to bind
+to the same port. Platform-specific behavior: on Linux, kernel load-balances
+connections across sockets; on BSD/macOS, last-bound socket wins (no load
+balancing). Security warning: on Linux, any user can hijack root's port with
+ReusePort=yes. Only use with trusted services. Default: false.
+.TP
+.B FreeBind=
+Boolean. If true, allows binding to non-local or not-yet-existing IP addresses.
+Platform-specific implementation: Linux uses IP_FREEBIND, OpenBSD uses
+SO_BINDANY (at SOL_SOCKET level), FreeBSD/NetBSD use IP_BINDANY. Not supported
+on macOS. Useful for high-availability failover and transparent proxies.
+Default: false.
+.TP
+.B Transparent=
+Boolean. If true, enables transparent proxy mode via IP_TRANSPARENT socket
+option. Linux-only feature that allows binding to non-local addresses and
+receiving packets destined for other hosts. Requires CAP_NET_ADMIN capability.
+Not supported on BSD/macOS platforms. Default: false.
+.TP
+.B TCPCongestion=
+TCP congestion control algorithm name. Sets the TCP_CONGESTION socket option
+to control how TCP reacts to network congestion. Supported on Linux (cubic,
+reno, bbr, etc.) and FreeBSD (newreno, cubic, htcp, etc.). Not supported on
+OpenBSD, NetBSD, or macOS. Only applies to TCP sockets. Example values: "cubic",
+"bbr", "reno". Default: system default (typically "cubic" on Linux).
 .SH [INSTALL] SECTION
 The
 .B [Install]
