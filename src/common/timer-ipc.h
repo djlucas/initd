@@ -15,7 +15,8 @@
 enum timer_request_type {
     TIMER_REQ_ENABLE_UNIT,      /* Enable a timer unit */
     TIMER_REQ_DISABLE_UNIT,     /* Disable a timer unit */
-    TIMER_REQ_CONVERT_UNIT      /* Convert systemd unit to initd */
+    TIMER_REQ_CONVERT_UNIT,     /* Convert systemd unit to initd */
+    TIMER_REQ_SET_WAKE_ALARM    /* Set RTC wake alarm for WakeSystem= */
 };
 
 /* Request structure */
@@ -23,6 +24,7 @@ struct timer_request {
     enum timer_request_type type;
     char unit_name[MAX_UNIT_NAME];
     char unit_path[MAX_PATH];
+    time_t wake_time;           /* For TIMER_REQ_SET_WAKE_ALARM */
 };
 
 /* Response types from daemon to worker */

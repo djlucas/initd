@@ -273,6 +273,30 @@ void test_parse_timer_remain_after_elapse(void) {
     PASS();
 }
 
+void test_parse_timer_wake_system(void) {
+    TEST("timer unit with WakeSystem");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Wake Timer\n"
+        "\n"
+        "[Timer]\n"
+        "OnCalendar=*-*-* 06:00:00\n"
+        "WakeSystem=true\n";
+
+    const char *path = create_temp_unit(unit_content, ".timer");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_TIMER);
+    assert(unit.config.timer.wake_system == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 void test_parse_environment(void) {
     TEST("environment variables");
 
@@ -601,6 +625,7 @@ int main(void) {
     test_parse_timer_multiple_calendar();
     test_parse_timer_fixed_random_delay();
     test_parse_timer_remain_after_elapse();
+    test_parse_timer_wake_system();
     test_parse_environment();
     test_parse_conditions();
     test_parse_install_extras();

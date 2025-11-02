@@ -287,6 +287,7 @@ struct timer_section {
     char *unit;        /* Unit= - service to activate (default: timer name minus .timer) */
     bool fixed_random_delay;  /* FixedRandomDelay= - use fixed random value */
     bool remain_after_elapse; /* RemainAfterElapse= - keep timer active after firing (default: true) */
+    bool wake_system;  /* WakeSystem= - wake from suspend to fire timer */
 };
 
 /* [Socket] section */

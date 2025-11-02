@@ -26,6 +26,18 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <time.h>
+#include <sys/ioctl.h>
+#ifdef __linux__
+#include <linux/rtc.h>
+#endif
+#if defined(__OpenBSD__) || defined(__NetBSD__)
+#include <sys/ioctl.h>
+#include <machine/apmvar.h>
+#endif
+#ifdef __FreeBSD__
+#include <sys/rtc.h>
+#endif
 #include "../common/timer-ipc.h"
 #include "../common/privileged-ops.h"
 #include "../common/parser.h"
@@ -139,6 +151,157 @@ static int setup_signals(void) {
     return 0;
 }
 
+/* Set RTC wake alarm (platform-specific, privileged operation) */
+static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_len) {
+#if defined(__linux__)
+    /* Linux: Use /dev/rtc with RTC_WKALRM_SET ioctl */
+    int rtc_fd = open("/dev/rtc0", O_RDWR);
+    if (rtc_fd < 0) {
+        rtc_fd = open("/dev/rtc", O_RDWR);
+        if (rtc_fd < 0) {
+            snprintf(error_msg, error_len, "Cannot open RTC device: %s", strerror(errno));
+            return -1;
+        }
+    }
+
+    struct rtc_wkalrm alarm = {0};
+    struct tm *tm = gmtime(&wake_time);
+    if (!tm) {
+        close(rtc_fd);
+        snprintf(error_msg, error_len, "Invalid wake time");
+        return -1;
+    }
+
+    alarm.time.tm_sec = tm->tm_sec;
+    alarm.time.tm_min = tm->tm_min;
+    alarm.time.tm_hour = tm->tm_hour;
+    alarm.time.tm_mday = tm->tm_mday;
+    alarm.time.tm_mon = tm->tm_mon;
+    alarm.time.tm_year = tm->tm_year;
+    alarm.enabled = 1;
+
+    if (ioctl(rtc_fd, RTC_WKALM_SET, &alarm) < 0) {
+        snprintf(error_msg, error_len, "RTC_WKALRM_SET failed: %s", strerror(errno));
+        close(rtc_fd);
+        return -1;
+    }
+
+    close(rtc_fd);
+    log_info("timer-daemon", "RTC wake alarm set for %s", asctime(tm));
+    return 0;
+
+#elif defined(__FreeBSD__)
+    /* FreeBSD: Use /dev/rtc with FreeBSD RTC interface */
+    int rtc_fd = open("/dev/rtc", O_RDWR);
+    if (rtc_fd < 0) {
+        snprintf(error_msg, error_len, "Cannot open /dev/rtc: %s", strerror(errno));
+        return -1;
+    }
+
+    struct tm *tm = gmtime(&wake_time);
+    if (!tm) {
+        close(rtc_fd);
+        snprintf(error_msg, error_len, "Invalid wake time");
+        return -1;
+    }
+
+    /* FreeBSD: Use RTC_SET_ALARM or similar (hardware-dependent) */
+    /* Note: Actual ioctl depends on RTC driver (apm, acpi_timer, etc.) */
+    time_t alarm_time = wake_time;
+    if (ioctl(rtc_fd, RTCIO_SETTIME, &alarm_time) < 0) {
+        snprintf(error_msg, error_len, "RTC alarm set failed: %s", strerror(errno));
+        close(rtc_fd);
+        return -1;
+    }
+
+    close(rtc_fd);
+    log_info("timer-daemon", "FreeBSD RTC wake alarm set for %s", asctime(tm));
+    return 0;
+
+#elif defined(__OpenBSD__)
+    /* OpenBSD: Use APM for RTC wake alarms */
+    int apm_fd = open("/dev/apm", O_RDWR);
+    if (apm_fd < 0) {
+        snprintf(error_msg, error_len, "Cannot open /dev/apm: %s", strerror(errno));
+        return -1;
+    }
+
+    struct apm_power_info info;
+    if (ioctl(apm_fd, APM_IOC_GETPOWER, &info) < 0) {
+        close(apm_fd);
+        snprintf(error_msg, error_len, "APM not available: %s", strerror(errno));
+        return -1;
+    }
+
+    /* OpenBSD: Calculate seconds until wake */
+    time_t now = time(NULL);
+    int wake_seconds = (int)(wake_time - now);
+    if (wake_seconds < 0) {
+        close(apm_fd);
+        snprintf(error_msg, error_len, "Wake time is in the past");
+        return -1;
+    }
+
+    /* Set APM wake alarm using seconds offset */
+    if (ioctl(apm_fd, APM_IOC_NEXTEVENT, &wake_seconds) < 0) {
+        close(apm_fd);
+        snprintf(error_msg, error_len, "APM wake set failed: %s", strerror(errno));
+        return -1;
+    }
+
+    close(apm_fd);
+    struct tm *tm = gmtime(&wake_time);
+    log_info("timer-daemon", "OpenBSD APM wake set for %s", asctime(tm));
+    return 0;
+
+#elif defined(__NetBSD__)
+    /* NetBSD: Use APM/ACPI for RTC wake */
+    int apm_fd = open("/dev/apm", O_RDWR);
+    if (apm_fd < 0) {
+        /* Try ACPI path */
+        apm_fd = open("/dev/acpi", O_RDWR);
+        if (apm_fd < 0) {
+            snprintf(error_msg, error_len, "Cannot open APM/ACPI device: %s", strerror(errno));
+            return -1;
+        }
+    }
+
+    struct apm_power_info info;
+    if (ioctl(apm_fd, APM_IOC_GETPOWER, &info) < 0) {
+        close(apm_fd);
+        snprintf(error_msg, error_len, "APM/ACPI not available: %s", strerror(errno));
+        return -1;
+    }
+
+    /* NetBSD: Calculate seconds until wake */
+    time_t now = time(NULL);
+    int wake_seconds = (int)(wake_time - now);
+    if (wake_seconds < 0) {
+        close(apm_fd);
+        snprintf(error_msg, error_len, "Wake time is in the past");
+        return -1;
+    }
+
+    /* Set wake alarm */
+    if (ioctl(apm_fd, APM_IOC_NEXTEVENT, &wake_seconds) < 0) {
+        close(apm_fd);
+        snprintf(error_msg, error_len, "NetBSD wake set failed: %s", strerror(errno));
+        return -1;
+    }
+
+    close(apm_fd);
+    struct tm *tm = gmtime(&wake_time);
+    log_info("timer-daemon", "NetBSD APM/ACPI wake set for %s", asctime(tm));
+    return 0;
+
+#else
+    /* GNU Hurd or unknown platform */
+    snprintf(error_msg, error_len, "Platform does not support RTC wake alarms");
+    log_warning("timer-daemon", "RTC wake not supported on this platform");
+    return -1;
+#endif
+}
+
 /* Handle IPC request from worker */
 static void handle_request(int worker_fd) {
     struct timer_request req = {0};
@@ -193,6 +356,13 @@ static void handle_request(int worker_fd) {
                     "Failed to convert unit");
         } else {
             strncpy(resp.converted_path, unit.path, sizeof(resp.converted_path) - 1);
+        }
+        break;
+
+    case TIMER_REQ_SET_WAKE_ALARM:
+        if (set_rtc_wake_alarm(req.wake_time, resp.error_msg, sizeof(resp.error_msg)) < 0) {
+            resp.type = TIMER_RESP_ERROR;
+            resp.error_code = errno;
         }
         break;
 

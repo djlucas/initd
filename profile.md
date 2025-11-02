@@ -449,6 +449,7 @@ Standard systemd INI format
 - Unit
 - FixedRandomDelay
 - RemainAfterElapse
+- WakeSystem (Linux/FreeBSD/OpenBSD/NetBSD - RTC wake alarms)
 
 **[Socket]:**
 - ListenStream, ListenDatagram

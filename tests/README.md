@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (27 test suites, 252 individual tests; 5 marked privileged)
+# Build and run all tests (27 test suites, 253 individual tests; 5 marked privileged)
 ninja -C build
 ninja -C build test
 

@@ -796,6 +796,8 @@ static int parse_timer_key(struct timer_section *timer, const char *key, char *v
         timer->fixed_random_delay = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "RemainAfterElapse") == 0) {
         timer->remain_after_elapse = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "WakeSystem") == 0) {
+        timer->wake_system = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else {
         return -1;
     }

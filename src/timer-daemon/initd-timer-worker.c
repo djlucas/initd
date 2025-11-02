@@ -442,6 +442,42 @@ static time_t calculate_next_run(struct timer_instance *timer) {
     return next;
 }
 
+/* Request RTC wake alarm from privileged master daemon */
+static int request_wake_alarm(time_t wake_time) {
+    struct timer_request req = {0};
+    struct timer_response resp = {0};
+
+    if (daemon_socket < 0) {
+        return -1;
+    }
+
+    req.type = TIMER_REQ_SET_WAKE_ALARM;
+    req.wake_time = wake_time;
+
+    if (send_timer_request(daemon_socket, &req) < 0 ||
+        recv_timer_response(daemon_socket, &resp) < 0) {
+        log_warn("timer", "Failed to send wake alarm request to master");
+        return -1;
+    }
+
+    if (resp.type == TIMER_RESP_ERROR) {
+        log_warn("timer", "Master failed to set wake alarm: %s", resp.error_msg);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Update timer's next_run and set RTC wake alarm if WakeSystem=true */
+static void update_timer_schedule(struct timer_instance *timer) {
+    timer->next_run = calculate_next_run(timer);
+
+    /* Request RTC wake alarm if WakeSystem=true */
+    if (timer->unit->config.timer.wake_system && timer->next_run > 0) {
+        request_wake_alarm(timer->next_run);
+    }
+}
+
 /* Try to activate service via supervisor */
 static int activate_via_supervisor(const char *service_name) {
     int fd;
@@ -604,7 +640,7 @@ static int update_timers_for_inactive_service(const char *service_name, time_t n
         }
 
         t->last_inactive = now;
-        t->next_run = calculate_next_run(t);
+        update_timer_schedule(t);
         updated++;
     }
 
@@ -639,7 +675,7 @@ static int fire_timer(struct timer_instance *timer) {
         log_debug("timer", "%s disabled after elapse (RemainAfterElapse=false)", timer->unit->name);
     } else {
         /* Calculate next run (RemainAfterElapse=true, default) */
-        timer->next_run = calculate_next_run(timer);
+        update_timer_schedule(timer);
         log_debug("timer", "next run for %s at %ld", timer->unit->name, timer->next_run);
     }
     return result;
@@ -730,7 +766,7 @@ static int load_timers(void) {
             instance->next_run = time(NULL) + 5;  /* Run in 5 seconds */
         } else {
             /* Calculate initial next run */
-            instance->next_run = calculate_next_run(instance);
+            update_timer_schedule(instance);
         }
 
         /* Add to list */
@@ -868,7 +904,7 @@ static void handle_control_command(int client_fd, bool read_only) {
                 if (timer->unit->config.timer.persistent && should_run_on_startup(timer)) {
                     timer->next_run = time(NULL) + 5;
                 } else {
-                    timer->next_run = calculate_next_run(timer);
+                    update_timer_schedule(timer);
                 }
                 resp.pid = -1;
                 resp.state = UNIT_STATE_ACTIVE;

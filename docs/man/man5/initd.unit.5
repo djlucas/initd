@@ -879,6 +879,12 @@ intervals thereafter.
 Boolean. If true (default), timer remains active after firing and reschedules
 according to its schedule. If false, timer is disabled after first activation
 (one-shot behavior).
+.TP
+.B WakeSystem=
+Boolean. If true, the system will be woken from suspend to fire the timer.
+Uses platform-specific RTC (Real-Time Clock) wake alarms via the privileged
+master daemon. Supported on Linux (/dev/rtc), FreeBSD (/dev/rtc), and
+OpenBSD/NetBSD (APM). Not supported on GNU Hurd. Default: false.
 .SH [SOCKET] SECTION
 The
 .B [Socket]
