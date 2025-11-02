@@ -288,6 +288,8 @@ struct timer_section {
     bool fixed_random_delay;  /* FixedRandomDelay= - use fixed random value */
     bool remain_after_elapse; /* RemainAfterElapse= - keep timer active after firing (default: true) */
     bool wake_system;  /* WakeSystem= - wake from suspend to fire timer */
+    bool on_clock_change;     /* OnClockChange= - fire when system clock jumps */
+    bool on_timezone_change;  /* OnTimezoneChange= - fire when timezone changes */
 };
 
 /* [Socket] section */

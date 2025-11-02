@@ -36,6 +36,15 @@
 #include "../common/log-enhanced.h"
 #include "calendar.h"
 
+/* Platform-specific includes for event monitoring */
+#ifdef __linux__
+#include <sys/timerfd.h>
+#include <sys/inotify.h>
+#endif
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#include <sys/event.h>
+#endif
+
 #define TIMER_STATE_DIR "/var/lib/initd/timers"
 
 static int daemon_socket = -1;
@@ -55,6 +64,9 @@ static volatile sig_atomic_t shutdown_requested = 0;
 static int control_socket = -1;
 static int status_socket = -1;
 static struct timer_instance *timers = NULL;
+static int clock_change_fd = -1;    /* For detecting clock changes */
+static int timezone_change_fd = -1; /* For detecting timezone changes */
+static time_t last_wall_time = 0;   /* Last known wall clock time */
 
 #ifdef UNIT_TEST
 static void timer_daemon_test_clear_instances(void);
@@ -1087,12 +1099,120 @@ static void handle_control_command(int client_fd, bool read_only) {
     close(client_fd);
 }
 
+#ifndef UNIT_TEST
+/* Initialize clock change monitoring */
+static int init_clock_change_monitor(void) {
+#ifdef __linux__
+    /* Use timerfd with TFD_TIMER_CANCEL_ON_SET to detect clock changes */
+    clock_change_fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (clock_change_fd < 0) {
+        log_warn("timer", "Failed to create timerfd for clock monitoring: %s", strerror(errno));
+        return -1;
+    }
+
+    /* Set a timer far in the future with CANCEL_ON_SET */
+    struct itimerspec its = {0};
+    its.it_value.tv_sec = INT_MAX;  /* Very far future */
+
+    if (timerfd_settime(clock_change_fd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &its, NULL) < 0) {
+        log_warn("timer", "Failed to set timerfd for clock monitoring: %s", strerror(errno));
+        close(clock_change_fd);
+        clock_change_fd = -1;
+        return -1;
+    }
+
+    log_debug("timer", "Clock change monitoring initialized (timerfd)");
+    return 0;
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+    /* Use kqueue with EVFILT_TIMER */
+    clock_change_fd = kqueue();
+    if (clock_change_fd < 0) {
+        log_warn("timer", "Failed to create kqueue for clock monitoring: %s", strerror(errno));
+        return -1;
+    }
+
+    /* Set up NOTE_ABSTIME timer that will be cancelled on clock change */
+    struct kevent kev;
+    EV_SET(&kev, 1, EVFILT_TIMER, EV_ADD | EV_ENABLE, NOTE_ABSTIME, INT_MAX * 1000LL, NULL);
+
+    if (kevent(clock_change_fd, &kev, 1, NULL, 0, NULL) < 0) {
+        log_warn("timer", "Failed to set kevent for clock monitoring: %s", strerror(errno));
+        close(clock_change_fd);
+        clock_change_fd = -1;
+        return -1;
+    }
+
+    log_debug("timer", "Clock change monitoring initialized (kqueue)");
+    return 0;
+#else
+    /* GNU Hurd and others: use polling fallback */
+    log_debug("timer", "Clock change monitoring using polling fallback");
+    return 0;
+#endif
+}
+
+/* Initialize timezone change monitoring */
+static int init_timezone_monitor(void) {
+#ifdef __linux__
+    /* Use inotify to watch /etc/localtime */
+    timezone_change_fd = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
+    if (timezone_change_fd < 0) {
+        log_warn("timer", "Failed to create inotify for timezone monitoring: %s", strerror(errno));
+        return -1;
+    }
+
+    if (inotify_add_watch(timezone_change_fd, "/etc/localtime", IN_MODIFY | IN_ATTRIB | IN_DELETE_SELF | IN_MOVE_SELF) < 0) {
+        log_warn("timer", "Failed to watch /etc/localtime: %s", strerror(errno));
+        close(timezone_change_fd);
+        timezone_change_fd = -1;
+        return -1;
+    }
+
+    log_debug("timer", "Timezone change monitoring initialized (inotify)");
+    return 0;
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+    /* Use kqueue to watch /etc/localtime */
+    int fd = open("/etc/localtime", O_RDONLY);
+    if (fd < 0) {
+        log_warn("timer", "Failed to open /etc/localtime: %s", strerror(errno));
+        return -1;
+    }
+
+    timezone_change_fd = kqueue();
+    if (timezone_change_fd < 0) {
+        log_warn("timer", "Failed to create kqueue for timezone monitoring: %s", strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    struct kevent kev;
+    EV_SET(&kev, fd, EVFILT_VNODE, EV_ADD | EV_ENABLE | EV_CLEAR,
+           NOTE_WRITE | NOTE_DELETE | NOTE_RENAME | NOTE_ATTRIB, 0, NULL);
+
+    if (kevent(timezone_change_fd, &kev, 1, NULL, 0, NULL) < 0) {
+        log_warn("timer", "Failed to set kevent for timezone monitoring: %s", strerror(errno));
+        close(timezone_change_fd);
+        close(fd);
+        timezone_change_fd = -1;
+        return -1;
+    }
+
+    log_debug("timer", "Timezone change monitoring initialized (kqueue)");
+    return 0;
+#else
+    /* GNU Hurd and others: use polling fallback */
+    log_debug("timer", "Timezone change monitoring using polling fallback");
+    return 0;
+#endif
+}
+#endif /* !UNIT_TEST */
+
 /* Main event loop */
 #ifdef UNIT_TEST
 __attribute__((unused))
 #endif
 static int event_loop(void) {
-    struct pollfd fds[2];
+    struct pollfd fds[4];  /* control, status, clock_change, timezone_change */
     nfds_t nfds = 0;
     int idx_control = nfds;
     fds[nfds].fd = control_socket;
@@ -1107,6 +1227,25 @@ static int event_loop(void) {
         nfds++;
     }
 
+    int idx_clock = -1;
+    if (clock_change_fd >= 0) {
+        idx_clock = nfds;
+        fds[nfds].fd = clock_change_fd;
+        fds[nfds].events = POLLIN;
+        nfds++;
+    }
+
+    int idx_timezone = -1;
+    if (timezone_change_fd >= 0) {
+        idx_timezone = nfds;
+        fds[nfds].fd = timezone_change_fd;
+        fds[nfds].events = POLLIN;
+        nfds++;
+    }
+
+    /* Initialize last wall time for polling fallback */
+    last_wall_time = time(NULL);
+
     while (!shutdown_requested) {
         /* Poll with 1 second timeout for timer checks */
         int ret = poll(fds, nfds, 1000);
@@ -1115,6 +1254,62 @@ static int event_loop(void) {
             if (errno == EINTR) continue;
             perror("timer-daemon: poll");
             return -1;
+        }
+
+        /* Check for clock changes (event-driven or polling fallback) */
+        bool clock_changed = false;
+        if (idx_clock >= 0 && (fds[idx_clock].revents & POLLIN)) {
+            /* Event-driven clock change detection */
+            clock_changed = true;
+            log_info("timer", "Clock change detected");
+            /* Consume the event */
+            uint64_t dummy;
+            (void)read(clock_change_fd, &dummy, sizeof(dummy));
+        } else if (idx_clock < 0) {
+            /* Polling fallback for platforms without event support */
+            time_t now = time(NULL);
+            time_t expected = last_wall_time + 1;
+            if (now < last_wall_time - 2 || now > expected + 2) {
+                clock_changed = true;
+                log_info("timer", "Clock change detected (polling)");
+            }
+            last_wall_time = now;
+        }
+
+        /* Check for timezone changes */
+        bool timezone_changed = false;
+        if (idx_timezone >= 0 && (fds[idx_timezone].revents & POLLIN)) {
+            timezone_changed = true;
+            log_info("timer", "Timezone change detected");
+            /* Consume the event */
+#ifdef __linux__
+            char buf[4096];
+            (void)read(timezone_change_fd, buf, sizeof(buf));
+#else
+            struct kevent kev;
+            (void)kevent(timezone_change_fd, NULL, 0, &kev, 1, NULL);
+#endif
+        }
+
+        /* Fire OnClockChange and OnTimezoneChange timers */
+        if (clock_changed || timezone_changed) {
+            for (struct timer_instance *t = timers; t; t = t->next) {
+                if (!t->enabled) continue;
+
+                bool should_fire = false;
+                if (clock_changed && t->unit->config.timer.on_clock_change) {
+                    should_fire = true;
+                }
+                if (timezone_changed && t->unit->config.timer.on_timezone_change) {
+                    should_fire = true;
+                }
+
+                if (should_fire) {
+                    log_info("timer", "Firing %s due to %s", t->unit->name,
+                            clock_changed ? "clock change" : "timezone change");
+                    (void)fire_timer(t);
+                }
+            }
         }
 
         /* Check timers every iteration */
@@ -1310,6 +1505,11 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* Initialize clock and timezone change monitoring */
+    log_debug("timer-worker", "Initializing event monitors");
+    init_clock_change_monitor();  /* Ignore errors - falls back to polling */
+    init_timezone_monitor();      /* Ignore errors - timers won't fire on change */
+
     /* Run event loop */
     log_debug("timer-worker", "Entering event loop");
     event_loop();
@@ -1327,6 +1527,12 @@ int main(int argc, char *argv[]) {
         if (status_path) {
             unlink(status_path);
         }
+    }
+    if (clock_change_fd >= 0) {
+        close(clock_change_fd);
+    }
+    if (timezone_change_fd >= 0) {
+        close(timezone_change_fd);
     }
     log_enhanced_close();
     free_timer_instances();

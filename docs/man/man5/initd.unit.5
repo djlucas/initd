@@ -885,6 +885,17 @@ Boolean. If true, the system will be woken from suspend to fire the timer.
 Uses platform-specific RTC (Real-Time Clock) wake alarms via the privileged
 master daemon. Supported on Linux (/dev/rtc), FreeBSD (/dev/rtc), and
 OpenBSD/NetBSD (APM). Not supported on GNU Hurd. Default: false.
+.TP
+.B OnClockChange=
+Boolean. If true, the timer is fired when the system clock is changed (e.g.,
+by NTP corrections, DST transitions, or manual adjustments). Uses timerfd with
+TFD_TIMER_CANCEL_ON_SET on Linux, kqueue EVFILT_TIMER with NOTE_ABSTIME on BSD,
+and polling fallback on GNU Hurd. Default: false.
+.TP
+.B OnTimezoneChange=
+Boolean. If true, the timer is fired when the system timezone is changed
+(detected by monitoring /etc/localtime). Uses inotify on Linux, kqueue EVFILT_VNODE
+on BSD, and polling fallback on GNU Hurd. Default: false.
 .SH [SOCKET] SECTION
 The
 .B [Socket]

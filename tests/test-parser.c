@@ -297,6 +297,52 @@ void test_parse_timer_wake_system(void) {
     PASS();
 }
 
+void test_parse_timer_clock_change(void) {
+    TEST("timer unit with OnClockChange");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Clock Change Timer\n"
+        "\n"
+        "[Timer]\n"
+        "OnClockChange=true\n";
+
+    const char *path = create_temp_unit(unit_content, ".timer");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_TIMER);
+    assert(unit.config.timer.on_clock_change == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_timer_timezone_change(void) {
+    TEST("timer unit with OnTimezoneChange");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Timezone Change Timer\n"
+        "\n"
+        "[Timer]\n"
+        "OnTimezoneChange=yes\n";
+
+    const char *path = create_temp_unit(unit_content, ".timer");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_TIMER);
+    assert(unit.config.timer.on_timezone_change == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 void test_parse_environment(void) {
     TEST("environment variables");
 
@@ -626,6 +672,8 @@ int main(void) {
     test_parse_timer_fixed_random_delay();
     test_parse_timer_remain_after_elapse();
     test_parse_timer_wake_system();
+    test_parse_timer_clock_change();
+    test_parse_timer_timezone_change();
     test_parse_environment();
     test_parse_conditions();
     test_parse_install_extras();

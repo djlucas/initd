@@ -450,6 +450,8 @@ Standard systemd INI format
 - FixedRandomDelay
 - RemainAfterElapse
 - WakeSystem (Linux/FreeBSD/OpenBSD/NetBSD - RTC wake alarms)
+- OnClockChange (Linux timerfd, BSD kqueue, Hurd polling)
+- OnTimezoneChange (Linux inotify, BSD kqueue, Hurd polling)
 
 **[Socket]:**
 - ListenStream, ListenDatagram
@@ -1283,9 +1285,6 @@ Notes:
 
 [Service]
 [Timer]
-  WakeSystem=
-  OnClockChange=
-  OnTimezoneChange=
 
 [Socket]
   Accept=

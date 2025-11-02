@@ -798,6 +798,10 @@ static int parse_timer_key(struct timer_section *timer, const char *key, char *v
         timer->remain_after_elapse = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "WakeSystem") == 0) {
         timer->wake_system = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "OnClockChange") == 0) {
+        timer->on_clock_change = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "OnTimezoneChange") == 0) {
+        timer->on_timezone_change = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else {
         return -1;
     }
