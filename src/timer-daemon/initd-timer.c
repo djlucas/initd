@@ -43,6 +43,7 @@
 #include "../common/parser.h"
 #include "../common/control.h"
 #include "../common/log-enhanced.h"
+#include "../common/path-security.h"
 
 #ifndef WORKER_PATH
 #define WORKER_PATH "/usr/libexec/initd/initd-timer-worker"
@@ -302,6 +303,21 @@ static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_le
 #endif
 }
 
+/* Validate unit path from worker is in allowed directory */
+static bool validate_unit_path_from_worker(const char *path) {
+    /* SECURITY: Worker-supplied paths must be in whitelisted directories only */
+    return validate_path_in_directory(path, "/lib/initd/system") ||
+           validate_path_in_directory(path, "/etc/initd/system") ||
+           validate_path_in_directory(path, "/usr/lib/initd/system") ||
+           validate_path_in_directory(path, "/lib/systemd/system") ||
+           validate_path_in_directory(path, "/usr/lib/systemd/system") ||
+           validate_path_in_directory(path, "/etc/systemd/system")
+#ifdef UNIT_TEST
+           || validate_path_in_directory(path, "/tmp")
+#endif
+           ;
+}
+
 /* Handle IPC request from worker */
 static void handle_request(int worker_fd) {
     struct timer_request req = {0};
@@ -318,6 +334,17 @@ static void handle_request(int worker_fd) {
     /* Parse unit file for enable/disable operations */
     if (req.type == TIMER_REQ_ENABLE_UNIT || req.type == TIMER_REQ_DISABLE_UNIT ||
         req.type == TIMER_REQ_CONVERT_UNIT) {
+
+        /* SECURITY: Validate unit path is in allowed directory before parsing */
+        if (!validate_unit_path_from_worker(req.unit_path)) {
+            log_error("timer", "SECURITY: invalid unit path: %s", req.unit_path);
+            resp.type = TIMER_RESP_ERROR;
+            resp.error_code = EACCES;
+            snprintf(resp.error_msg, sizeof(resp.error_msg),
+                    "Unit path not in allowed directory");
+            send_timer_response(worker_fd, &resp);
+            return;
+        }
 
         if (parse_unit_file(req.unit_path, &unit) < 0) {
             resp.type = TIMER_RESP_ERROR;
