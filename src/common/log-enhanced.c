@@ -109,13 +109,13 @@ static void format_timestamp(char *buf, size_t size) {
 /* Internal logging function */
 static void log_internal(log_level_t level, const char *unit, const char *fmt, va_list args) {
     char message[1024];
-    char timestamp[32];
 
     /* Format the message */
     vsnprintf(message, sizeof(message), fmt, args);
 
     /* Log to file if level qualifies */
     if (enhanced_log_state.log_file && level <= enhanced_log_state.file_level) {
+        char timestamp[32];
         format_timestamp(timestamp, sizeof(timestamp));
         if (unit && unit[0]) {
             fprintf(enhanced_log_state.log_file, "[%s] [%s] [%s] %s\n",

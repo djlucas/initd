@@ -387,20 +387,21 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Run all tests (26 test suites, 245 individual tests: 22 non-privileged, 4 privileged)
+# Run all tests (27 test suites, 248 individual tests: 22 non-privileged, 5 privileged)
 ninja -C build test
 
 # Run privileged tests (requires root)
 sudo ninja -C build test-privileged
 ```
 
-**Privileged Test Suites (4 total):**
+**Privileged Test Suites (5 total):**
 The privileged test suites validate critical functionality:
 
 1. **offline enable/disable** - Unit enable/disable without running daemons
 2. **Exec lifecycle** - ExecStartPre/Post/Stop/Reload execution paths
 3. **privileged operations** - Converting systemd units, creating symlinks in system directories
 4. **chroot confinement** - RootDirectory= chroot jail functionality
+5. **PrivateDevices security** - Device node creation security (prevents kernel memory exposure)
 
 These tests require root privileges because they:
 - Create files in system directories (`/lib/initd/system/`, `/etc/initd/system/`)

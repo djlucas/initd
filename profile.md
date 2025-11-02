@@ -1384,7 +1384,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**25 test suites, 196 individual tests - all passing**
+**27 test suites, 248 individual tests - all passing**
 
 1. **calendar parser** - Calendar expression parsing
 2. **unit file parser** - Unit file parsing & validation
@@ -1400,17 +1400,19 @@ To avoid writing ourselves into a corner, the following must be considered durin
 12. **socket IPC protocol** - Socket daemon IPC communication
 13. **service features** - PrivateTmp, all Limit* directives (16 total), KillMode, RemainAfterExit, StandardInput/Output/Error parsing
 14. **conditions and assertions** - POSIX-portable Condition*/Assert* directives (8 new + 11 Assert equivalents)
-15. **service registry** - DoS prevention and rate limiting (includes 62s timing test)
-16. **timer inactivity notify** - OnUnitInactiveSec rescheduling
-17. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
-18. **supervisor socket IPC** - CMD_SOCKET_ADOPT control path
-19. **isolate closure** - Target isolation and dependency closure
-20. **initctl routing** - Command routing to correct daemon sockets
-21. **user persistence** - Per-user reboot persistence helpers
-22. **offline enable/disable** (privileged) - Unit enable/disable without running daemons
-23. **Exec lifecycle** (privileged) - ExecStartPre/Post/Stop/Reload execution
-24. **privileged operations** (privileged) - Root-only operations (systemd conversion, symlinks)
-25. **chroot confinement** (privileged) - RootDirectory= chroot jail functionality
+15. **Linux-only conditions** - Linux-specific Condition*/Assert* directives
+16. **service registry** - DoS prevention and rate limiting (includes 62s timing test)
+17. **timer inactivity notify** - OnUnitInactiveSec rescheduling
+18. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
+19. **supervisor socket IPC** - CMD_SOCKET_ADOPT control path
+20. **isolate closure** - Target isolation and dependency closure
+21. **initctl routing** - Command routing to correct daemon sockets
+22. **user persistence** - Per-user reboot persistence helpers
+23. **offline enable/disable** (privileged) - Unit enable/disable without running daemons
+24. **Exec lifecycle** (privileged) - ExecStartPre/Post/Stop/Reload execution
+25. **privileged operations** (privileged) - Root-only operations (systemd conversion, symlinks)
+26. **chroot confinement** (privileged) - RootDirectory= chroot jail functionality
+27. **PrivateDevices security** (privileged) - Device node major/minor validation (prevents kernel memory exposure)
 
 **Coverage:**
 - ✅ Unit file parsing (all types)
@@ -1433,22 +1435,24 @@ To avoid writing ourselves into a corner, the following must be considered durin
 # Build all tests
 ninja -C build
 
-# Run all non-privileged tests (20 test suites)
+# Run all non-privileged tests (22 test suites)
 ninja -C build test
 
-# Run privileged tests (requires root - 3 test suites)
+# Run privileged tests (requires root - 5 test suites)
 sudo ninja -C build test-privileged
 
 # Run all tests with verbose output (using meson for individual control)
 meson test -C build -v
 ```
 
-**Privileged Test Suites (3 total):**
+**Privileged Test Suites (5 total):**
 These tests validate critical functionality that requires root:
 
 1. **offline enable/disable** - Unit enable/disable without running daemons
 2. **Exec lifecycle** - ExecStartPre/Post/Stop/Reload execution paths
 3. **privileged operations** - Converting systemd units, creating symlinks in system directories
+4. **chroot confinement** - RootDirectory= chroot jail functionality
+5. **PrivateDevices security** - Device node creation security (prevents kernel memory exposure)
 
 These tests properly skip with exit code 77 when run without root privileges.
 

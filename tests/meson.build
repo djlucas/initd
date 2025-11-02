@@ -70,6 +70,12 @@ test_chroot = executable(
   dependencies: common_dep
 )
 
+test_private_devices = executable(
+  'test-private-devices',
+  'test-private-devices.c',
+  dependencies: common_dep
+)
+
 test_timer_ipc = executable(
   'test-timer-ipc',
   'test-timer-ipc.c',
@@ -184,11 +190,12 @@ test_offline_enable = executable(
   link_with: initctl_route_lib,
 )
 
-# Privileged tests MUST run first (tests 1-3) or be skipped together
+# Privileged tests MUST run first (tests 1-5) or be skipped together
 test('offline enable/disable', test_offline_enable, suite: 'privileged', priority: 1000)
 test('Exec lifecycle', test_exec_lifecycle, suite: 'privileged', priority: 1000)
 test('privileged operations', test_privileged_ops, suite: 'privileged', priority: 1000)
 test('chroot confinement', test_chroot, suite: 'privileged', priority: 1000)
+test('PrivateDevices security', test_private_devices, suite: 'privileged', priority: 1000)
 
 # Unprivileged tests start here
 test('calendar parser', test_calendar)

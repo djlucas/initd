@@ -615,9 +615,18 @@ static pid_t start_service_process(const struct service_section *service,
             service->standard_output == STDIO_TTY || service->standard_error == STDIO_TTY) {
 
             if (service->tty_path[0] != '\0') {
-                tty_fd = open(service->tty_path, O_RDWR | O_NOCTTY);
+                /* Open TTY with O_NOFOLLOW to prevent symlink attacks */
+                tty_fd = open(service->tty_path, O_RDWR | O_NOCTTY | O_NOFOLLOW);
                 if (tty_fd < 0) {
-                    log_error("supervisor", "open TTY %s: %s", service->tty_path, strerror(errno));
+                    log_error("supervisor", "open TTY %s: %s (use O_NOFOLLOW to prevent symlink attacks)",
+                             service->tty_path, strerror(errno));
+                    _exit(1);
+                }
+                /* Verify it's a character device (TTY) */
+                struct stat st;
+                if (fstat(tty_fd, &st) < 0 || !S_ISCHR(st.st_mode)) {
+                    log_error("supervisor", "TTY path %s is not a character device", service->tty_path);
+                    close(tty_fd);
                     _exit(1);
                 }
 
@@ -660,9 +669,18 @@ static pid_t start_service_process(const struct service_section *service,
                 _exit(1);
             }
         } else if (service->standard_input == STDIO_FILE && service->input_file[0] != '\0') {
-            int file_fd = open(service->input_file, O_RDONLY);
+            /* Open with O_NOFOLLOW to prevent symlink attacks */
+            int file_fd = open(service->input_file, O_RDONLY | O_NOFOLLOW);
             if (file_fd < 0) {
-                log_error("supervisor", "open input file %s: %s", service->input_file, strerror(errno));
+                log_error("supervisor", "open input file %s: %s (use O_NOFOLLOW to prevent symlink attacks)",
+                         service->input_file, strerror(errno));
+                _exit(1);
+            }
+            /* Verify it's a regular file, not a device or special file */
+            struct stat st;
+            if (fstat(file_fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+                log_error("supervisor", "input file %s is not a regular file", service->input_file);
+                close(file_fd);
                 _exit(1);
             }
             if (dup2(file_fd, STDIN_FILENO) < 0) {
@@ -709,9 +727,18 @@ static pid_t start_service_process(const struct service_section *service,
                 _exit(1);
             }
         } else if (service->standard_output == STDIO_FILE && service->output_file[0] != '\0') {
-            int file_fd = open(service->output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            /* Open with O_NOFOLLOW to prevent symlink attacks - O_CREAT + O_EXCL if new */
+            int file_fd = open(service->output_file, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
             if (file_fd < 0) {
-                log_error("supervisor", "open output file %s: %s", service->output_file, strerror(errno));
+                log_error("supervisor", "open output file %s: %s (use O_NOFOLLOW to prevent symlink attacks)",
+                         service->output_file, strerror(errno));
+                _exit(1);
+            }
+            /* Verify it's a regular file, not a device or special file */
+            struct stat st;
+            if (fstat(file_fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+                log_error("supervisor", "output file %s is not a regular file", service->output_file);
+                close(file_fd);
                 _exit(1);
             }
             if (dup2(file_fd, STDOUT_FILENO) < 0) {
@@ -742,9 +769,18 @@ static pid_t start_service_process(const struct service_section *service,
                 _exit(1);
             }
         } else if (service->standard_error == STDIO_FILE && service->error_file[0] != '\0') {
-            int file_fd = open(service->error_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            /* Open with O_NOFOLLOW to prevent symlink attacks */
+            int file_fd = open(service->error_file, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
             if (file_fd < 0) {
-                log_error("supervisor", "open error file %s: %s", service->error_file, strerror(errno));
+                log_error("supervisor", "open error file %s: %s (use O_NOFOLLOW to prevent symlink attacks)",
+                         service->error_file, strerror(errno));
+                _exit(1);
+            }
+            /* Verify it's a regular file, not a device or special file */
+            struct stat st;
+            if (fstat(file_fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+                log_error("supervisor", "error file %s is not a regular file", service->error_file);
+                close(file_fd);
                 _exit(1);
             }
             if (dup2(file_fd, STDERR_FILENO) < 0) {
@@ -884,12 +920,27 @@ static pid_t start_service_process(const struct service_section *service,
                 if (mount("tmpfs", "/dev", "tmpfs", MS_NOSUID | MS_STRICTATIME, "mode=0755") < 0) {
                     log_warn("supervisor", "mount(/dev, tmpfs): %s", strerror(errno));
                 }
-                /* Create essential device nodes: null, zero, full, random, urandom, tty */
-                const char *devs[] = {"null", "zero", "full", "random", "urandom", "tty", NULL};
-                for (int i = 0; devs[i]; i++) {
+                /* Create essential device nodes with correct major/minor and permissions */
+                struct {
+                    const char *name;
+                    unsigned int major;
+                    unsigned int minor;
+                    mode_t mode;
+                } devices[] = {
+                    {"null",    1, 3, 0666},  /* /dev/null */
+                    {"zero",    1, 5, 0666},  /* /dev/zero */
+                    {"full",    1, 7, 0666},  /* /dev/full */
+                    {"random",  1, 8, 0644},  /* /dev/random - read-only for non-root */
+                    {"urandom", 1, 9, 0644},  /* /dev/urandom - read-only for non-root */
+                    {"tty",     5, 0, 0666},  /* /dev/tty */
+                    {NULL, 0, 0, 0}
+                };
+                for (int i = 0; devices[i].name; i++) {
                     char path[64];
-                    snprintf(path, sizeof(path), "/dev/%s", devs[i]);
-                    mknod(path, S_IFCHR | 0666, makedev(1, i));
+                    snprintf(path, sizeof(path), "/dev/%s", devices[i].name);
+                    if (mknod(path, S_IFCHR | devices[i].mode, makedev(devices[i].major, devices[i].minor)) < 0) {
+                        log_warn("supervisor", "mknod(%s): %s", path, strerror(errno));
+                    }
                 }
             }
 
@@ -1036,11 +1087,19 @@ static pid_t start_service_process(const struct service_section *service,
                 _exit(1);
             }
 
-            /* Open the image file */
-            int image_fd = open(service->root_image, O_RDWR);
+            /* Open the image file with O_NOFOLLOW to prevent symlink attacks */
+            int image_fd = open(service->root_image, O_RDWR | O_NOFOLLOW);
             if (image_fd < 0) {
-                log_error("supervisor", "Failed to open image %s: %s",
+                log_error("supervisor", "Failed to open image %s: %s (use O_NOFOLLOW to prevent symlink attacks)",
                          service->root_image, strerror(errno));
+                close(loop_device_fd);
+                _exit(1);
+            }
+            /* Verify it's a regular file */
+            struct stat st;
+            if (fstat(image_fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+                log_error("supervisor", "RootImage %s is not a regular file", service->root_image);
+                close(image_fd);
                 close(loop_device_fd);
                 _exit(1);
             }

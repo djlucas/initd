@@ -403,62 +403,62 @@ int setup_service_environment(const struct service_section *service) {
     }
 
     /* LimitNOFILE - Set file descriptor limit */
-    SET_RLIMIT("RLIMIT_NOFILE", RLIMIT_NOFILE, service->limit_nofile, NULL);
+    SET_RLIMIT("RLIMIT_NOFILE", RLIMIT_NOFILE, service->limit_nofile, (const char*)0);
 
     /* LimitCPU - CPU time limit */
-    SET_RLIMIT("RLIMIT_CPU", RLIMIT_CPU, service->limit_cpu, NULL);
+    SET_RLIMIT("RLIMIT_CPU", RLIMIT_CPU, service->limit_cpu, (const char*)0);
 
     /* LimitFSIZE - File size limit */
-    SET_RLIMIT("RLIMIT_FSIZE", RLIMIT_FSIZE, service->limit_fsize, NULL);
+    SET_RLIMIT("RLIMIT_FSIZE", RLIMIT_FSIZE, service->limit_fsize, (const char*)0);
 
     /* LimitDATA - Data segment size limit */
-    SET_RLIMIT("RLIMIT_DATA", RLIMIT_DATA, service->limit_data, NULL);
+    SET_RLIMIT("RLIMIT_DATA", RLIMIT_DATA, service->limit_data, (const char*)0);
 
     /* LimitSTACK - Stack size limit */
-    SET_RLIMIT("RLIMIT_STACK", RLIMIT_STACK, service->limit_stack, NULL);
+    SET_RLIMIT("RLIMIT_STACK", RLIMIT_STACK, service->limit_stack, (const char*)0);
 
     /* LimitCORE - Core dump size limit */
-    SET_RLIMIT("RLIMIT_CORE", RLIMIT_CORE, service->limit_core, NULL);
+    SET_RLIMIT("RLIMIT_CORE", RLIMIT_CORE, service->limit_core, (const char*)0);
 
     /* LimitRSS - Resident set size (deprecated on Linux) */
 #ifdef __linux__
     SET_RLIMIT("RLIMIT_RSS", RLIMIT_RSS, service->limit_rss, "LimitRSS= is deprecated on Linux");
 #else
-    SET_RLIMIT("RLIMIT_RSS", RLIMIT_RSS, service->limit_rss, NULL);
+    SET_RLIMIT("RLIMIT_RSS", RLIMIT_RSS, service->limit_rss, (const char*)0);
 #endif
 
     /* LimitAS - Address space limit */
-    SET_RLIMIT("RLIMIT_AS", RLIMIT_AS, service->limit_as, NULL);
+    SET_RLIMIT("RLIMIT_AS", RLIMIT_AS, service->limit_as, (const char*)0);
 
     /* LimitNPROC - Process limit */
-    SET_RLIMIT("RLIMIT_NPROC", RLIMIT_NPROC, service->limit_nproc, NULL);
+    SET_RLIMIT("RLIMIT_NPROC", RLIMIT_NPROC, service->limit_nproc, (const char*)0);
 
     /* LimitMEMLOCK - Locked memory limit */
-    SET_RLIMIT("RLIMIT_MEMLOCK", RLIMIT_MEMLOCK, service->limit_memlock, NULL);
+    SET_RLIMIT("RLIMIT_MEMLOCK", RLIMIT_MEMLOCK, service->limit_memlock, (const char*)0);
 
     /* LimitLOCKS - File locks (obsolete on Linux) */
 #ifdef __linux__
     SET_RLIMIT("RLIMIT_LOCKS", RLIMIT_LOCKS, service->limit_locks, "LimitLOCKS= is obsolete on Linux (since kernel 2.4.25)");
 #else
-    SET_RLIMIT("RLIMIT_LOCKS", RLIMIT_LOCKS, service->limit_locks, NULL);
+    SET_RLIMIT("RLIMIT_LOCKS", RLIMIT_LOCKS, service->limit_locks, (const char*)0);
 #endif
 
     /* Linux-only limits */
 #ifdef __linux__
     /* LimitSIGPENDING - Pending signals limit (Linux only) */
-    SET_RLIMIT("RLIMIT_SIGPENDING", RLIMIT_SIGPENDING, service->limit_sigpending, NULL);
+    SET_RLIMIT("RLIMIT_SIGPENDING", RLIMIT_SIGPENDING, service->limit_sigpending, (const char*)0);
 
     /* LimitMSGQUEUE - Message queue bytes (Linux only) */
-    SET_RLIMIT("RLIMIT_MSGQUEUE", RLIMIT_MSGQUEUE, service->limit_msgqueue, NULL);
+    SET_RLIMIT("RLIMIT_MSGQUEUE", RLIMIT_MSGQUEUE, service->limit_msgqueue, (const char*)0);
 
     /* LimitNICE - Nice priority (Linux only) */
-    SET_RLIMIT("RLIMIT_NICE", RLIMIT_NICE, service->limit_nice, NULL);
+    SET_RLIMIT("RLIMIT_NICE", RLIMIT_NICE, service->limit_nice, (const char*)0);
 
     /* LimitRTPRIO - Real-time priority (Linux only) */
-    SET_RLIMIT("RLIMIT_RTPRIO", RLIMIT_RTPRIO, service->limit_rtprio, NULL);
+    SET_RLIMIT("RLIMIT_RTPRIO", RLIMIT_RTPRIO, service->limit_rtprio, (const char*)0);
 
     /* LimitRTTIME - Real-time CPU time (Linux only) */
-    SET_RLIMIT("RLIMIT_RTTIME", RLIMIT_RTTIME, service->limit_rttime, NULL);
+    SET_RLIMIT("RLIMIT_RTTIME", RLIMIT_RTTIME, service->limit_rttime, (const char*)0);
 #else
     /* Warn if Linux-only limits are used on other platforms */
     if (service->limit_sigpending >= 0) {
@@ -479,7 +479,7 @@ int setup_service_environment(const struct service_section *service) {
 #endif
 
     /* MemoryLimit - alias for address space limit (portable) */
-    SET_RLIMIT("RLIMIT_AS", RLIMIT_AS, service->memory_limit, NULL);
+    SET_RLIMIT("RLIMIT_AS", RLIMIT_AS, service->memory_limit, (const char*)0);
 
 #undef SET_RLIMIT
 

@@ -179,49 +179,67 @@ function showhelp(){
   echo ""
 }
 
-function build_filter(){
-  local filter="cat ${LOGFILE}"
+# Safe filter execution without eval - builds pipeline directly
+function apply_filters() {
+  local input_stream="$1"
 
-  # Filter by unit
-  if test -n "${UNIT}"; then
-    filter="${filter} | grep '\\[${UNIT}\\]'"
-  fi
-
-  # Filter by priority
-  if test -n "${PRIORITY}"; then
-    case "${PRIORITY}" in
-      emerg|0)   filter="${filter} | grep -i 'emerg'" ;;
-      alert|1)   filter="${filter} | grep -i -E '(emerg|alert)'" ;;
-      crit|2)    filter="${filter} | grep -i -E '(emerg|alert|crit)'" ;;
-      err|3)     filter="${filter} | grep -i -E '(emerg|alert|crit|err|error)'" ;;
-      warning|4) filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn)'" ;;
-      notice|5)  filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn|notice)'" ;;
-      info|6)    filter="${filter} | grep -i -E '(emerg|alert|crit|err|error|warn|notice|info)'" ;;
-      debug|7)   filter="${filter}" ;;
-      *)         filter="${filter}" ;;
-    esac
-  fi
-
-  # Filter by time (basic implementation)
-  if test -n "${SINCE}"; then
-    # This is simplified - proper date parsing would be more complex
-    filter="${filter} | awk '\$0 >= \"${SINCE}\"'"
-  fi
-
-  if test -n "${UNTIL}"; then
-    filter="${filter} | awk '\$0 <= \"${UNTIL}\"'"
-  fi
-
-  # Boot filter (simplified - would need boot ID tracking)
-  if test -n "${BOOT}"; then
-    # Show logs since last boot time
-    if test -f /var/run/utmp; then
-      BOOTTIME=$(who -b | awk '{print $3, $4}')
-      filter="${filter} | awk '\$0 >= \"${BOOTTIME}\"'"
+  # Start with the log file
+  if test -z "${input_stream}"; then
+    cat "${LOGFILE}"
+  else
+    cat
+  fi | {
+    # Filter by unit - use fixed string grep with -F to prevent regex injection
+    if test -n "${UNIT}"; then
+      grep -F "[${UNIT}]"
+    else
+      cat
     fi
-  fi
-
-  echo "${filter}"
+  } | {
+    # Filter by priority
+    if test -n "${PRIORITY}"; then
+      case "${PRIORITY}" in
+        emerg|0)   grep -i -E '(emerg)' ;;
+        alert|1)   grep -i -E '(emerg|alert)' ;;
+        crit|2)    grep -i -E '(emerg|alert|crit)' ;;
+        err|3)     grep -i -E '(emerg|alert|crit|err|error)' ;;
+        warning|4) grep -i -E '(emerg|alert|crit|err|error|warn)' ;;
+        notice|5)  grep -i -E '(emerg|alert|crit|err|error|warn|notice)' ;;
+        info|6)    grep -i -E '(emerg|alert|crit|err|error|warn|notice|info)' ;;
+        debug|7)   cat ;;
+        *)         cat ;;
+      esac
+    else
+      cat
+    fi
+  } | {
+    # Filter by time - using awk with properly escaped variables
+    if test -n "${SINCE}" && test -n "${UNTIL}"; then
+      awk -v since="${SINCE}" -v until="${UNTIL}" '$0 >= since && $0 <= until'
+    elif test -n "${SINCE}"; then
+      awk -v since="${SINCE}" '$0 >= since'
+    elif test -n "${UNTIL}"; then
+      awk -v until="${UNTIL}" '$0 <= until'
+    else
+      cat
+    fi
+  } | {
+    # Boot filter
+    if test -n "${BOOT}"; then
+      if test -f /var/run/utmp; then
+        BOOTTIME=$(who -b 2>/dev/null | awk '{print $3, $4}')
+        if test -n "${BOOTTIME}"; then
+          awk -v boottime="${BOOTTIME}" '$0 >= boottime'
+        else
+          cat
+        fi
+      else
+        cat
+      fi
+    else
+      cat
+    fi
+  }
 }
 
 # Process command line arguments
@@ -238,14 +256,11 @@ if test ! -f "${LOGFILE}"; then
   exit 1
 fi
 
-# Build filter command
-FILTER=$(build_filter)
-
-# Execute query
+# Execute query - using pipelines directly without eval
 if test "${FOLLOW}" == "1"; then
-  # Follow mode
+  # Follow mode - use grep -F for fixed string matching
   if test -n "${UNIT}"; then
-    eval "tail -f \"${LOGFILE}\" | grep --line-buffered '\\[${UNIT}\\]'"
+    tail -f "${LOGFILE}" | grep --line-buffered -F "[${UNIT}]"
   else
     tail -f "${LOGFILE}"
   fi
@@ -253,10 +268,10 @@ else
   # Normal query
   if test "${REVERSE}" == "1"; then
     # Show newest first
-    eval "${FILTER} | tail -n \"${LINES}\" | tac" | ${PAGER}
+    apply_filters | tail -n "${LINES}" | tac | ${PAGER}
   else
     # Show oldest first
-    eval "${FILTER} | tail -n \"${LINES}\"" | ${PAGER}
+    apply_filters | tail -n "${LINES}" | ${PAGER}
   fi
 fi
 

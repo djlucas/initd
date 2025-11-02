@@ -7,14 +7,14 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (26 test suites, 245 individual tests; 4 marked privileged)
+# Build and run all tests (27 test suites, 248 individual tests; 5 marked privileged)
 ninja -C build
 ninja -C build test
 
 # Run only non-privileged tests (22 test suites)
 ninja -C build test --suite initd
 
-# Run privileged tests (covers offline enable, Exec* lifecycle, and privileged ops)
+# Run privileged tests (covers offline enable, Exec* lifecycle, privileged ops, chroot, PrivateDevices security)
 sudo ninja -C build test-privileged
 
 # Run specific test (using meson for individual tests)
@@ -41,6 +41,8 @@ meson test -C build "user persistence"
 meson test -C build "offline enable/disable"  # Privileged suite
 meson test -C build "Exec lifecycle"          # Privileged suite
 meson test -C build "privileged operations"   # Privileged suite
+meson test -C build "chroot confinement"      # Privileged suite
+meson test -C build "PrivateDevices security" # Privileged suite
 
 # Verbose output
 meson test -C build -v
@@ -453,12 +455,32 @@ Tests RootDirectory= chroot jail functionality:
 
 Run with: `sudo meson test -C build --suite privileged`
 
+### test-private-devices (PrivateDevices security) - PRIVILEGED
+Regression test for PrivateDevices device node security vulnerabilities (3 tests):
+- Verifies device nodes created with correct major/minor numbers (not sequential)
+- Validates /dev/null is (1,3) not (1,0) to prevent /dev/mem exposure
+- Confirms dangerous devices (/dev/mem, /dev/kmem, /dev/port) are not created
+- Tests device node permissions are appropriate (0666 for null/zero/full/tty, 0644 for random/urandom)
+- Detects the old sequential-minor bug that exposed kernel memory
+
+**Security Impact:**
+The old implementation used sequential minor numbers starting from 0, which created:
+- `/dev/null` as (1,0) - actually /dev/mem (raw kernel memory)
+- `/dev/zero` as (1,1) - actually /dev/kmem (kernel virtual memory)
+- All other devices shifted incorrectly
+
+With world-writable 0666 permissions, this gave sandboxed services raw access to kernel memory.
+
+**Note:** This test requires root privileges to create device nodes with mknod().
+
+Run with: `sudo meson test -C build --suite privileged`
+
 ## Test Statistics
 
-**Total: 26 test suites, 224 individual tests - all passing ✅**
+**Total: 27 test suites, 248 individual tests - all passing ✅**
 
 **Regular tests:** 22 suites (no root required)
-**Privileged tests:** 4 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement)
+**Privileged tests:** 5 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement, PrivateDevices security)
 
 ## CI Integration
 
