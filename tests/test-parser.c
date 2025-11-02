@@ -140,7 +140,9 @@ void test_parse_timer(void) {
         "OnCalendar=daily\n"
         "OnBootSec=300\n"
         "Persistent=true\n"
-        "RandomizedDelaySec=60\n";
+        "RandomizedDelaySec=60\n"
+        "AccuracySec=120\n"
+        "Unit=custom.service\n";
 
     const char *path = create_temp_unit(unit_content, ".timer");
     assert(path != NULL);
@@ -148,10 +150,123 @@ void test_parse_timer(void) {
     struct unit_file unit;
     assert(parse_unit_file(path, &unit) == 0);
     assert(unit.type == UNIT_TIMER);
-    assert(strcmp(unit.config.timer.on_calendar, "daily") == 0);
+    assert(unit.config.timer.on_calendar_count == 1);
+    assert(strcmp(unit.config.timer.on_calendar[0], "daily") == 0);
     assert(unit.config.timer.on_boot_sec == 300);
     assert(unit.config.timer.persistent == true);
     assert(unit.config.timer.randomized_delay_sec == 60);
+    assert(unit.config.timer.accuracy_sec == 120);
+    assert(strcmp(unit.config.timer.unit, "custom.service") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_timer_defaults(void) {
+    TEST("timer unit default values");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Simple Timer\n"
+        "\n"
+        "[Timer]\n"
+        "OnBootSec=60\n";
+
+    const char *path = create_temp_unit(unit_content, ".timer");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_TIMER);
+    /* AccuracySec defaults to 60 seconds (1 minute) per systemd spec */
+    assert(unit.config.timer.accuracy_sec == 60);
+    /* Unit defaults to NULL (derive from timer name) */
+    assert(unit.config.timer.unit == NULL);
+    /* RemainAfterElapse defaults to true */
+    assert(unit.config.timer.remain_after_elapse == true);
+    /* FixedRandomDelay defaults to false */
+    assert(unit.config.timer.fixed_random_delay == false);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_timer_multiple_calendar(void) {
+    TEST("timer unit with multiple OnCalendar entries");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Multi-Calendar Timer\n"
+        "\n"
+        "[Timer]\n"
+        "OnCalendar=daily\n"
+        "OnCalendar=weekly\n"
+        "OnCalendar=monthly\n";
+
+    const char *path = create_temp_unit(unit_content, ".timer");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_TIMER);
+    assert(unit.config.timer.on_calendar_count == 3);
+    assert(strcmp(unit.config.timer.on_calendar[0], "daily") == 0);
+    assert(strcmp(unit.config.timer.on_calendar[1], "weekly") == 0);
+    assert(strcmp(unit.config.timer.on_calendar[2], "monthly") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_timer_fixed_random_delay(void) {
+    TEST("timer unit with FixedRandomDelay");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Fixed Random Timer\n"
+        "\n"
+        "[Timer]\n"
+        "OnBootSec=300\n"
+        "RandomizedDelaySec=60\n"
+        "FixedRandomDelay=true\n";
+
+    const char *path = create_temp_unit(unit_content, ".timer");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_TIMER);
+    assert(unit.config.timer.on_boot_sec == 300);
+    assert(unit.config.timer.randomized_delay_sec == 60);
+    assert(unit.config.timer.fixed_random_delay == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_timer_remain_after_elapse(void) {
+    TEST("timer unit with RemainAfterElapse");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=One-shot Timer\n"
+        "\n"
+        "[Timer]\n"
+        "OnBootSec=60\n"
+        "RemainAfterElapse=false\n";
+
+    const char *path = create_temp_unit(unit_content, ".timer");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_TIMER);
+    assert(unit.config.timer.on_boot_sec == 60);
+    assert(unit.config.timer.remain_after_elapse == false);
 
     free_unit_file(&unit);
     unlink(path);
@@ -482,6 +597,10 @@ int main(void) {
     test_parse_dependencies();
     test_parse_forking_service();
     test_parse_timer();
+    test_parse_timer_defaults();
+    test_parse_timer_multiple_calendar();
+    test_parse_timer_fixed_random_delay();
+    test_parse_timer_remain_after_elapse();
     test_parse_environment();
     test_parse_conditions();
     test_parse_install_extras();

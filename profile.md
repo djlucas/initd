@@ -404,31 +404,56 @@ Standard systemd INI format
 
 **[Service]:**
 - Type (simple, forking, oneshot)
-- ExecStart, ExecStartPre, ExecStartPost *(implemented – privileged master revalidates command, argv, and environment setup)*
-- ExecStop, ExecReload *(implemented – privileged master execution with worker mediation)*
+- ExecStart, ExecStartPre, ExecStartPost, ExecStop, ExecStopPost, ExecReload, ExecCondition
 - User, Group
 - WorkingDirectory
 - Environment, EnvironmentFile
 - Restart (no, always, on-failure)
-- RestartSec
-- TimeoutStartSec, TimeoutStopSec
-- PrivateTmp (Linux only - mount namespaces)
+- RestartSec, RestartMaxDelaySec
+- RestartPreventExitStatus, RestartForceExitStatus
+- TimeoutStartSec, TimeoutStopSec, TimeoutAbortSec
+- TimeoutStartFailureMode
+- StandardInput, StandardOutput, StandardError
+- TTYPath
+- RemainAfterExit
+- PIDFile
+- SyslogIdentifier, SyslogFacility, SyslogLevel, SyslogLevelPrefix
+- LogLevelMax
+- UMask
+- KillMode (portable - process groups)
+- PrivateTmp (Linux/BSD/Hurd - mount namespaces on Linux, secure temp dirs on BSD/Hurd)
+- PrivateDevices (Linux only - private /dev with minimal nodes)
+- NoNewPrivileges (Linux/FreeBSD only)
+- RootDirectory, RootImage
+- ProtectSystem, ProtectHome
+- ProtectKernelTunables, ProtectControlGroups (Linux only)
+- MountFlags
+- DynamicUser
+- DeviceAllow (Linux only - cgroup device controller)
+- CapabilityBoundingSet, AmbientCapabilities (Linux only)
+- RestrictSUIDSGID
+- MemoryLimit
+- RuntimeMaxSec
 - LimitNOFILE, LimitCPU, LimitFSIZE, LimitDATA, LimitSTACK, LimitCORE, LimitRSS, LimitAS, LimitNPROC, LimitMEMLOCK, LimitLOCKS (portable - setrlimit)
 - LimitSIGPENDING, LimitMSGQUEUE, LimitNICE, LimitRTPRIO, LimitRTTIME (Linux only - setrlimit)
-- KillMode (portable - process groups)
 
 **[Timer]:**
-- OnCalendar
+- OnCalendar (supports multiple entries)
 - OnBootSec
 - OnStartupSec
 - OnUnitActiveSec
 - OnUnitInactiveSec
 - Persistent
 - RandomizedDelaySec
+- AccuracySec
+- Unit
+- FixedRandomDelay
+- RemainAfterElapse
 
 **[Socket]:**
 - ListenStream, ListenDatagram
-- (Custom: IdleTimeout)
+- IdleTimeout (custom extension - kill service after idle)
+- RuntimeMaxSec (from associated service unit)
 
 **[Install]:**
 - WantedBy, RequiredBy
@@ -1257,14 +1282,9 @@ Notes:
 
 [Service]
 [Timer]
-  AccuracySec=
-  Unit=
-  RemainAfterElapse=
   WakeSystem=
-  FixedRandomDelay=
   OnClockChange=
   OnTimezoneChange=
-  Additional OnCalendar= entries
 
 [Socket]
   Accept=
@@ -1384,7 +1404,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**27 test suites, 248 individual tests - all passing**
+**27 test suites, 252 individual tests - all passing**
 
 1. **calendar parser** - Calendar expression parsing
 2. **unit file parser** - Unit file parsing & validation

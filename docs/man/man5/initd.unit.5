@@ -838,6 +838,7 @@ associated service units at scheduled times.
 Calendar event expression. Format:
 .BR "DayOfWeek Year-Month-Day Hour:Minute:Second" .
 Supports shortcuts: daily, weekly, monthly, hourly.
+May be specified multiple times to create a timer that runs at different schedules.
 .TP
 .B OnBootSec=
 Time to wait after boot before activating. Takes a time value.
@@ -857,6 +858,27 @@ Boolean. If true, catch up on missed runs after system boot. Default: false.
 .B RandomizedDelaySec=
 Random delay to add to timer events to prevent multiple timers from firing
 simultaneously.
+.TP
+.B AccuracySec=
+Accuracy window for timer events. Timers may fire early (within this window
+before the scheduled time) to allow timer coalescing for power savings.
+Default: 60 (1 minute). Set to 1 for precise timing.
+.TP
+.B Unit=
+Service to activate when the timer elapses. If not specified, defaults to a
+service unit of the same name as the timer (e.g., backup.timer activates
+backup.service).
+.TP
+.B FixedRandomDelay=
+Boolean. If true, use a fixed random delay value (calculated once) with
+RandomizedDelaySec. If false (default), recalculate random delay on each
+timer event. Useful for staggering timer starts while maintaining consistent
+intervals thereafter.
+.TP
+.B RemainAfterElapse=
+Boolean. If true (default), timer remains active after firing and reschedules
+according to its schedule. If false, timer is disabled after first activation
+(one-shot behavior).
 .SH [SOCKET] SECTION
 The
 .B [Socket]

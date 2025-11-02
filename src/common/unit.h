@@ -17,6 +17,7 @@
 #define MAX_ENV_VARS 64
 #define MAX_CONDITIONS 32
 #define MAX_EXEC_COMMANDS 16
+#define MAX_CALENDAR_ENTRIES 8
 #define MAX_RESTART_STATUS 16
 #define MAX_INSTALL_ENTRIES MAX_DEPS
 #define MAX_DEVICE_ALLOW 16
@@ -274,13 +275,18 @@ struct service_section {
 
 /* [Timer] section */
 struct timer_section {
-    char *on_calendar;
+    char *on_calendar[MAX_CALENDAR_ENTRIES];  /* Multiple OnCalendar= entries */
+    int on_calendar_count;
     int on_boot_sec;
     int on_startup_sec;
     int on_unit_active_sec;
     int on_unit_inactive_sec;
     bool persistent;
     int randomized_delay_sec;
+    int accuracy_sec;  /* AccuracySec= - allowed firing window (default: 60s) */
+    char *unit;        /* Unit= - service to activate (default: timer name minus .timer) */
+    bool fixed_random_delay;  /* FixedRandomDelay= - use fixed random value */
+    bool remain_after_elapse; /* RemainAfterElapse= - keep timer active after firing (default: true) */
 };
 
 /* [Socket] section */

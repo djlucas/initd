@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (27 test suites, 248 individual tests; 5 marked privileged)
+# Build and run all tests (27 test suites, 252 individual tests; 5 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -84,7 +84,11 @@ Tests the unit file parser:
 - Basic service parsing
 - Dependency resolution (After, Requires, Wants, BindsTo, PartOf)
 - Service types (simple, forking, oneshot)
-- Timer unit parsing
+- Timer unit parsing (OnCalendar, OnBootSec, Persistent, RandomizedDelaySec, AccuracySec, Unit, FixedRandomDelay, RemainAfterElapse)
+- Timer unit default values (AccuracySec defaults to 60 seconds, RemainAfterElapse defaults to true)
+- Timer unit with multiple OnCalendar entries
+- Timer unit with FixedRandomDelay
+- Timer unit with RemainAfterElapse=false (one-shot timers)
 - Environment variables
 - ConditionPath* directive parsing with negation support
 - StopWhenUnneeded and RefuseManualStart/Stop flags
@@ -477,7 +481,7 @@ Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 27 test suites, 248 individual tests - all passing ✅**
+**Total: 27 test suites, 252 individual tests - all passing ✅**
 
 **Regular tests:** 22 suites (no root required)
 **Privileged tests:** 5 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement, PrivateDevices security)

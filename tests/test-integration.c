@@ -349,7 +349,8 @@ void test_timer_integration(void) {
     assert(parse_unit_file(path, &unit) == 0);
 
     assert(unit.type == UNIT_TIMER);
-    assert(strcmp(unit.config.timer.on_calendar, "daily") == 0);
+    assert(unit.config.timer.on_calendar_count == 1);
+    assert(strcmp(unit.config.timer.on_calendar[0], "daily") == 0);
     assert(unit.config.timer.on_boot_sec == 300);
     assert(unit.config.timer.on_startup_sec == 60);
     assert(unit.config.timer.persistent == true);

@@ -773,7 +773,9 @@ static int parse_service_key(struct service_section *service, const char *key, c
 /* Parse [Timer] section key/value */
 static int parse_timer_key(struct timer_section *timer, const char *key, char *value) {
     if (strcmp(key, "OnCalendar") == 0) {
-        timer->on_calendar = strdup(value);
+        if (timer->on_calendar_count < MAX_CALENDAR_ENTRIES) {
+            timer->on_calendar[timer->on_calendar_count++] = strdup(value);
+        }
     } else if (strcmp(key, "OnBootSec") == 0) {
         timer->on_boot_sec = atoi(value);
     } else if (strcmp(key, "OnStartupSec") == 0) {
@@ -786,6 +788,14 @@ static int parse_timer_key(struct timer_section *timer, const char *key, char *v
         timer->persistent = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "RandomizedDelaySec") == 0) {
         timer->randomized_delay_sec = atoi(value);
+    } else if (strcmp(key, "AccuracySec") == 0) {
+        timer->accuracy_sec = atoi(value);
+    } else if (strcmp(key, "Unit") == 0) {
+        timer->unit = strdup(value);
+    } else if (strcmp(key, "FixedRandomDelay") == 0) {
+        timer->fixed_random_delay = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "RemainAfterElapse") == 0) {
+        timer->remain_after_elapse = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else {
         return -1;
     }
@@ -901,6 +911,10 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.service.capability_bounding_set_count = 0;  /* Default: no capability restrictions */
     unit->config.service.ambient_capabilities_count = 0;     /* Default: no ambient capabilities */
 
+    /* Timer defaults */
+    unit->config.timer.accuracy_sec = 60;  /* Default: 1 minute (systemd default) */
+    unit->config.timer.remain_after_elapse = true;  /* Default: true (systemd default) */
+
     /* Determine type from extension */
     unit->type = get_unit_type(name);
 
@@ -1012,7 +1026,7 @@ int validate_unit_file(const struct unit_file *unit) {
 
     /* Timer units need at least one timer */
     if (unit->type == UNIT_TIMER) {
-        if (!unit->config.timer.on_calendar &&
+        if (unit->config.timer.on_calendar_count == 0 &&
             unit->config.timer.on_boot_sec == 0 &&
             unit->config.timer.on_startup_sec == 0 &&
             unit->config.timer.on_unit_active_sec == 0 &&
@@ -1075,7 +1089,10 @@ void free_unit_file(struct unit_file *unit) {
 
     /* Free [Timer] fields */
     if (unit->type == UNIT_TIMER) {
-        free(unit->config.timer.on_calendar);
+        for (int i = 0; i < unit->config.timer.on_calendar_count; i++) {
+            free(unit->config.timer.on_calendar[i]);
+        }
+        free(unit->config.timer.unit);
     }
 
     /* Free [Socket] fields */

@@ -46,6 +46,7 @@ struct timer_instance {
     time_t next_run;        /* Next scheduled run (CLOCK_REALTIME) */
     time_t last_run;        /* Last actual run (for persistence) */
     time_t last_inactive;   /* Last time linked service became inactive */
+    int fixed_random_value; /* Cached random delay for FixedRandomDelay=true */
     bool enabled;
     struct timer_instance *next;
 };
@@ -147,6 +148,13 @@ static void timer_daemon_test_clear_instances(void) {
 #endif
 
 static void timer_service_name(const struct timer_instance *timer, char *buf, size_t len) {
+    /* If Unit= is specified, use it directly */
+    if (timer->unit->config.timer.unit) {
+        snprintf(buf, len, "%s", timer->unit->config.timer.unit);
+        return;
+    }
+
+    /* Otherwise, derive from timer name (foo.timer -> foo.service) */
     const char *name = timer->unit->name;
     const char *dot = strrchr(name, '.');
     size_t base_len = strlen(name);
@@ -359,11 +367,10 @@ static time_t calculate_next_run(struct timer_instance *timer) {
     struct timer_section *t = &timer->unit->config.timer;
     time_t next = 0;
 
-    /* OnCalendar - calendar-based scheduling */
-    if (t->on_calendar) {
-        time_t calendar_next = calendar_next_run(t->on_calendar, now);
-        /* First timer type: next is guaranteed to be 0, so just check validity */
-        if (calendar_next > 0) {
+    /* OnCalendar - calendar-based scheduling (can have multiple entries) */
+    for (int i = 0; i < t->on_calendar_count; i++) {
+        time_t calendar_next = calendar_next_run(t->on_calendar[i], now);
+        if (calendar_next > 0 && (next == 0 || calendar_next < next)) {
             next = calendar_next;
         }
     }
@@ -401,13 +408,29 @@ static time_t calculate_next_run(struct timer_instance *timer) {
     }
 
     /* If no timer matched and last_run is set, recalculate from last_run */
-    if (next == 0 && t->on_calendar) {
-        next = calendar_next_run(t->on_calendar, timer->last_run > 0 ? timer->last_run : now);
+    if (next == 0 && t->on_calendar_count > 0) {
+        time_t base_time = timer->last_run > 0 ? timer->last_run : now;
+        for (int i = 0; i < t->on_calendar_count; i++) {
+            time_t calendar_next = calendar_next_run(t->on_calendar[i], base_time);
+            if (calendar_next > 0 && (next == 0 || calendar_next < next)) {
+                next = calendar_next;
+            }
+        }
     }
 
     /* Apply randomized delay */
     if (next > 0 && t->randomized_delay_sec > 0) {
-        int delay = rand() % t->randomized_delay_sec;
+        int delay;
+        if (t->fixed_random_delay) {
+            /* Use fixed random value calculated once */
+            if (timer->fixed_random_value == 0) {
+                timer->fixed_random_value = (rand() % t->randomized_delay_sec) + 1;
+            }
+            delay = timer->fixed_random_value;
+        } else {
+            /* Recalculate random delay each time */
+            delay = rand() % t->randomized_delay_sec;
+        }
         next += delay;
     }
 
@@ -608,9 +631,17 @@ static int fire_timer(struct timer_instance *timer) {
         timer->last_inactive = 0;
     }
 
-    /* Calculate next run */
-    timer->next_run = calculate_next_run(timer);
-    log_debug("timer", "next run for %s at %ld", timer->unit->name, timer->next_run);
+    /* Check RemainAfterElapse */
+    if (!timer->unit->config.timer.remain_after_elapse) {
+        /* Disable timer after firing (RemainAfterElapse=false) */
+        timer->enabled = false;
+        timer->next_run = 0;
+        log_debug("timer", "%s disabled after elapse (RemainAfterElapse=false)", timer->unit->name);
+    } else {
+        /* Calculate next run (RemainAfterElapse=true, default) */
+        timer->next_run = calculate_next_run(timer);
+        log_debug("timer", "next run for %s at %ld", timer->unit->name, timer->next_run);
+    }
     return result;
 }
 
@@ -623,7 +654,18 @@ static void check_timers(void) {
             continue;
         }
 
-        if (now >= t->next_run) {
+        /* AccuracySec= allows timer to fire within a window
+         * Timer can fire early (within accuracy window before scheduled time)
+         * This allows timer coalescing for power savings */
+        int accuracy = t->unit->config.timer.accuracy_sec;
+        time_t fire_window_start = t->next_run - accuracy;
+
+        /* Only apply early firing if accuracy window is positive */
+        if (accuracy > 0 && now >= fire_window_start && now < t->next_run) {
+            /* Within accuracy window - can fire early */
+            (void)fire_timer(t);
+        } else if (now >= t->next_run) {
+            /* Past scheduled time - fire normally */
             (void)fire_timer(t);
         }
     }
