@@ -747,6 +747,42 @@ Accept=yes    # spawn per-connection instances
 - Each connection gets fresh process with no shared state
 - Service crashes only affect single connection
 
+#### TriggerLimitIntervalSec= / TriggerLimitBurst= (Portable)
+
+**Purpose:** Rate limit socket activation to prevent DoS attacks
+
+**Implementation:**
+- TriggerLimitIntervalSec= - Time window in seconds (default: 2)
+- TriggerLimitBurst= - Maximum activations allowed in window (default: 2500)
+- Circular buffer tracks last 128 activation timestamps
+- When limit exceeded, socket refuses new connections
+- Automatically recovers when activation rate drops below limit
+- Works for both Accept=true and Accept=false modes
+
+**Platform Support:**
+- All Unix-like systems using time(2)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:80
+TriggerLimitIntervalSec=10
+TriggerLimitBurst=100    # max 100 activations per 10 seconds
+```
+
+**Behavior:**
+- Prevents rapid connection flooding from triggering excessive service starts
+- Logs warning when limit first exceeded
+- Logs info when recovered
+- Limit applies to activation attempts, not established connections
+
+**Security Benefits:**
+- Mitigates connection flood DoS attacks
+- Prevents resource exhaustion from rapid service spawning
+- Automatic recovery without manual intervention
+- Default limits (2500 per 2 seconds) handle legitimate high traffic while
+  blocking attacks
+
 #### TCP Keepalive Directives (Platform-Specific)
 
 **Purpose:** Configure TCP keepalive behavior for connection health monitoring
@@ -1561,8 +1597,6 @@ Notes:
   Mark=
 
   # Medium (portable, 1-2 days each)
-  TriggerLimitIntervalSec=
-  TriggerLimitBurst=
   FileDescriptorName=
   ListenFIFO=
   ListenMessageQueue=

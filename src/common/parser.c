@@ -867,6 +867,10 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->exec_start_post = strdup(value);
     } else if (strcmp(key, "ExecStopPost") == 0) {
         socket->exec_stop_post = strdup(value);
+    } else if (strcmp(key, "TriggerLimitIntervalSec") == 0) {
+        socket->trigger_limit_interval_sec = atoi(value);
+    } else if (strcmp(key, "TriggerLimitBurst") == 0) {
+        socket->trigger_limit_burst = atoi(value);
     } else {
         return -1;
     }
@@ -983,6 +987,8 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.keep_alive_time = -1;      /* Default: not set */
     unit->config.socket.keep_alive_interval = -1;  /* Default: not set */
     unit->config.socket.keep_alive_count = -1;     /* Default: not set */
+    unit->config.socket.trigger_limit_interval_sec = 2;  /* Default: 2 seconds (systemd default) */
+    unit->config.socket.trigger_limit_burst = 2500;      /* Default: 2500 (systemd default) */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

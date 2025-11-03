@@ -57,6 +57,13 @@ struct socket_instance {
     time_t last_activity;       /* Last connection/activity time */
     int runtime_max_sec;        /* Max runtime for activated service */
     bool enabled;
+
+    /* Trigger rate limiting */
+    time_t trigger_times[128];  /* Circular buffer of trigger timestamps */
+    int trigger_count;          /* Number of triggers tracked */
+    int trigger_index;          /* Next index to write in circular buffer */
+    bool trigger_limit_hit;     /* Rate limit exceeded, refusing connections */
+
     struct socket_instance *next;
 };
 
@@ -72,6 +79,56 @@ static int test_runtime_kill_count = 0;
 
 /* Forward declaration */
 static int run_socket_exec_command(const char *command, const char *unit_name, const char *stage);
+
+/* Check if socket activation is within trigger rate limit
+ * Returns: true if activation allowed, false if rate limit exceeded */
+static bool check_trigger_limit(struct socket_instance *sock) {
+    time_t now = time(NULL);
+    struct socket_section *cfg = &sock->unit->config.socket;
+
+    /* Get configured limits (with defaults) */
+    int interval = cfg->trigger_limit_interval_sec;
+    int burst = cfg->trigger_limit_burst;
+
+    /* Validate limits */
+    if (interval <= 0) interval = 2;       /* Default: 2 seconds */
+    if (burst <= 0) burst = 2500;          /* Default: 2500 */
+    if (burst > 128) burst = 128;          /* Cap at buffer size */
+
+    /* Count triggers within the interval window */
+    int triggers_in_window = 0;
+    for (int i = 0; i < sock->trigger_count && i < 128; i++) {
+        if ((now - sock->trigger_times[i]) <= interval) {
+            triggers_in_window++;
+        }
+    }
+
+    /* Check if we've exceeded the burst limit */
+    if (triggers_in_window >= burst) {
+        if (!sock->trigger_limit_hit) {
+            log_warn("socket-worker", "%s: Trigger rate limit exceeded (%d activations in %ds), refusing connections",
+                     sock->unit->name, triggers_in_window, interval);
+            sock->trigger_limit_hit = true;
+        }
+        return false;
+    }
+
+    /* Reset limit-hit flag if we're back under the limit */
+    if (sock->trigger_limit_hit && triggers_in_window < (burst / 2)) {
+        log_info("socket-worker", "%s: Trigger rate limit recovered, accepting connections",
+                 sock->unit->name);
+        sock->trigger_limit_hit = false;
+    }
+
+    /* Record this trigger in circular buffer */
+    sock->trigger_times[sock->trigger_index] = now;
+    sock->trigger_index = (sock->trigger_index + 1) % 128;
+    if (sock->trigger_count < 128) {
+        sock->trigger_count++;
+    }
+
+    return true;
+}
 
 static void derive_service_name(struct socket_instance *sock) {
     /* Use Service= if specified */
@@ -1207,6 +1264,13 @@ static void handle_socket_ready(struct socket_instance *sock) {
     }
 
     log_debug("socket-worker", "Activity detected on %s", sock->unit->name);
+
+    /* Check trigger rate limit */
+    if (!check_trigger_limit(sock)) {
+        /* Rate limit exceeded, refuse connection */
+        log_debug("socket-worker", "Refusing connection for %s (rate limited)", sock->unit->name);
+        return;
+    }
 
     /* Check if this is Accept=true (per-connection) mode */
     if (sock->unit->config.socket.accept) {

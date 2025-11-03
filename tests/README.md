@@ -100,6 +100,7 @@ Tests the unit file parser:
 - DefaultDependencies= directive with implicit Conflicts/Before shutdown.target
 - Socket Exec* lifecycle commands (ExecStartPre, ExecStartPost, ExecStopPost)
 - Socket Accept= directive (yes/no/default)
+- Socket TriggerLimit* directives (custom values and defaults)
 
 ### test-control (10 tests)
 Tests the control protocol:

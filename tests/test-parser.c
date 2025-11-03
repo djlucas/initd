@@ -754,6 +754,52 @@ void test_parse_socket_accept(void) {
     PASS();
 }
 
+void test_parse_socket_trigger_limit(void) {
+    TEST("socket TriggerLimit* directives");
+
+    /* Test custom values */
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Rate Limited Socket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=0.0.0.0:80\n"
+        "TriggerLimitIntervalSec=10\n"
+        "TriggerLimitBurst=100\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.trigger_limit_interval_sec == 10);
+    assert(unit.config.socket.trigger_limit_burst == 100);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test defaults */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket with default limits\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.trigger_limit_interval_sec == 2);     /* Default: 2 seconds */
+    assert(unit.config.socket.trigger_limit_burst == 2500);          /* Default: 2500 */
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -777,6 +823,7 @@ int main(void) {
     test_parse_default_dependencies();
     test_parse_socket_exec_commands();
     test_parse_socket_accept();
+    test_parse_socket_trigger_limit();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

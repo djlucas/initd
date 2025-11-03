@@ -327,6 +327,8 @@ struct socket_section {
     char *exec_start_pre;       /* ExecStartPre= - command before activation */
     char *exec_start_post;      /* ExecStartPost= - command after activation */
     char *exec_stop_post;       /* ExecStopPost= - command after service stops */
+    int trigger_limit_interval_sec; /* TriggerLimitIntervalSec= - activation rate limit window */
+    int trigger_limit_burst;    /* TriggerLimitBurst= - max activations per interval */
 };
 
 /* [Install] section */
