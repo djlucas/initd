@@ -1065,6 +1065,134 @@ static int activate_direct(struct socket_instance *sock) {
     return 0;
 }
 
+/* Activate service for per-connection mode (Accept=true, inetd-style) */
+static int activate_per_connection(struct socket_instance *sock) {
+    /* Accept the connection */
+    int conn_fd = accept(sock->listen_fd, NULL, NULL);
+    if (conn_fd < 0) {
+        log_error("socket-worker", "accept: %s", strerror(errno));
+        return -1;
+    }
+
+    /* Load service unit */
+    char unit_path[1024];
+    struct unit_file unit;
+    const char *dirs[] = {
+        "/etc/initd/system",
+        "/lib/initd/system",
+        "/etc/systemd/system",
+        "/lib/systemd/system",
+        NULL
+    };
+
+    bool found = false;
+    for (int i = 0; dirs[i]; i++) {
+        snprintf(unit_path, sizeof(unit_path), "%s/%s", dirs[i], sock->service_name);
+        if (parse_unit_file(unit_path, &unit) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        log_error("socket-worker", "service %s not found", sock->service_name);
+        close(conn_fd);
+        return -1;
+    }
+
+    if (unit.type != UNIT_SERVICE) {
+        free_unit_file(&unit);
+        close(conn_fd);
+        return -1;
+    }
+
+    if (!unit.config.service.exec_start) {
+        free_unit_file(&unit);
+        close(conn_fd);
+        return -1;
+    }
+
+    /* Run ExecStartPre if configured */
+    struct socket_section *socket_cfg = &sock->unit->config.socket;
+    if (socket_cfg->exec_start_pre) {
+        if (run_socket_exec_command(socket_cfg->exec_start_pre, sock->unit->name, "ExecStartPre") < 0) {
+            log_warn("socket-worker", "ExecStartPre failed for %s, continuing", sock->unit->name);
+        }
+    }
+
+    /* Fork and exec service for this connection */
+    pid_t pid = fork();
+    if (pid < 0) {
+        free_unit_file(&unit);
+        close(conn_fd);
+        return -1;
+    }
+
+    if (pid == 0) {
+        /* Child process */
+        if (daemon_socket >= 0) {
+            close(daemon_socket);
+        }
+
+        /* Set up socket activation environment */
+        char listen_fds[32];
+        snprintf(listen_fds, sizeof(listen_fds), "%d", 1);
+        setenv("LISTEN_FDS", listen_fds, 1);
+        char listen_pid[32];
+        snprintf(listen_pid, sizeof(listen_pid), "%d", (int)getpid());
+        setenv("LISTEN_PID", listen_pid, 1);
+
+        /* Duplicate connection fd to fd 3 (systemd convention) */
+        if (dup2(conn_fd, 3) < 0) {
+            log_error("socket-worker", "dup2: %s", strerror(errno));
+            exit(1);
+        }
+
+        /* Close the original connection fd (fd 3 remains) */
+        close(conn_fd);
+
+        /* Close listening socket in child */
+        close(sock->listen_fd);
+
+        /* Close other fds */
+        for (int i = 4; i < 1024; i++) {
+            close(i);
+        }
+
+        /* Parse and exec */
+        char *argv[64];
+        int argc = 0;
+        char *cmd = strdup(unit.config.service.exec_start);
+        char *token = strtok(cmd, " ");
+
+        while (token && argc < 63) {
+            argv[argc++] = token;
+            token = strtok(NULL, " ");
+        }
+        argv[argc] = NULL;
+
+        execvp(argv[0], argv);
+        log_error("socket-worker", "exec: %s", strerror(errno));
+        exit(1);
+    }
+
+    /* Parent */
+    free_unit_file(&unit);
+    close(conn_fd);  /* Parent closes connection fd */
+
+    log_info("socket-worker", "Spawned per-connection instance of %s (pid %d)",
+             sock->service_name, pid);
+
+    /* Run ExecStartPost if configured */
+    if (socket_cfg->exec_start_post) {
+        if (run_socket_exec_command(socket_cfg->exec_start_post, sock->unit->name, "ExecStartPost") < 0) {
+            log_warn("socket-worker", "ExecStartPost failed for %s", sock->unit->name);
+        }
+    }
+
+    return 0;
+}
+
 /* Ensure the socket's service is active */
 static void handle_socket_ready(struct socket_instance *sock) {
     time_t now = time(NULL);
@@ -1080,6 +1208,17 @@ static void handle_socket_ready(struct socket_instance *sock) {
 
     log_debug("socket-worker", "Activity detected on %s", sock->unit->name);
 
+    /* Check if this is Accept=true (per-connection) mode */
+    if (sock->unit->config.socket.accept) {
+        /* inetd-style: spawn new service for each connection */
+        if (activate_per_connection(sock) < 0) {
+            log_error("socket-worker", "failed to activate per-connection service for %s",
+                      sock->service_name);
+        }
+        return;
+    }
+
+    /* Accept=false (default): single service instance handles all connections */
     if (sock->service_pid > 0) {
         if (kill(sock->service_pid, 0) == 0) {
             /* Service is already running and will handle the connection */

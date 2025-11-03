@@ -711,6 +711,42 @@ ExecStopPost=/usr/local/bin/cleanup-myapp
 - Creating/removing temporary files
 - Updating external state databases
 
+#### Accept= (Portable)
+
+**Purpose:** Enable inetd-style per-connection service instances
+
+**Implementation:**
+- Accept=false (default) - Single service instance handles all connections
+  - Service receives listening socket as fd 3
+  - Service remains running, accepts connections as needed
+  - IdleTimeout= can stop service when inactive
+- Accept=true (inetd-style) - New service instance per connection
+  - Worker accepts connection and passes accepted fd as fd 3 to service
+  - Service handles one connection and exits
+  - New instance spawned for each incoming connection
+
+**Platform Support:**
+- All Unix-like systems via accept(2) syscall
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:8080
+Accept=yes    # spawn per-connection instances
+```
+
+**Behavior:**
+- Accept=false: Efficient for services handling many concurrent connections
+  (e.g., web servers, databases)
+- Accept=true: Simple for single-connection handlers (e.g., chargen, daytime,
+  network testing tools)
+
+**Security Notes:**
+- Per-connection mode (Accept=true) provides process isolation between
+  connections
+- Each connection gets fresh process with no shared state
+- Service crashes only affect single connection
+
 #### TCP Keepalive Directives (Platform-Specific)
 
 **Purpose:** Configure TCP keepalive behavior for connection health monitoring
@@ -1525,7 +1561,6 @@ Notes:
   Mark=
 
   # Medium (portable, 1-2 days each)
-  Accept=
   TriggerLimitIntervalSec=
   TriggerLimitBurst=
   FileDescriptorName=

@@ -303,6 +303,7 @@ struct socket_section {
     mode_t directory_mode;     /* DirectoryMode= - directory permissions for socket path */
     int backlog;               /* Backlog= - listen backlog (default: SOMAXCONN) */
     char *service;             /* Service= - service to activate (default: socket name minus .socket) */
+    bool accept;               /* Accept= - spawn per-connection instances (default: false) */
     bool keep_alive;           /* KeepAlive= - SO_KEEPALIVE */
     int send_buffer;           /* SendBuffer= - SO_SNDBUF (bytes, -1 = not set) */
     int receive_buffer;        /* ReceiveBuffer= - SO_RCVBUF (bytes, -1 = not set) */

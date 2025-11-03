@@ -817,6 +817,8 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->listen_datagram = strdup(value);
     } else if (strcmp(key, "IdleTimeout") == 0) {
         socket->idle_timeout = atoi(value);
+    } else if (strcmp(key, "Accept") == 0) {
+        socket->accept = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "1") == 0);
     } else if (strcmp(key, "SocketMode") == 0) {
         socket->socket_mode = (mode_t)strtol(value, NULL, 8);  /* Octal */
     } else if (strcmp(key, "DirectoryMode") == 0) {

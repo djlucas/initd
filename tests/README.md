@@ -99,6 +99,7 @@ Tests the unit file parser:
 - AllowIsolate= directive for target units
 - DefaultDependencies= directive with implicit Conflicts/Before shutdown.target
 - Socket Exec* lifecycle commands (ExecStartPre, ExecStartPost, ExecStopPost)
+- Socket Accept= directive (yes/no/default)
 
 ### test-control (10 tests)
 Tests the control protocol:

@@ -692,6 +692,68 @@ void test_parse_socket_exec_commands(void) {
     PASS();
 }
 
+void test_parse_socket_accept(void) {
+    TEST("socket Accept= directive");
+
+    /* Test Accept=yes */
+    const char *unit_content_yes =
+        "[Unit]\n"
+        "Description=inetd-style Socket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=8080\n"
+        "Accept=yes\n";
+
+    const char *path = create_temp_unit(unit_content_yes, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.accept == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test Accept=no (default) */
+    const char *unit_content_no =
+        "[Unit]\n"
+        "Description=Standard Socket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/app.sock\n"
+        "Accept=no\n";
+
+    path = create_temp_unit(unit_content_no, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.accept == false);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test default (Accept not specified, should be false) */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket with default Accept\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=9000\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.accept == false);  /* Default: false */
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -714,6 +776,7 @@ int main(void) {
     test_parse_allow_isolate();
     test_parse_default_dependencies();
     test_parse_socket_exec_commands();
+    test_parse_socket_accept();
 
     printf("\n=== All tests passed! ===\n");
     return 0;
