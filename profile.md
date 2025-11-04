@@ -783,6 +783,174 @@ TriggerLimitBurst=100    # max 100 activations per 10 seconds
 - Default limits (2500 per 2 seconds) handle legitimate high traffic while
   blocking attacks
 
+#### FileDescriptorName= (Portable)
+
+**Purpose:** Assign a name to file descriptors for identification by activated
+services
+
+**Implementation:**
+- Sets LISTEN_FDNAMES environment variable when activating services
+- Accept=false: defaults to unit name (e.g., "myapp.socket")
+- Accept=true: defaults to "connection"
+- Services use sd_listen_fds_with_names(3) or read $LISTEN_FDNAMES
+- Name must be ASCII, max 255 characters, no colons or control characters
+
+**Platform Support:**
+- All Unix-like systems via environment variables
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=/run/http.sock
+FileDescriptorName=http-socket
+```
+
+**Use Cases:**
+- Services with multiple socket units need to identify which socket triggered
+- Differentiating between multiple Listen* directives in same socket unit
+- Debugging and logging socket activation
+
+#### ListenFIFO= (Portable)
+
+**Purpose:** Listen on a FIFO (named pipe) for socket activation
+
+**Implementation:**
+- Creates FIFO with mkfifo(2) using SocketMode= permissions
+- Opens for reading (non-blocking) to avoid blocking on writer
+- Supports DirectoryMode= for parent directory creation
+- Supports SocketUser=/SocketGroup= for ownership
+- PipeSize= configures buffer size (platform-specific)
+- Removed on socket unit stop if RemoveOnStop=yes
+
+**Platform Support:**
+- All POSIX-compliant systems via mkfifo(2) and open(2)
+
+**Usage:**
+```ini
+[Socket]
+ListenFIFO=/run/myapp.fifo
+SocketMode=0600
+PipeSize=64K
+```
+
+**Behavior:**
+- Service receives FIFO fd as fd 3
+- Behaves like datagram socket (Accept= is ignored)
+- No EOF delivered when writers close (systemd behavior)
+- Useful for log collection, command pipes, IPC
+
+**Security:**
+- Validates absolute path (must start with /)
+- Path traversal protection
+- SocketMode= restricts access (default: 0666)
+- SocketUser=/SocketGroup= further restricts access
+
+#### ListenMessageQueue= (Portable)
+
+**Purpose:** Listen on POSIX message queue for socket activation
+
+**Implementation:**
+- Creates message queue with mq_open(3) using SocketMode= permissions
+- Name must start with / (POSIX requirement)
+- MessageQueueMaxMessages= sets mq_maxmsg attribute
+- MessageQueueMessageSize= sets mq_msgsize attribute
+- Both queue attributes must be set together or not at all
+- Removed on socket unit stop (mq_unlink)
+
+**Platform Support:**
+- POSIX.1-2001 systems with message queue support (Linux, FreeBSD, etc.)
+- Requires linking with -lrt on some platforms
+
+**Usage:**
+```ini
+[Socket]
+ListenMessageQueue=/app-commands
+MessageQueueMaxMessages=100
+MessageQueueMessageSize=8192
+SocketMode=0600
+```
+
+**Behavior:**
+- Service receives message queue descriptor as fd 3
+- Behaves like datagram socket (Accept= is ignored)
+- Message queue persists in kernel until unlinked
+- Priority-based message delivery
+
+**Security:**
+- Queue name validation (must start with /)
+- SocketMode= restricts access (default: 0666)
+- Size limits prevent memory exhaustion
+- Kernel enforces per-user queue limits
+
+**Use Cases:**
+- Command/control interfaces for daemons
+- Priority message delivery
+- Persistent message buffering across service restarts
+
+#### MessageQueueMaxMessages= / MessageQueueMessageSize= (Portable)
+
+**Purpose:** Configure POSIX message queue attributes
+
+**Implementation:**
+- MessageQueueMaxMessages= sets mq_maxmsg (queue depth)
+- MessageQueueMessageSize= sets mq_msgsize (max message bytes)
+- Both must be set together (systemd requirement)
+- Applied when creating queue with mq_open(3)
+- System limits (mq_maxmsg, mq_msgsize_max) may restrict values
+
+**Platform Support:**
+- POSIX.1-2001 systems with message queue support
+
+**Usage:**
+```ini
+[Socket]
+ListenMessageQueue=/high-priority
+MessageQueueMaxMessages=1000  # queue depth
+MessageQueueMessageSize=4096  # max message size in bytes
+```
+
+**Defaults:**
+- If not set, system defaults apply (typically 10 messages, 8192 bytes)
+
+**Limits:**
+- Linux: /proc/sys/fs/mqueue/msg_max (default: 10)
+- Linux: /proc/sys/fs/mqueue/msgsize_max (default: 8192)
+- Exceeding limits causes mq_open() to fail
+
+#### PipeSize= (Platform-Specific)
+
+**Purpose:** Configure FIFO buffer size for ListenFIFO= sockets
+
+**Implementation:**
+- Sets pipe buffer size with fcntl(F_SETPIPE_SZ) on Linux
+- Accepts size with K, M, G suffixes (base-1024)
+- Applied after FIFO creation
+- Warnings logged if not supported or if fcntl fails
+
+**Platform Support:**
+- Linux: F_SETPIPE_SZ (since Linux 2.6.35)
+- FreeBSD/macOS/others: Not supported (logs warning, no-op)
+
+**Usage:**
+```ini
+[Socket]
+ListenFIFO=/var/log/app.fifo
+PipeSize=1M    # 1 MiB buffer
+```
+
+**Defaults:**
+- System default pipe buffer size if not set
+- Linux: typically 64 KiB (configurable via /proc/sys/fs/pipe-max-size)
+
+**Limits:**
+- Linux: Limited by /proc/sys/fs/pipe-max-size (default: 1 MiB)
+- Unprivileged users limited to /proc/sys/fs/pipe-user-pages-soft
+
+**Use Cases:**
+- High-throughput log collection
+- Buffering bursty data
+- Reducing write() syscalls for writers
+
 #### TCP Keepalive Directives (Platform-Specific)
 
 **Purpose:** Configure TCP keepalive behavior for connection health monitoring
@@ -1595,14 +1763,6 @@ Notes:
 [Socket]
   # Easy (Linux-only)
   Mark=
-
-  # Medium (portable, 1-2 days each)
-  FileDescriptorName=
-  ListenFIFO=
-  ListenMessageQueue=
-  MessageQueueMaxMessages=
-  MessageQueueMessageSize=
-  PipeSize=
 
   # Medium (Linux-only)
   PassCredentials=

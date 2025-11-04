@@ -35,6 +35,17 @@
 #include <stdbool.h>
 #include <pwd.h>
 #include <grp.h>
+#ifdef __has_include
+#  if __has_include(<mqueue.h>)
+#    include <mqueue.h>
+#    define HAVE_MQUEUE 1
+#  endif
+#else
+#  ifndef __APPLE__
+#    include <mqueue.h>
+#    define HAVE_MQUEUE 1
+#  endif
+#endif
 #include "../common/control.h"
 #include "../common/unit.h"
 #include "../common/scanner.h"
@@ -831,6 +842,117 @@ static int create_listen_socket(struct socket_instance *sock) {
         return fd;
     }
 
+    /* FIFO (named pipe) */
+    if (s->listen_fifo) {
+        /* Validate absolute path */
+        if (s->listen_fifo[0] != '/') {
+            log_error("socket-worker", "ListenFIFO must be absolute path: %s", s->listen_fifo);
+            return -1;
+        }
+
+        /* Remove old FIFO if exists */
+        unlink(s->listen_fifo);
+
+        /* Create parent directory if needed with DirectoryMode= */
+        char *last_slash = strrchr(s->listen_fifo, '/');
+        if (last_slash && last_slash != s->listen_fifo) {
+            char dir_path[MAX_PATH];
+            size_t dir_len = last_slash - s->listen_fifo;
+            if (dir_len < sizeof(dir_path)) {
+                memcpy(dir_path, s->listen_fifo, dir_len);
+                dir_path[dir_len] = '\0';
+
+                struct stat st;
+                if (stat(dir_path, &st) < 0 && errno == ENOENT) {
+                    if (mkdir(dir_path, s->directory_mode) < 0 && errno != EEXIST) {
+                        log_warn("socket-worker", "mkdir %s: %s", dir_path, strerror(errno));
+                    }
+                }
+            }
+        }
+
+        /* Create FIFO with SocketMode= */
+        if (mkfifo(s->listen_fifo, s->socket_mode) < 0) {
+            log_error("socket-worker", "mkfifo %s: %s", s->listen_fifo, strerror(errno));
+            return -1;
+        }
+
+        /* Apply SocketUser=/SocketGroup= ownership */
+        apply_socket_ownership(s->listen_fifo, s);
+
+        /* Open FIFO for reading (non-blocking to avoid hanging) */
+        fd = open(s->listen_fifo, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        if (fd < 0) {
+            log_error("socket-worker", "open %s: %s", s->listen_fifo, strerror(errno));
+            unlink(s->listen_fifo);
+            return -1;
+        }
+
+        /* Apply PipeSize= if configured */
+        if (s->pipe_size > 0) {
+#ifdef F_SETPIPE_SZ
+            if (fcntl(fd, F_SETPIPE_SZ, s->pipe_size) < 0) {
+                log_warn("socket-worker", "fcntl F_SETPIPE_SZ %d: %s",
+                         s->pipe_size, strerror(errno));
+            }
+#else
+            log_warn("socket-worker", "PipeSize= not supported on this platform");
+#endif
+        }
+
+        sock->is_stream = false;  /* FIFO behaves like datagram */
+        log_info("socket-worker", "Listening on FIFO %s", s->listen_fifo);
+        return fd;
+    }
+
+    /* POSIX message queue */
+    if (s->listen_message_queue) {
+#ifdef HAVE_MQUEUE
+        /* Validate message queue name (must start with /) */
+        if (s->listen_message_queue[0] != '/') {
+            log_error("socket-worker", "ListenMessageQueue must start with /: %s",
+                      s->listen_message_queue);
+            return -1;
+        }
+
+        /* Remove old queue if exists */
+        mq_unlink(s->listen_message_queue);
+
+        /* Set message queue attributes if configured */
+        struct mq_attr attr = {0};
+        struct mq_attr *attr_ptr = NULL;
+
+        if (s->message_queue_max_messages > 0 && s->message_queue_message_size > 0) {
+            attr.mq_maxmsg = s->message_queue_max_messages;
+            attr.mq_msgsize = s->message_queue_message_size;
+            attr_ptr = &attr;
+        } else if (s->message_queue_max_messages > 0 || s->message_queue_message_size > 0) {
+            log_warn("socket-worker", "MessageQueueMaxMessages and MessageQueueMessageSize "
+                     "must both be set or neither - ignoring");
+        }
+
+        /* Open message queue (O_RDONLY for activation) */
+        mqd_t mqd = mq_open(s->listen_message_queue,
+                            O_RDONLY | O_CREAT | O_NONBLOCK | O_CLOEXEC,
+                            s->socket_mode, attr_ptr);
+        if (mqd == (mqd_t)-1) {
+            log_error("socket-worker", "mq_open %s: %s",
+                      s->listen_message_queue, strerror(errno));
+            return -1;
+        }
+
+        /* Message queue descriptors are file descriptors on Linux */
+        fd = (int)mqd;
+
+        sock->is_stream = false;  /* Message queue behaves like datagram */
+        log_info("socket-worker", "Listening on message queue %s", s->listen_message_queue);
+        return fd;
+#else
+        log_error("socket-worker", "ListenMessageQueue not supported on this platform");
+        return -1;
+#endif
+    }
+
     return -1;
 }
 
@@ -1069,6 +1191,15 @@ static int activate_direct(struct socket_instance *sock) {
         snprintf(listen_pid, sizeof(listen_pid), "%d", (int)getpid());
         setenv("LISTEN_PID", listen_pid, 1);
 
+        /* Set LISTEN_FDNAMES if FileDescriptorName= is configured */
+        const char *fd_name = sock->unit->config.socket.file_descriptor_name;
+        if (fd_name) {
+            setenv("LISTEN_FDNAMES", fd_name, 1);
+        } else {
+            /* Default: unit name (including .socket suffix) */
+            setenv("LISTEN_FDNAMES", sock->unit->name, 1);
+        }
+
         /* Duplicate listening socket to fd 3 (systemd convention) */
         if (dup2(sock->listen_fd, 3) < 0) {
             log_error("socket-worker", "dup2: %s", strerror(errno));
@@ -1198,6 +1329,15 @@ static int activate_per_connection(struct socket_instance *sock) {
         char listen_pid[32];
         snprintf(listen_pid, sizeof(listen_pid), "%d", (int)getpid());
         setenv("LISTEN_PID", listen_pid, 1);
+
+        /* Set LISTEN_FDNAMES for Accept=yes mode */
+        const char *fd_name = sock->unit->config.socket.file_descriptor_name;
+        if (fd_name) {
+            setenv("LISTEN_FDNAMES", fd_name, 1);
+        } else {
+            /* Default: "connection" for Accept=yes */
+            setenv("LISTEN_FDNAMES", "connection", 1);
+        }
 
         /* Duplicate connection fd to fd 3 (systemd convention) */
         if (dup2(conn_fd, 3) < 0) {

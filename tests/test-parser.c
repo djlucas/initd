@@ -800,6 +800,206 @@ void test_parse_socket_trigger_limit(void) {
     PASS();
 }
 
+void test_parse_socket_file_descriptor_name(void) {
+    TEST("socket FileDescriptorName= directive");
+
+    /* Test custom name */
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with custom FD name\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n"
+        "FileDescriptorName=my-custom-socket\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.file_descriptor_name != NULL);
+    assert(strcmp(unit.config.socket.file_descriptor_name, "my-custom-socket") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test default (NULL, will use unit name at runtime) */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket with default FD name\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test2.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.file_descriptor_name == NULL);  /* Default: NULL */
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_socket_listen_fifo(void) {
+    TEST("socket ListenFIFO= directive");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=FIFO Socket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenFIFO=/run/test.fifo\n"
+        "SocketMode=0600\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_fifo != NULL);
+    assert(strcmp(unit.config.socket.listen_fifo, "/run/test.fifo") == 0);
+    assert(unit.config.socket.socket_mode == 0600);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_socket_listen_message_queue(void) {
+    TEST("socket ListenMessageQueue= and related directives");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Message Queue Socket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenMessageQueue=/test-queue\n"
+        "MessageQueueMaxMessages=100\n"
+        "MessageQueueMessageSize=8192\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_message_queue != NULL);
+    assert(strcmp(unit.config.socket.listen_message_queue, "/test-queue") == 0);
+    assert(unit.config.socket.message_queue_max_messages == 100);
+    assert(unit.config.socket.message_queue_message_size == 8192);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test defaults */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Message Queue with defaults\n"
+        "\n"
+        "[Socket]\n"
+        "ListenMessageQueue=/default-queue\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_message_queue != NULL);
+    assert(strcmp(unit.config.socket.listen_message_queue, "/default-queue") == 0);
+    assert(unit.config.socket.message_queue_max_messages == -1);  /* Not set */
+    assert(unit.config.socket.message_queue_message_size == -1);  /* Not set */
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+void test_parse_socket_pipe_size(void) {
+    TEST("socket PipeSize= directive with size suffixes");
+
+    /* Test bytes */
+    const char *unit_content_bytes =
+        "[Unit]\n"
+        "Description=FIFO with byte size\n"
+        "\n"
+        "[Socket]\n"
+        "ListenFIFO=/run/test.fifo\n"
+        "PipeSize=4096\n";
+
+    const char *path = create_temp_unit(unit_content_bytes, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.pipe_size == 4096);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test K suffix */
+    const char *unit_content_k =
+        "[Unit]\n"
+        "Description=FIFO with K suffix\n"
+        "\n"
+        "[Socket]\n"
+        "ListenFIFO=/run/test2.fifo\n"
+        "PipeSize=64K\n";
+
+    path = create_temp_unit(unit_content_k, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.pipe_size == 64 * 1024);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test M suffix */
+    const char *unit_content_m =
+        "[Unit]\n"
+        "Description=FIFO with M suffix\n"
+        "\n"
+        "[Socket]\n"
+        "ListenFIFO=/run/test3.fifo\n"
+        "PipeSize=1M\n";
+
+    path = create_temp_unit(unit_content_m, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.pipe_size == 1 * 1024 * 1024);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test default (not set) */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=FIFO with default size\n"
+        "\n"
+        "[Socket]\n"
+        "ListenFIFO=/run/test4.fifo\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.pipe_size == -1);  /* Not set */
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -824,6 +1024,10 @@ int main(void) {
     test_parse_socket_exec_commands();
     test_parse_socket_accept();
     test_parse_socket_trigger_limit();
+    test_parse_socket_file_descriptor_name();
+    test_parse_socket_listen_fifo();
+    test_parse_socket_listen_message_queue();
+    test_parse_socket_pipe_size();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

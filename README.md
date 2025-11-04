@@ -387,7 +387,7 @@ systemctl reboot
 
 ## Running Tests
 ```bash
-# Run all tests (27 test suites, 257 individual tests: 22 non-privileged, 5 privileged)
+# Run all tests (27 test suites, 261 individual tests: 22 non-privileged, 5 privileged)
 ninja -C build test
 
 # Run privileged tests (requires root)

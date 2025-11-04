@@ -92,6 +92,33 @@ static long parse_limit_value(const char *value) {
     return atol(value);
 }
 
+/* Parse size value (handles K, M, G suffixes) */
+static int parse_size(const char *value) {
+    char *endptr;
+    long size = strtol(value, &endptr, 10);
+
+    if (size < 0) return -1;
+
+    /* Handle suffix */
+    if (*endptr != '\0') {
+        switch (*endptr) {
+            case 'K': case 'k':
+                size *= 1024;
+                break;
+            case 'M': case 'm':
+                size *= 1024 * 1024;
+                break;
+            case 'G': case 'g':
+                size *= 1024 * 1024 * 1024;
+                break;
+            default:
+                return -1; /* Invalid suffix */
+        }
+    }
+
+    return (int)size;
+}
+
 /* Current section being parsed */
 enum parse_section {
     SECTION_NONE,
@@ -871,6 +898,18 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->trigger_limit_interval_sec = atoi(value);
     } else if (strcmp(key, "TriggerLimitBurst") == 0) {
         socket->trigger_limit_burst = atoi(value);
+    } else if (strcmp(key, "FileDescriptorName") == 0) {
+        socket->file_descriptor_name = strdup(value);
+    } else if (strcmp(key, "ListenFIFO") == 0) {
+        socket->listen_fifo = strdup(value);
+    } else if (strcmp(key, "ListenMessageQueue") == 0) {
+        socket->listen_message_queue = strdup(value);
+    } else if (strcmp(key, "MessageQueueMaxMessages") == 0) {
+        socket->message_queue_max_messages = atoi(value);
+    } else if (strcmp(key, "MessageQueueMessageSize") == 0) {
+        socket->message_queue_message_size = atoi(value);
+    } else if (strcmp(key, "PipeSize") == 0) {
+        socket->pipe_size = parse_size(value);
     } else {
         return -1;
     }
@@ -989,6 +1028,12 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.keep_alive_count = -1;     /* Default: not set */
     unit->config.socket.trigger_limit_interval_sec = 2;  /* Default: 2 seconds (systemd default) */
     unit->config.socket.trigger_limit_burst = 2500;      /* Default: 2500 (systemd default) */
+    unit->config.socket.file_descriptor_name = NULL;     /* Default: unit name or "connection" */
+    unit->config.socket.listen_fifo = NULL;              /* Default: none */
+    unit->config.socket.listen_message_queue = NULL;     /* Default: none */
+    unit->config.socket.message_queue_max_messages = -1; /* Default: not set */
+    unit->config.socket.message_queue_message_size = -1; /* Default: not set */
+    unit->config.socket.pipe_size = -1;                  /* Default: not set */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1182,6 +1227,9 @@ void free_unit_file(struct unit_file *unit) {
         free(unit->config.socket.exec_start_pre);
         free(unit->config.socket.exec_start_post);
         free(unit->config.socket.exec_stop_post);
+        free(unit->config.socket.file_descriptor_name);
+        free(unit->config.socket.listen_fifo);
+        free(unit->config.socket.listen_message_queue);
     }
 
     /* Free [Install] arrays */

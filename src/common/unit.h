@@ -329,6 +329,14 @@ struct socket_section {
     char *exec_stop_post;       /* ExecStopPost= - command after service stops */
     int trigger_limit_interval_sec; /* TriggerLimitIntervalSec= - activation rate limit window */
     int trigger_limit_burst;    /* TriggerLimitBurst= - max activations per interval */
+
+    /* Medium portable directives (new batch) */
+    char *file_descriptor_name; /* FileDescriptorName= - name for fd identification */
+    char *listen_fifo;          /* ListenFIFO= - FIFO path to listen on */
+    char *listen_message_queue; /* ListenMessageQueue= - POSIX message queue name */
+    int message_queue_max_messages; /* MessageQueueMaxMessages= - mq_maxmsg (-1 = not set) */
+    int message_queue_message_size; /* MessageQueueMessageSize= - mq_msgsize (-1 = not set) */
+    int pipe_size;              /* PipeSize= - FIFO buffer size in bytes (-1 = not set) */
 };
 
 /* [Install] section */
