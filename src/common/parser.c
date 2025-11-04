@@ -910,6 +910,10 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->message_queue_message_size = atoi(value);
     } else if (strcmp(key, "PipeSize") == 0) {
         socket->pipe_size = parse_size(value);
+    } else if (strcmp(key, "ListenSpecial") == 0) {
+        socket->listen_special = strdup(value);
+    } else if (strcmp(key, "Writable") == 0) {
+        socket->writable = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else {
         return -1;
     }
@@ -1034,6 +1038,8 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.message_queue_max_messages = -1; /* Default: not set */
     unit->config.socket.message_queue_message_size = -1; /* Default: not set */
     unit->config.socket.pipe_size = -1;                  /* Default: not set */
+    unit->config.socket.listen_special = NULL;           /* Default: none */
+    unit->config.socket.writable = false;                /* Default: read-only */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1230,6 +1236,7 @@ void free_unit_file(struct unit_file *unit) {
         free(unit->config.socket.file_descriptor_name);
         free(unit->config.socket.listen_fifo);
         free(unit->config.socket.listen_message_queue);
+        free(unit->config.socket.listen_special);
     }
 
     /* Free [Install] arrays */

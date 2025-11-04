@@ -337,6 +337,8 @@ struct socket_section {
     int message_queue_max_messages; /* MessageQueueMaxMessages= - mq_maxmsg (-1 = not set) */
     int message_queue_message_size; /* MessageQueueMessageSize= - mq_msgsize (-1 = not set) */
     int pipe_size;              /* PipeSize= - FIFO buffer size in bytes (-1 = not set) */
+    char *listen_special;       /* ListenSpecial= - special file path (char devices, /proc, /sys) */
+    bool writable;              /* Writable= - open special file read-write vs read-only */
 };
 
 /* [Install] section */

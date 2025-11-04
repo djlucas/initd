@@ -953,6 +953,31 @@ static int create_listen_socket(struct socket_instance *sock) {
 #endif
     }
 
+    /* Special file (character devices, /proc, /sys) */
+    if (s->listen_special) {
+        /* Validate absolute path */
+        if (s->listen_special[0] != '/') {
+            log_error("socket-worker", "ListenSpecial must be absolute path: %s", s->listen_special);
+            return -1;
+        }
+
+        /* Determine open mode based on Writable= */
+        int flags = s->writable ? O_RDWR : O_RDONLY;
+        flags |= O_NONBLOCK | O_CLOEXEC;
+
+        /* Open the special file */
+        fd = open(s->listen_special, flags);
+        if (fd < 0) {
+            log_error("socket-worker", "open %s: %s", s->listen_special, strerror(errno));
+            return -1;
+        }
+
+        sock->is_stream = false;  /* Special files behave like datagram */
+        log_info("socket-worker", "Listening on special file %s (%s)",
+                 s->listen_special, s->writable ? "read-write" : "read-only");
+        return fd;
+    }
+
     return -1;
 }
 

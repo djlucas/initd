@@ -951,6 +951,74 @@ PipeSize=1M    # 1 MiB buffer
 - Buffering bursty data
 - Reducing write() syscalls for writers
 
+#### ListenSpecial= (Portable)
+
+**Purpose:** Listen on special files like character devices, /proc, and /sys
+for socket activation
+
+**Implementation:**
+- Opens existing special file with open(2) using O_RDONLY or O_RDWR
+- Writable= directive controls read-only vs read-write mode (default: false)
+- Validates absolute path (must start with /)
+- Uses O_NONBLOCK | O_CLOEXEC flags
+- Polls special file for readability to trigger activation
+
+**Platform Support:**
+- All Unix-like systems via open(2) and poll(2)
+- Character devices (/dev/*) are POSIX-portable
+- /proc and /sys are more Linux-centric but concept exists on BSD
+
+**Usage:**
+```ini
+[Socket]
+ListenSpecial=/dev/input/event0
+Writable=no   # read-only (default)
+
+# Or for writable access
+ListenSpecial=/sys/class/leds/led0/brightness
+Writable=yes  # read-write mode
+```
+
+**Behavior:**
+- Service receives special file descriptor as fd 3
+- Behaves like datagram socket (Accept= is ignored)
+- Useful for device event monitoring, kernel interface interaction
+- Does not create the file (unlike ListenFIFO which uses mkfifo)
+
+**Security:**
+- Validates absolute path (must start with /)
+- Path traversal protection
+- Writable= requires careful consideration (default is read-only)
+- File permissions control access to special file
+
+**Use Cases:**
+- Monitoring input devices (/dev/input/*)
+- Responding to kernel hotplug events (/proc/sys/kernel/hotplug)
+- LED control (/sys/class/leds/*/brightness)
+- Hardware event handling
+- Custom character device integration
+
+#### Writable= (Portable)
+
+**Purpose:** Control read/write mode for ListenSpecial= files
+
+**Implementation:**
+- May only be used with ListenSpecial=
+- Sets O_RDWR when true, O_RDONLY when false
+- Default: false (read-only)
+
+**Platform Support:**
+- All Unix-like systems via open(2) flags
+
+**Usage:**
+```ini
+[Socket]
+ListenSpecial=/dev/mydevice
+Writable=yes  # open with O_RDWR instead of O_RDONLY
+```
+
+**Added:** systemd version 227
+
 #### TCP Keepalive Directives (Platform-Specific)
 
 **Purpose:** Configure TCP keepalive behavior for connection health monitoring
@@ -1767,9 +1835,6 @@ Notes:
   # Medium (Linux-only)
   PassCredentials=
   PassSecurity=
-
-  # Hard (portable, several days each)
-  ListenSpecial=
 
   # Hard (Linux-only)
   ListenNetlink=
