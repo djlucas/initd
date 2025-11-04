@@ -1136,6 +1136,201 @@ void test_parse_socket_linux_directives(void) {
     PASS();
 }
 
+static void test_parse_socket_uncategorized_directives(void) {
+    TEST("socket BindIPv6Only=, NoDelay=, DeferAcceptSec=, Priority= directives");
+
+    /* Test all uncategorized directives together */
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with uncategorized directives\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=0.0.0.0:8080\n"
+        "BindIPv6Only=ipv6-only\n"
+        "NoDelay=yes\n"
+        "DeferAcceptSec=30\n"
+        "Priority=6\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.bind_ipv6_only != NULL);
+    assert(strcmp(unit.config.socket.bind_ipv6_only, "ipv6-only") == 0);
+    assert(unit.config.socket.no_delay == true);
+    assert(unit.config.socket.defer_accept_sec == 30);
+    assert(unit.config.socket.priority == 6);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test defaults */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket with default values\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.bind_ipv6_only == NULL);  /* Default */
+    assert(unit.config.socket.no_delay == false);  /* Disabled */
+    assert(unit.config.socket.defer_accept_sec == -1);  /* Not set */
+    assert(unit.config.socket.priority == -1);  /* Not set */
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test BindIPv6Only values */
+    const char *unit_content_both =
+        "[Unit]\n"
+        "Description=Socket with BindIPv6Only=both\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=[::]:9090\n"
+        "BindIPv6Only=both\n";
+
+    path = create_temp_unit(unit_content_both, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.socket.bind_ipv6_only != NULL);
+    assert(strcmp(unit.config.socket.bind_ipv6_only, "both") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    const char *unit_content_default_val =
+        "[Unit]\n"
+        "Description=Socket with BindIPv6Only=default\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=[::]:9091\n"
+        "BindIPv6Only=default\n";
+
+    path = create_temp_unit(unit_content_default_val, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.socket.bind_ipv6_only != NULL);
+    assert(strcmp(unit.config.socket.bind_ipv6_only, "default") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+static void test_parse_socket_sequential_packet(void) {
+    TEST("socket ListenSequentialPacket= directive");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with ListenSequentialPacket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenSequentialPacket=/run/test.seqpacket\n"
+        "SocketMode=0666\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_sequential_packet != NULL);
+    assert(strcmp(unit.config.socket.listen_sequential_packet, "/run/test.seqpacket") == 0);
+    assert(unit.config.socket.socket_mode == 0666);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test default */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket without ListenSequentialPacket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_sequential_packet == NULL);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
+static void test_parse_socket_max_connections(void) {
+    TEST("socket MaxConnections= directive");
+
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with MaxConnections\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=0.0.0.0:3000\n"
+        "Accept=yes\n"
+        "MaxConnections=100\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.max_connections == 100);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test default (should be 64) */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket with default MaxConnections\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.max_connections == 64);  /* Default */
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test MaxConnections=0 (unlimited) */
+    const char *unit_content_unlimited =
+        "[Unit]\n"
+        "Description=Socket with unlimited connections\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=0.0.0.0:3001\n"
+        "MaxConnections=0\n";
+
+    path = create_temp_unit(unit_content_unlimited, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.socket.max_connections == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -1166,6 +1361,9 @@ int main(void) {
     test_parse_socket_pipe_size();
     test_parse_socket_listen_special();
     test_parse_socket_linux_directives();
+    test_parse_socket_uncategorized_directives();
+    test_parse_socket_sequential_packet();
+    test_parse_socket_max_connections();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

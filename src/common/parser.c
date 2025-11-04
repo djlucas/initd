@@ -920,6 +920,18 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->pass_credentials = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "PassSecurity") == 0) {
         socket->pass_security = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "BindIPv6Only") == 0) {
+        socket->bind_ipv6_only = strdup(value);
+    } else if (strcmp(key, "ListenSequentialPacket") == 0) {
+        socket->listen_sequential_packet = strdup(value);
+    } else if (strcmp(key, "MaxConnections") == 0) {
+        socket->max_connections = atoi(value);
+    } else if (strcmp(key, "NoDelay") == 0) {
+        socket->no_delay = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "DeferAcceptSec") == 0) {
+        socket->defer_accept_sec = atoi(value);
+    } else if (strcmp(key, "Priority") == 0) {
+        socket->priority = atoi(value);
     } else {
         return -1;
     }
@@ -1049,6 +1061,12 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.mark = -1;                       /* Default: not set */
     unit->config.socket.pass_credentials = false;        /* Default: disabled */
     unit->config.socket.pass_security = false;           /* Default: disabled */
+    unit->config.socket.bind_ipv6_only = NULL;           /* Default: "default" (system default) */
+    unit->config.socket.listen_sequential_packet = NULL; /* Default: none */
+    unit->config.socket.max_connections = 64;            /* Default: 64 (systemd default) */
+    unit->config.socket.no_delay = false;                /* Default: disabled (Nagle enabled) */
+    unit->config.socket.defer_accept_sec = -1;           /* Default: not set */
+    unit->config.socket.priority = -1;                   /* Default: not set */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1246,6 +1264,8 @@ void free_unit_file(struct unit_file *unit) {
         free(unit->config.socket.listen_fifo);
         free(unit->config.socket.listen_message_queue);
         free(unit->config.socket.listen_special);
+        free(unit->config.socket.bind_ipv6_only);
+        free(unit->config.socket.listen_sequential_packet);
     }
 
     /* Free [Install] arrays */

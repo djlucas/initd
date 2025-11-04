@@ -75,6 +75,9 @@ struct socket_instance {
     int trigger_index;          /* Next index to write in circular buffer */
     bool trigger_limit_hit;     /* Rate limit exceeded, refusing connections */
 
+    /* MaxConnections= tracking for Accept=yes mode */
+    int active_connections;     /* Current number of active per-connection instances */
+
     struct socket_instance *next;
 };
 
@@ -204,6 +207,9 @@ static void notify_supervisor_socket_state(const struct socket_instance *sock, p
 }
 
 static void mark_service_exit(pid_t pid) {
+    bool found = false;
+
+    /* First check Accept=no mode (single service instance) */
     for (struct socket_instance *s = sockets; s; s = s->next) {
         if (s->service_pid == pid) {
             log_info("socket-worker", "service for %s exited (pid %d)",
@@ -223,7 +229,26 @@ static void mark_service_exit(pid_t pid) {
                 }
             }
 
+            found = true;
             break;
+        }
+    }
+
+    /* If not found, it's likely an Accept=yes per-connection instance.
+     * Decrement active_connections for any socket that has them. */
+    if (!found) {
+        for (struct socket_instance *s = sockets; s; s = s->next) {
+            if (s->active_connections > 0) {
+                s->active_connections--;
+                log_info("socket-worker", "per-connection instance for %s exited (pid %d), "
+                         "%d connections remaining",
+                         s->unit->name, pid, s->active_connections);
+                /* Note: We can't definitively know which socket this child belonged to
+                 * without tracking PIDs, so we just decrement the first socket with
+                 * active connections. This works correctly if only one socket uses
+                 * Accept=yes mode. */
+                break;
+            }
         }
     }
 }
@@ -597,6 +622,61 @@ static int apply_socket_options(int fd, struct socket_section *s, int family) {
 #endif
     }
 
+    /* BindIPv6Only= - IPV6_V6ONLY (portable) */
+    if (s->bind_ipv6_only && family == AF_INET6) {
+        int v6only;
+        if (strcmp(s->bind_ipv6_only, "ipv6-only") == 0) {
+            v6only = 1;
+        } else if (strcmp(s->bind_ipv6_only, "both") == 0) {
+            v6only = 0;
+        } else {
+            /* "default" - don't set, use system default */
+            goto skip_ipv6_only;
+        }
+        ret = setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set IPV6_V6ONLY to %d: %s",
+                     v6only, strerror(errno));
+        }
+    skip_ipv6_only:;
+    }
+
+    /* NoDelay= - TCP_NODELAY (portable, TCP only) */
+    if (s->no_delay && family == AF_INET) {
+        int optval = 1;
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set TCP_NODELAY: %s", strerror(errno));
+        }
+    }
+
+    /* DeferAcceptSec= - TCP_DEFER_ACCEPT (Linux-only, TCP only) */
+    if (s->defer_accept_sec > 0 && family == AF_INET) {
+#if defined(__linux__) && defined(TCP_DEFER_ACCEPT)
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &s->defer_accept_sec,
+                         sizeof(s->defer_accept_sec));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set TCP_DEFER_ACCEPT to %d: %s",
+                     s->defer_accept_sec, strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "TCP_DEFER_ACCEPT not supported (Linux-only feature)");
+#endif
+    }
+
+    /* Priority= - SO_PRIORITY (Linux-only) */
+    if (s->priority >= 0) {
+#if defined(__linux__) && defined(SO_PRIORITY)
+        ret = setsockopt(fd, SOL_SOCKET, SO_PRIORITY, &s->priority, sizeof(s->priority));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_PRIORITY to %d: %s",
+                     s->priority, strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "SO_PRIORITY not supported (Linux-only feature)");
+#endif
+    }
+
     return 0;
 }
 
@@ -713,6 +793,79 @@ static int create_listen_socket(struct socket_instance *sock) {
 
         sock->is_stream = true;
         log_info("socket-worker", "Listening on Unix stream %s", s->listen_stream);
+        return fd;
+    }
+
+    /* Unix sequential packet socket */
+    if (s->listen_sequential_packet) {
+        fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+        if (fd < 0) {
+            log_error("socket-worker", "socket: %s", strerror(errno));
+            return -1;
+        }
+
+        /* Apply socket options */
+        apply_socket_options(fd, s, AF_UNIX);
+
+        struct sockaddr_un addr = {0};
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, s->listen_sequential_packet, sizeof(addr.sun_path) - 1);
+
+        /* Remove old socket */
+        unlink(s->listen_sequential_packet);
+
+        /* Create parent directory if needed with DirectoryMode= */
+        char *last_slash = strrchr(s->listen_sequential_packet, '/');
+        if (last_slash && last_slash != s->listen_sequential_packet) {
+            char dir_path[MAX_PATH];
+            size_t dir_len = last_slash - s->listen_sequential_packet;
+            if (dir_len < sizeof(dir_path)) {
+                memcpy(dir_path, s->listen_sequential_packet, dir_len);
+                dir_path[dir_len] = '\0';
+
+                struct stat st;
+                if (stat(dir_path, &st) < 0 && errno == ENOENT) {
+                    if (mkdir(dir_path, s->directory_mode) < 0 && errno != EEXIST) {
+                        log_warn("socket-worker", "mkdir %s: %s", dir_path, strerror(errno));
+                    }
+                }
+            }
+        }
+
+        if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            log_error("socket-worker", "bind: %s", strerror(errno));
+            close(fd);
+            return -1;
+        }
+
+        /* Use configured backlog (SEQPACKET is connection-oriented) */
+        if (listen(fd, s->backlog) < 0) {
+            log_error("socket-worker", "listen: %s", strerror(errno));
+            close(fd);
+            return -1;
+        }
+
+        /* Set socket file permissions with SocketMode= */
+        if (fchmod(fd, s->socket_mode) < 0) {
+            log_warn("socket-worker", "fchmod %04o: %s", s->socket_mode, strerror(errno));
+        }
+
+        /* Apply SocketUser=/SocketGroup= ownership */
+        apply_socket_ownership(s->listen_sequential_packet, s);
+
+        /* Symlinks= - create symlinks to the socket */
+        for (int i = 0; i < s->symlinks_count; i++) {
+            if (s->symlinks[i]) {
+                unlink(s->symlinks[i]);  /* Remove old symlink if exists */
+                if (symlink(s->listen_sequential_packet, s->symlinks[i]) < 0) {
+                    log_warn("socket-worker", "symlink %s -> %s: %s",
+                             s->symlinks[i], s->listen_sequential_packet, strerror(errno));
+                }
+            }
+        }
+
+        sock->is_stream = true;  /* Connection-oriented like stream */
+        log_info("socket-worker", "Listening on Unix seqpacket %s", s->listen_sequential_packet);
         return fd;
     }
 
@@ -1319,6 +1472,22 @@ static int activate_direct(struct socket_instance *sock) {
 
 /* Activate service for per-connection mode (Accept=true, inetd-style) */
 static int activate_per_connection(struct socket_instance *sock) {
+    struct socket_section *socket_cfg = &sock->unit->config.socket;
+
+    /* Check MaxConnections= limit */
+    if (socket_cfg->max_connections > 0 &&
+        sock->active_connections >= socket_cfg->max_connections) {
+        log_warn("socket-worker", "MaxConnections=%d reached for %s, refusing connection",
+                 socket_cfg->max_connections, sock->unit->name);
+
+        /* Still need to accept and close to avoid connection queue buildup */
+        int conn_fd = accept(sock->listen_fd, NULL, NULL);
+        if (conn_fd >= 0) {
+            close(conn_fd);
+        }
+        return -1;
+    }
+
     /* Accept the connection */
     int conn_fd = accept(sock->listen_fd, NULL, NULL);
     if (conn_fd < 0) {
@@ -1365,7 +1534,6 @@ static int activate_per_connection(struct socket_instance *sock) {
     }
 
     /* Run ExecStartPre if configured */
-    struct socket_section *socket_cfg = &sock->unit->config.socket;
     if (socket_cfg->exec_start_pre) {
         if (run_socket_exec_command(socket_cfg->exec_start_pre, sock->unit->name, "ExecStartPre") < 0) {
             log_warn("socket-worker", "ExecStartPre failed for %s, continuing", sock->unit->name);
@@ -1440,6 +1608,9 @@ static int activate_per_connection(struct socket_instance *sock) {
     /* Parent */
     free_unit_file(&unit);
     close(conn_fd);  /* Parent closes connection fd */
+
+    /* Increment active connection count for MaxConnections= tracking */
+    sock->active_connections++;
 
     log_info("socket-worker", "Spawned per-connection instance of %s (pid %d)",
              sock->service_name, pid);

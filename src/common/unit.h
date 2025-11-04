@@ -344,6 +344,14 @@ struct socket_section {
     int mark;                   /* Mark= - SO_MARK firewall packet marking (-1 = not set) */
     bool pass_credentials;      /* PassCredentials= - SO_PASSCRED for AF_UNIX */
     bool pass_security;         /* PassSecurity= - SO_PASSSEC for AF_UNIX */
+
+    /* Remaining portable directives */
+    char *bind_ipv6_only;       /* BindIPv6Only= - IPV6_V6ONLY ("default", "both", "ipv6-only") */
+    char *listen_sequential_packet; /* ListenSequentialPacket= - SOCK_SEQPACKET AF_UNIX path */
+    int max_connections;        /* MaxConnections= - max concurrent Accept=yes instances (-1 = not set) */
+    bool no_delay;              /* NoDelay= - TCP_NODELAY (disable Nagle's algorithm) */
+    int defer_accept_sec;       /* DeferAcceptSec= - TCP_DEFER_ACCEPT timeout (-1 = not set, Linux-only) */
+    int priority;               /* Priority= - SO_PRIORITY for QoS (-1 = not set, Linux-only) */
 };
 
 /* [Install] section */

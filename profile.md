@@ -1239,6 +1239,205 @@ PassSecurity=yes
 - Container security boundary enforcement
 - Trusted IPC between security domains
 
+#### BindIPv6Only= (Portable)
+
+**Purpose:** Control dual-stack IPv6 socket behavior
+
+**Implementation:**
+- Sets IPV6_V6ONLY socket option on IPv6 sockets
+- Controls whether IPv6 sockets accept IPv4 connections (dual-stack)
+- Only applies to AF_INET6 (IPv6) sockets
+
+**Platform Support:**
+- Portable (POSIX RFC 3493, standardized in 2003)
+- Supported on Linux, BSD, macOS, Windows
+
+**Values:**
+- `default` - Use system default behavior (don't set option)
+- `ipv6-only` - Accept only IPv6 connections (IPV6_V6ONLY=1)
+- `both` - Accept both IPv4 and IPv6 (IPV6_V6ONLY=0, dual-stack)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=[::]:8080
+BindIPv6Only=both
+```
+
+**Behavior:**
+- Default behavior varies by OS (Linux: dual-stack, OpenBSD: IPv6-only)
+- `ipv6-only` prevents IPv4-mapped IPv6 addresses (::ffff:192.0.2.1)
+- `both` enables dual-stack mode explicitly
+
+**Use Cases:**
+- Explicit control over dual-stack behavior across platforms
+- Security: prevent IPv4-mapped IPv6 address confusion
+- Compatibility with IPv4-only clients
+
+#### ListenSequentialPacket= (Portable)
+
+**Purpose:** Create AF_UNIX SOCK_SEQPACKET listening sockets
+
+**Implementation:**
+- Creates Unix domain socket with SOCK_SEQPACKET type
+- Connection-oriented like SOCK_STREAM but preserves message boundaries
+- Reliable, ordered, connection-based datagram delivery
+
+**Platform Support:**
+- Portable (POSIX.1-2001)
+- Supported on Linux, BSD, macOS, Solaris
+
+**Usage:**
+```ini
+[Socket]
+ListenSequentialPacket=/run/myapp.seqpacket
+SocketMode=0660
+```
+
+**Behavior:**
+- Like SOCK_STREAM (connection-oriented, uses listen/accept)
+- But preserves message boundaries like SOCK_DGRAM
+- Each send() corresponds to exactly one recv()
+- Reliable delivery with flow control
+
+**Use Cases:**
+- Message-based protocols requiring reliable delivery
+- RPC systems needing message framing
+- IPC where message boundaries are semantically important
+- systemd-compatible socket activation for SEQPACKET services
+
+#### MaxConnections= (Portable)
+
+**Purpose:** Limit concurrent per-connection service instances (Accept=yes mode)
+
+**Implementation:**
+- Limits active child processes spawned for Accept=yes sockets
+- Refuses new connections when limit reached
+- Application-level limit (no socket option required)
+
+**Platform Support:**
+- Portable (pure application logic)
+- Works on all platforms
+
+**Default:** 64
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:80
+Accept=yes
+MaxConnections=100
+```
+
+**Behavior:**
+- Only applies to Accept=yes (inetd-style) mode
+- Counts active service instances spawned for connections
+- When limit reached, new connections are accepted then immediately closed
+- Counter decrements when child processes exit
+
+**Use Cases:**
+- Prevent resource exhaustion from connection floods
+- Limit concurrent instances of expensive services
+- DoS mitigation for Accept=yes services
+
+#### NoDelay= (Portable)
+
+**Purpose:** Disable Nagle's algorithm on TCP sockets
+
+**Implementation:**
+- Sets TCP_NODELAY socket option
+- Disables packet coalescing to reduce latency
+- Only applies to TCP (SOCK_STREAM with IPPROTO_TCP)
+
+**Platform Support:**
+- Portable (TCP_NODELAY from 4.2BSD, 1983)
+- Supported on all modern Unix systems
+
+**Default:** false (Nagle's algorithm enabled)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:6379
+NoDelay=yes
+```
+
+**Behavior:**
+- When enabled: TCP sends small packets immediately (low latency)
+- When disabled: TCP buffers small packets (better throughput)
+- Trade-off: latency vs bandwidth efficiency
+
+**Use Cases:**
+- Interactive protocols (SSH, telnet, Redis, Memcached)
+- Real-time applications
+- Request-response protocols with small messages
+- Games and VoIP where latency matters
+
+#### DeferAcceptSec= (Linux-Only)
+
+**Purpose:** Delay accept() until data arrives (reduce wakeups)
+
+**Implementation:**
+- Sets TCP_DEFER_ACCEPT socket option with timeout in seconds
+- Kernel doesn't wake accept() until client sends data or timeout expires
+- Linux-specific optimization
+
+**Platform Support:**
+- Linux only (TCP_DEFER_ACCEPT)
+- FreeBSD has similar SO_ACCEPTFILTER but different API
+
+**Default:** Not set (immediate accept)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:443
+DeferAcceptSec=30
+```
+
+**Behavior:**
+- accept() doesn't return until client sends data or timeout expires
+- Reduces context switches for protocols where client speaks first
+- Protects against SYN flood and empty connection attacks
+
+**Use Cases:**
+- HTTP/HTTPS servers (client always sends request first)
+- Any protocol where client initiates data transfer
+- High-performance servers minimizing syscalls
+
+#### Priority= (Linux-Only)
+
+**Purpose:** Set socket priority for QoS/traffic shaping
+
+**Implementation:**
+- Sets SO_PRIORITY socket option
+- Assigns priority value for Quality of Service
+- Used by Linux traffic control (tc) for packet scheduling
+
+**Platform Support:**
+- Linux only (SO_PRIORITY is not POSIX)
+- Range: 0-6 for user processes (0=lowest, 6=highest)
+
+**Default:** Not set (kernel default, usually 0)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:5060
+Priority=6
+```
+
+**Behavior:**
+- Higher priority packets scheduled first by kernel
+- Affects outgoing packets from this socket
+- Requires net_admin capability or proper cgroup settings for high values
+
+**Use Cases:**
+- VoIP/SIP servers (low latency critical)
+- Streaming media servers
+- Control plane vs data plane separation
+- Traffic prioritization in multi-tenant systems
+
 ## Targets
 
 ### Standard Targets
@@ -1942,14 +2141,6 @@ Notes:
   SmackLabelIPIn=
   SmackLabelIPOut=
   SELinuxContextFromNet=
-
-  # Not categorized yet (need research)
-  BindIPv6Only=
-  ListenSequentialPacket=
-  MaxConnections=
-  NoDelay=
-  DeferAcceptSec=
-  Priority=
 
 [Install]
 

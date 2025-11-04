@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (27 test suites, 263 individual tests; 5 marked privileged)
+# Build and run all tests (27 test suites, 266 individual tests; 5 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -107,6 +107,9 @@ Tests the unit file parser:
 - Socket PipeSize= directive with size suffixes (bytes, K, M, defaults)
 - Socket ListenSpecial= and Writable= directives (writable, read-only, default)
 - Socket Mark=, PassCredentials=, PassSecurity= (Linux-only directives)
+- Socket BindIPv6Only=, NoDelay=, DeferAcceptSec=, Priority= directives (IPv6 values, defaults)
+- Socket ListenSequentialPacket= directive (custom path, defaults)
+- Socket MaxConnections= directive (custom value, default 64, unlimited)
 
 ### test-control (10 tests)
 Tests the control protocol:
