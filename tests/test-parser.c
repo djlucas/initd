@@ -1331,6 +1331,79 @@ static void test_parse_socket_max_connections(void) {
     PASS();
 }
 
+static void test_parse_socket_smack_directives(void) {
+    TEST("socket SmackLabel=, SmackLabelIPIn=, SmackLabelIPOut= (Linux SMACK)");
+
+    /* Test all three SMACK directives together */
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with SMACK labels\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/dbus.sock\n"
+        "SmackLabel=System\n"
+        "SmackLabelIPIn=*\n"
+        "SmackLabelIPOut=@\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.smack_label != NULL);
+    assert(strcmp(unit.config.socket.smack_label, "System") == 0);
+    assert(unit.config.socket.smack_label_ip_in != NULL);
+    assert(strcmp(unit.config.socket.smack_label_ip_in, "*") == 0);
+    assert(unit.config.socket.smack_label_ip_out != NULL);
+    assert(strcmp(unit.config.socket.smack_label_ip_out, "@") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test defaults (all NULL) */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket without SMACK labels\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.smack_label == NULL);
+    assert(unit.config.socket.smack_label_ip_in == NULL);
+    assert(unit.config.socket.smack_label_ip_out == NULL);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test individual directives */
+    const char *unit_content_label_only =
+        "[Unit]\n"
+        "Description=Socket with SmackLabel only\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=0.0.0.0:8080\n"
+        "SmackLabel=WebServer\n";
+
+    path = create_temp_unit(unit_content_label_only, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.socket.smack_label != NULL);
+    assert(strcmp(unit.config.socket.smack_label, "WebServer") == 0);
+    assert(unit.config.socket.smack_label_ip_in == NULL);
+    assert(unit.config.socket.smack_label_ip_out == NULL);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -1364,6 +1437,7 @@ int main(void) {
     test_parse_socket_uncategorized_directives();
     test_parse_socket_sequential_packet();
     test_parse_socket_max_connections();
+    test_parse_socket_smack_directives();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

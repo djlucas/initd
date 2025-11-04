@@ -35,6 +35,9 @@
 #include <stdbool.h>
 #include <pwd.h>
 #include <grp.h>
+#ifdef __linux__
+#include <sys/xattr.h>  /* For SMACK labels via fsetxattr */
+#endif
 #ifdef __has_include
 #  if __has_include(<mqueue.h>)
 #    include <mqueue.h>
@@ -676,6 +679,39 @@ static int apply_socket_options(int fd, struct socket_section *s, int family) {
         log_warn("socket-worker", "SO_PRIORITY not supported (Linux-only feature)");
 #endif
     }
+
+    /* SMACK security labels (Linux-only) */
+#ifdef __linux__
+    /* SmackLabel= - SMACK label for the socket itself */
+    if (s->smack_label) {
+        ret = fsetxattr(fd, "security.SMACK64", s->smack_label,
+                        strlen(s->smack_label), 0);
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SMACK64 label '%s': %s",
+                     s->smack_label, strerror(errno));
+        }
+    }
+
+    /* SmackLabelIPIn= - SMACK label for incoming packets */
+    if (s->smack_label_ip_in) {
+        ret = fsetxattr(fd, "security.SMACK64IPIN", s->smack_label_ip_in,
+                        strlen(s->smack_label_ip_in), 0);
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SMACK64IPIN label '%s': %s",
+                     s->smack_label_ip_in, strerror(errno));
+        }
+    }
+
+    /* SmackLabelIPOut= - SMACK label for outgoing packets */
+    if (s->smack_label_ip_out) {
+        ret = fsetxattr(fd, "security.SMACK64IPOUT", s->smack_label_ip_out,
+                        strlen(s->smack_label_ip_out), 0);
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SMACK64IPOUT label '%s': %s",
+                     s->smack_label_ip_out, strerror(errno));
+        }
+    }
+#endif
 
     return 0;
 }

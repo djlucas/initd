@@ -352,6 +352,11 @@ struct socket_section {
     bool no_delay;              /* NoDelay= - TCP_NODELAY (disable Nagle's algorithm) */
     int defer_accept_sec;       /* DeferAcceptSec= - TCP_DEFER_ACCEPT timeout (-1 = not set, Linux-only) */
     int priority;               /* Priority= - SO_PRIORITY for QoS (-1 = not set, Linux-only) */
+
+    /* SMACK security labels (Linux-only) */
+    char *smack_label;          /* SmackLabel= - SMACK label for socket itself */
+    char *smack_label_ip_in;    /* SmackLabelIPIn= - SMACK label for incoming packets */
+    char *smack_label_ip_out;   /* SmackLabelIPOut= - SMACK label for outgoing packets */
 };
 
 /* [Install] section */

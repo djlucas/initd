@@ -1438,6 +1438,133 @@ Priority=6
 - Control plane vs data plane separation
 - Traffic prioritization in multi-tenant systems
 
+#### SmackLabel= (Linux-Only)
+
+**Purpose:** Set SMACK security label for socket file descriptor
+
+**Implementation:**
+- Uses fsetxattr() with "security.SMACK64" extended attribute
+- Sets label on socket file descriptor itself
+- Applied when socket is created (before bind/listen)
+
+**Platform Support:**
+- Linux only (SMACK LSM must be enabled in kernel)
+- Requires CONFIG_SECURITY_SMACK kernel option
+- Common on Tizen, embedded Linux systems
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=/run/dbus.sock
+SmackLabel=System
+```
+
+**Behavior:**
+- Labels the socket object with SMACK security context
+- Controls which processes can access the socket
+- SMACK enforces mandatory access control based on labels
+- Requires CAP_MAC_ADMIN to set labels (privileged operation)
+
+**Security Benefits:**
+- Mandatory access control for IPC
+- Prevents unauthorized processes from connecting
+- Complements traditional Unix permissions
+- Defense in depth for system services
+
+**Use Cases:**
+- D-Bus system bus socket (label "System")
+- Container runtime sockets
+- Security-sensitive system services
+- Tizen platform services
+
+#### SmackLabelIPIn= (Linux-Only)
+
+**Purpose:** Set SMACK label for incoming network packets
+
+**Implementation:**
+- Uses fsetxattr() with "security.SMACK64IPIN" extended attribute
+- Applied to socket file descriptor
+- Controls SMACK label checked against incoming packets
+
+**Platform Support:**
+- Linux only (SMACK LSM with network labeling)
+- Requires SMACK network packet labeling support
+- Only available on socket file descriptors
+
+**Values:**
+- `*` - Accept packets from any SMACK context (wildcard)
+- `@` - Accept packets from web context (internet-facing)
+- Specific label - Accept only from that SMACK context
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:80
+SmackLabelIPIn=*
+```
+
+**Behavior:**
+- Kernel checks incoming packet SMACK label against this attribute
+- Packets with non-matching labels are dropped
+- Works at network layer before application sees data
+- Provides network-level mandatory access control
+
+**Security Benefits:**
+- Filter network traffic by security context
+- Prevent cross-domain network attacks
+- Isolate network services by SMACK policy
+- Early packet filtering (before application)
+
+**Use Cases:**
+- Web servers accepting public traffic (use "*" or "@")
+- Internal services restricting to specific labels
+- Container network isolation
+- Multi-level security systems
+
+#### SmackLabelIPOut= (Linux-Only)
+
+**Purpose:** Set SMACK label for outgoing network packets
+
+**Implementation:**
+- Uses fsetxattr() with "security.SMACK64IPOUT" extended attribute
+- Applied to socket file descriptor
+- Tags outgoing packets with SMACK label
+
+**Platform Support:**
+- Linux only (SMACK LSM with network labeling)
+- Requires SMACK network packet labeling support
+- Only available on socket file descriptors
+
+**Values:**
+- `@` - Tag packets as web/internet traffic
+- Specific label - Tag with custom SMACK context
+- Used by receiving end for access control
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:443
+SmackLabelIPOut=@
+```
+
+**Behavior:**
+- Kernel attaches SMACK label to outgoing packets
+- Remote SMACK systems can filter based on this label
+- Provides network-level labeling for security policy
+- Works transparently to application
+
+**Security Benefits:**
+- Identify traffic source by security context
+- Enable SMACK policy enforcement across network
+- Network segmentation by MAC policy
+- Audit and control outgoing traffic
+
+**Use Cases:**
+- Tag web server responses as public ("@")
+- Label internal service traffic
+- SMACK-aware firewall rules
+- Security domain network isolation
+
 ## Targets
 
 ### Standard Targets
@@ -2137,9 +2264,6 @@ Notes:
   # Hard (Linux-only)
   ListenNetlink=
   ListenUSBFunction=
-  SmackLabel=
-  SmackLabelIPIn=
-  SmackLabelIPOut=
   SELinuxContextFromNet=
 
 [Install]

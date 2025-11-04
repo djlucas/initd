@@ -932,6 +932,12 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->defer_accept_sec = atoi(value);
     } else if (strcmp(key, "Priority") == 0) {
         socket->priority = atoi(value);
+    } else if (strcmp(key, "SmackLabel") == 0) {
+        socket->smack_label = strdup(value);
+    } else if (strcmp(key, "SmackLabelIPIn") == 0) {
+        socket->smack_label_ip_in = strdup(value);
+    } else if (strcmp(key, "SmackLabelIPOut") == 0) {
+        socket->smack_label_ip_out = strdup(value);
     } else {
         return -1;
     }
@@ -1067,6 +1073,9 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.no_delay = false;                /* Default: disabled (Nagle enabled) */
     unit->config.socket.defer_accept_sec = -1;           /* Default: not set */
     unit->config.socket.priority = -1;                   /* Default: not set */
+    unit->config.socket.smack_label = NULL;              /* Default: none */
+    unit->config.socket.smack_label_ip_in = NULL;        /* Default: none */
+    unit->config.socket.smack_label_ip_out = NULL;       /* Default: none */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1266,6 +1275,9 @@ void free_unit_file(struct unit_file *unit) {
         free(unit->config.socket.listen_special);
         free(unit->config.socket.bind_ipv6_only);
         free(unit->config.socket.listen_sequential_packet);
+        free(unit->config.socket.smack_label);
+        free(unit->config.socket.smack_label_ip_in);
+        free(unit->config.socket.smack_label_ip_out);
     }
 
     /* Free [Install] arrays */
