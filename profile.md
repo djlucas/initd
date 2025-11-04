@@ -1133,6 +1133,112 @@ ListenStream=0.0.0.0:443
 TCPCongestion=bbr
 ```
 
+#### Mark= (Linux-Only)
+
+**Purpose:** Set firewall mark on packets for iptables filtering and routing
+
+**Implementation:**
+- Sets SO_MARK socket option with integer value
+- Marks exist only in kernel (not transmitted over network)
+- Can be matched by iptables rules, policy routing, tc filters
+
+**Platform Support:**
+- Linux only (requires SO_MARK support)
+- Requires CAP_NET_ADMIN capability
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=0.0.0.0:8080
+Mark=42  # mark all packets from this socket with value 42
+```
+
+**Use Cases:**
+- Policy-based routing (route packets from specific services differently)
+- Traffic shaping with tc (apply QoS rules based on mark)
+- Firewall rules (filter/prioritize packets by application)
+- Network namespaces and VRF routing
+
+**Example iptables rule:**
+```bash
+# Route marked packets through specific gateway
+iptables -t mangle -A OUTPUT -m mark --mark 42 -j MARK --set-mark 42
+ip rule add fwmark 42 table 100
+```
+
+#### PassCredentials= (Linux-Only)
+
+**Purpose:** Enable receiving sender credentials on AF_UNIX sockets
+
+**Implementation:**
+- Sets SO_PASSCRED socket option on Unix domain sockets
+- Allows receiving ancillary messages with sender's PID, UID, GID
+- Only applies to AF_UNIX (Unix domain socket) family
+
+**Platform Support:**
+- Linux only (SO_PASSCRED is Linux-specific)
+- Other platforms use different mechanisms (SCM_CREDS on BSD)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=/run/myapp.sock
+PassCredentials=yes
+```
+
+**Behavior:**
+- Service receives SCM_CREDENTIALS ancillary data with each message
+- Contains sender's process credentials (pid, uid, gid)
+- Kernel ensures credentials are authentic (cannot be forged)
+
+**Security Benefits:**
+- Authenticate connecting processes without passwords
+- Implement per-user access control
+- Audit which process initiated connection
+
+**Use Cases:**
+- D-Bus authentication
+- systemd journal socket
+- Container runtime APIs
+- Privilege-separated services
+
+#### PassSecurity= (Linux-Only)
+
+**Purpose:** Enable receiving security context on AF_UNIX sockets
+
+**Implementation:**
+- Sets SO_PASSSEC socket option on Unix domain sockets
+- Allows receiving ancillary messages with sender's security context
+- Security context from SELinux, SMACK, or AppArmor
+- Only applies to AF_UNIX (Unix domain socket) family
+
+**Platform Support:**
+- Linux only (SO_PASSSEC is Linux-specific)
+- Requires mandatory access control (MAC) system enabled
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=/run/secure.sock
+PassSecurity=yes
+```
+
+**Behavior:**
+- Service receives SCM_SECURITY ancillary data with each message
+- Contains sender's MAC security label/context
+- Useful for MAC-aware services to make authorization decisions
+
+**Security Benefits:**
+- Enforce MAC policy at application level
+- Services can reject connections from wrong security contexts
+- Fine-grained access control beyond traditional Unix permissions
+
+**Use Cases:**
+- SELinux-aware services
+- SMACK-enabled embedded systems
+- Container security boundary enforcement
+- Trusted IPC between security domains
+
 ## Targets
 
 ### Standard Targets
@@ -1829,13 +1935,6 @@ Notes:
 [Timer]
 
 [Socket]
-  # Easy (Linux-only)
-  Mark=
-
-  # Medium (Linux-only)
-  PassCredentials=
-  PassSecurity=
-
   # Hard (Linux-only)
   ListenNetlink=
   ListenUSBFunction=

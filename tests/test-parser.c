@@ -1068,6 +1068,74 @@ void test_parse_socket_listen_special(void) {
     PASS();
 }
 
+void test_parse_socket_linux_directives(void) {
+    TEST("socket Mark=, PassCredentials=, PassSecurity= (Linux-only)");
+
+    /* Test all three directives together */
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with Linux-only directives\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n"
+        "Mark=42\n"
+        "PassCredentials=yes\n"
+        "PassSecurity=yes\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.mark == 42);
+    assert(unit.config.socket.pass_credentials == true);
+    assert(unit.config.socket.pass_security == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test defaults */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket with default Linux directive values\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test2.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.mark == -1);  /* Not set */
+    assert(unit.config.socket.pass_credentials == false);  /* Disabled */
+    assert(unit.config.socket.pass_security == false);  /* Disabled */
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test Mark with 0 value (valid) */
+    const char *unit_content_zero =
+        "[Unit]\n"
+        "Description=Socket with Mark=0\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test3.sock\n"
+        "Mark=0\n";
+
+    path = create_temp_unit(unit_content_zero, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.mark == 0);  /* 0 is valid */
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -1097,6 +1165,7 @@ int main(void) {
     test_parse_socket_listen_message_queue();
     test_parse_socket_pipe_size();
     test_parse_socket_listen_special();
+    test_parse_socket_linux_directives();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

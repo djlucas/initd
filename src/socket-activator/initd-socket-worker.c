@@ -558,6 +558,45 @@ static int apply_socket_options(int fd, struct socket_section *s, int family) {
 #endif
     }
 
+    /* Mark= - SO_MARK firewall packet marking (Linux-only) */
+    if (s->mark >= 0) {
+#if defined(__linux__) && defined(SO_MARK)
+        ret = setsockopt(fd, SOL_SOCKET, SO_MARK, &s->mark, sizeof(s->mark));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_MARK to %d: %s",
+                     s->mark, strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "SO_MARK not supported (Linux-only feature)");
+#endif
+    }
+
+    /* PassCredentials= - SO_PASSCRED for AF_UNIX (Linux-only) */
+    if (s->pass_credentials && family == AF_UNIX) {
+#if defined(__linux__) && defined(SO_PASSCRED)
+        int optval = 1;
+        ret = setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_PASSCRED: %s", strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "SO_PASSCRED not supported (Linux-only feature)");
+#endif
+    }
+
+    /* PassSecurity= - SO_PASSSEC for AF_UNIX (Linux-only) */
+    if (s->pass_security && family == AF_UNIX) {
+#if defined(__linux__) && defined(SO_PASSSEC)
+        int optval = 1;
+        ret = setsockopt(fd, SOL_SOCKET, SO_PASSSEC, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_PASSSEC: %s", strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "SO_PASSSEC not supported (Linux-only feature)");
+#endif
+    }
+
     return 0;
 }
 

@@ -914,6 +914,12 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->listen_special = strdup(value);
     } else if (strcmp(key, "Writable") == 0) {
         socket->writable = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "Mark") == 0) {
+        socket->mark = atoi(value);
+    } else if (strcmp(key, "PassCredentials") == 0) {
+        socket->pass_credentials = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "PassSecurity") == 0) {
+        socket->pass_security = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else {
         return -1;
     }
@@ -1040,6 +1046,9 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.pipe_size = -1;                  /* Default: not set */
     unit->config.socket.listen_special = NULL;           /* Default: none */
     unit->config.socket.writable = false;                /* Default: read-only */
+    unit->config.socket.mark = -1;                       /* Default: not set */
+    unit->config.socket.pass_credentials = false;        /* Default: disabled */
+    unit->config.socket.pass_security = false;           /* Default: disabled */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

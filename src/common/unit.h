@@ -339,6 +339,11 @@ struct socket_section {
     int pipe_size;              /* PipeSize= - FIFO buffer size in bytes (-1 = not set) */
     char *listen_special;       /* ListenSpecial= - special file path (char devices, /proc, /sys) */
     bool writable;              /* Writable= - open special file read-write vs read-only */
+
+    /* Linux-only directives */
+    int mark;                   /* Mark= - SO_MARK firewall packet marking (-1 = not set) */
+    bool pass_credentials;      /* PassCredentials= - SO_PASSCRED for AF_UNIX */
+    bool pass_security;         /* PassSecurity= - SO_PASSSEC for AF_UNIX */
 };
 
 /* [Install] section */
