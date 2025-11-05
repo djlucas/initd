@@ -73,8 +73,8 @@ static void parse_args(int argc, char *argv[]) {
         if (eq) {
             /* key=value format */
             *eq = '\0'; /* Split into key and value */
-            char *key = arg;
-            char *value = eq + 1;
+            const char *key = arg;
+            const char *value = eq + 1;
 
             if (strcmp(key, "supervisor") == 0) {
                 strncpy(supervisor_path, value, MAX_PATH - 1);

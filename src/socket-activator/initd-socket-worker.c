@@ -102,7 +102,7 @@ static int run_socket_exec_command(const char *command, const char *unit_name, c
  * Returns: true if activation allowed, false if rate limit exceeded */
 static bool check_trigger_limit(struct socket_instance *sock) {
     time_t now = time(NULL);
-    struct socket_section *cfg = &sock->unit->config.socket;
+    const struct socket_section *cfg = &sock->unit->config.socket;
 
     /* Get configured limits (with defaults) */
     int interval = cfg->trigger_limit_interval_sec;
@@ -225,7 +225,7 @@ static void mark_service_exit(pid_t pid) {
             notify_supervisor_socket_state(s, 0);
 
             /* Run ExecStopPost if configured */
-            struct socket_section *socket_cfg = &s->unit->config.socket;
+            const struct socket_section *socket_cfg = &s->unit->config.socket;
             if (socket_cfg->exec_stop_post) {
                 if (run_socket_exec_command(socket_cfg->exec_stop_post, s->unit->name, "ExecStopPost") < 0) {
                     log_warn("socket-worker", "ExecStopPost failed for %s", s->unit->name);
@@ -402,7 +402,7 @@ static int create_status_socket(void) {
 }
 
 /* Apply socket options via setsockopt */
-static int apply_socket_options(int fd, struct socket_section *s, int family) {
+static int apply_socket_options(int fd, const struct socket_section *s, int family) {
     int ret;
 
     /* KeepAlive= - SO_KEEPALIVE */
@@ -732,7 +732,7 @@ static int apply_socket_options(int fd, struct socket_section *s, int family) {
 
 /* Apply SocketUser= and SocketGroup= ownership to Unix socket
  * Uses IPC to request privileged daemon to perform chown operation */
-static int apply_socket_ownership(const char *socket_path, struct socket_section *s) {
+static int apply_socket_ownership(const char *socket_path, const struct socket_section *s) {
     /* Skip if neither SocketUser= nor SocketGroup= is set */
     if (s->socket_user[0] == '\0' && s->socket_group[0] == '\0') {
         return 0;
@@ -770,7 +770,7 @@ static int apply_socket_ownership(const char *socket_path, struct socket_section
 
 /* Create listening socket from socket unit */
 static int create_listen_socket(struct socket_instance *sock) {
-    struct socket_section *s = &sock->unit->config.socket;
+    const struct socket_section *s = &sock->unit->config.socket;
     int fd;
 
     /* Unix stream socket */
@@ -792,7 +792,7 @@ static int create_listen_socket(struct socket_instance *sock) {
         unlink(s->listen_stream);
 
         /* Create parent directory if needed with DirectoryMode= */
-        char *last_slash = strrchr(s->listen_stream, '/');
+        const char *last_slash = strrchr(s->listen_stream, '/');
         if (last_slash && last_slash != s->listen_stream) {
             char dir_path[MAX_PATH];
             size_t dir_len = last_slash - s->listen_stream;
@@ -865,7 +865,7 @@ static int create_listen_socket(struct socket_instance *sock) {
         unlink(s->listen_sequential_packet);
 
         /* Create parent directory if needed with DirectoryMode= */
-        char *last_slash = strrchr(s->listen_sequential_packet, '/');
+        const char *last_slash = strrchr(s->listen_sequential_packet, '/');
         if (last_slash && last_slash != s->listen_sequential_packet) {
             char dir_path[MAX_PATH];
             size_t dir_len = last_slash - s->listen_sequential_packet;
@@ -921,7 +921,7 @@ static int create_listen_socket(struct socket_instance *sock) {
 
     /* TCP stream socket */
     if (s->listen_stream) {
-        char *colon = strchr(s->listen_stream, ':');
+        const char *colon = strchr(s->listen_stream, ':');
         if (!colon) {
             log_error("socket-worker", "invalid ListenStream format: %s",
                       s->listen_stream);
@@ -992,7 +992,7 @@ static int create_listen_socket(struct socket_instance *sock) {
         unlink(s->listen_datagram);
 
         /* Create parent directory if needed with DirectoryMode= */
-        char *last_slash = strrchr(s->listen_datagram, '/');
+        const char *last_slash = strrchr(s->listen_datagram, '/');
         if (last_slash && last_slash != s->listen_datagram) {
             char dir_path[MAX_PATH];
             size_t dir_len = last_slash - s->listen_datagram;
@@ -1041,7 +1041,7 @@ static int create_listen_socket(struct socket_instance *sock) {
 
     /* UDP socket */
     if (s->listen_datagram) {
-        char *colon = strchr(s->listen_datagram, ':');
+        const char *colon = strchr(s->listen_datagram, ':');
         if (!colon) {
             log_error("socket-worker", "invalid ListenDatagram format: %s",
                       s->listen_datagram);
@@ -1096,7 +1096,7 @@ static int create_listen_socket(struct socket_instance *sock) {
         unlink(s->listen_fifo);
 
         /* Create parent directory if needed with DirectoryMode= */
-        char *last_slash = strrchr(s->listen_fifo, '/');
+        const char *last_slash = strrchr(s->listen_fifo, '/');
         if (last_slash && last_slash != s->listen_fifo) {
             char dir_path[MAX_PATH];
             size_t dir_len = last_slash - s->listen_fifo;
@@ -1330,7 +1330,7 @@ static int build_exec_argv(const char *command, char ***argv_out) {
     }
 
     char *saveptr = NULL;
-    char *token = strtok_r(copy, " \t", &saveptr);
+    const char *token = strtok_r(copy, " \t", &saveptr);
     while (token) {
         if (argc + 1 >= capacity) {
             size_t new_capacity = capacity * 2;
@@ -1514,7 +1514,7 @@ static int activate_direct(struct socket_instance *sock) {
     int runtime_limit = unit.config.service.runtime_max_sec;
 
     /* Run ExecStartPre if configured */
-    struct socket_section *socket_cfg = &sock->unit->config.socket;
+    const struct socket_section *socket_cfg = &sock->unit->config.socket;
     if (socket_cfg->exec_start_pre) {
         if (run_socket_exec_command(socket_cfg->exec_start_pre, sock->unit->name, "ExecStartPre") < 0) {
             log_warn("socket-worker", "ExecStartPre failed for %s, continuing", sock->unit->name);
@@ -1608,7 +1608,7 @@ static int activate_direct(struct socket_instance *sock) {
 
 /* Activate service for per-connection mode (Accept=true, inetd-style) */
 static int activate_per_connection(struct socket_instance *sock) {
-    struct socket_section *socket_cfg = &sock->unit->config.socket;
+    const struct socket_section *socket_cfg = &sock->unit->config.socket;
 
     /* Check MaxConnections= limit */
     if (socket_cfg->max_connections > 0 &&
@@ -2225,12 +2225,10 @@ __attribute__((unused))
 #endif
 static int event_loop(void) {
     struct pollfd pfds[MAX_SOCKETS + 2];
-    int nfds;
-    int status_idx;
 
     while (!shutdown_requested) {
-        nfds = 0;
-        status_idx = -1;
+        int nfds = 0;
+        int status_idx = -1;
 
         /* Add control socket */
         pfds[nfds].fd = control_socket;

@@ -71,7 +71,7 @@ static bool debug_mode = false;
 static bool stop_when_unneeded_guard = false;
 
 /* Forward declarations */
-static bool unit_provides(struct unit_file *unit, const char *service_name);
+static bool unit_provides(const struct unit_file *unit, const char *service_name);
 static int stop_unit_recursive(struct unit_file *unit);
 static int start_unit_recursive(struct unit_file *unit);
 static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
@@ -198,7 +198,7 @@ static int lookup_user(const char *user, uid_t *uid, gid_t *gid) {
         return 0;
     }
 
-    struct passwd *pw = getpwnam(user);
+    const struct passwd *pw = getpwnam(user);
     if (!pw) {
         return -1;
     }
@@ -273,7 +273,7 @@ static int disable_unit(struct unit_file *unit) {
 }
 
 /* Check if a unit is enabled (requires IPC, but we'll implement a simple version) */
-static bool is_unit_enabled(struct unit_file *unit) {
+static bool is_unit_enabled(const struct unit_file *unit) {
     /* For now, we'll just check if symlinks exist in the file system.
      * This doesn't require root privileges, so we can do it directly.
      * The enable/disable operations require root, but checking status doesn't. */
@@ -401,7 +401,7 @@ static int stop_service(struct unit_file *unit) {
 }
 
 /* Request master to reload a service */
-static int reload_service(struct unit_file *unit) {
+static int reload_service(const struct unit_file *unit) {
     if (unit->state != STATE_ACTIVE || unit->pid <= 0) {
         errno = ESRCH;
         return -1;
@@ -681,7 +681,7 @@ static void notify_timer_daemon_inactive(const char *service_name) {
 }
 
 /* Check if unit provides a specific service */
-static bool unit_provides(struct unit_file *unit, const char *service_name) {
+static bool unit_provides(const struct unit_file *unit, const char *service_name) {
     for (int i = 0; i < unit->unit.provides_count; i++) {
         if (strcmp(unit->unit.provides[i], service_name) == 0) {
             return true;
@@ -828,7 +828,8 @@ static bool condition_path_is_mount_point(const char *path) {
         return true;
     }
 
-    if (st_path.st_dev == st_parent.st_dev && st_path.st_ino == st_parent.st_ino) {
+    /* At this point, we know devices are the same, so just check inode */
+    if (st_path.st_ino == st_parent.st_ino) {
         return true;
     }
 
@@ -853,7 +854,7 @@ static bool condition_directory_not_empty(const char *path) {
         return false;
     }
 
-    struct dirent *entry;
+    const struct dirent *entry;
     bool not_empty = false;
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
@@ -906,7 +907,7 @@ static bool condition_user(const char *value) {
     }
 
     /* Try to look up username */
-    struct passwd *pwd = getpwnam(value);
+    const struct passwd *pwd = getpwnam(value);
     if (pwd) {
         return current_uid == pwd->pw_uid;
     }
@@ -925,7 +926,7 @@ static bool condition_group(const char *value) {
     }
 
     /* Try to look up group name */
-    struct group *grp = getgrnam(value);
+    const struct group *grp = getgrnam(value);
     if (grp) {
         return current_gid == grp->gr_gid;
     }
@@ -1073,20 +1074,17 @@ static bool condition_environment(const char *value) {
 static bool condition_virtualization(const char *value) {
     /* Detect virtualization/container type (platform-specific) */
     bool is_virtualized = false;
-    char detected_type[64] = {0};
 
 #ifdef __linux__
     /* Check for container indicators */
     if (access("/proc/vz", F_OK) == 0 && access("/proc/bc", F_OK) != 0) {
         is_virtualized = true;
-        strncpy(detected_type, "openvz", sizeof(detected_type) - 1);
         if (strcmp(value, "openvz") == 0 || strcmp(value, "container") == 0) {
             return true;
         }
     }
     if (access("/.dockerenv", F_OK) == 0) {
         is_virtualized = true;
-        strncpy(detected_type, "docker", sizeof(detected_type) - 1);
         if (strcmp(value, "docker") == 0 || strcmp(value, "container") == 0) {
             return true;
         }
@@ -1098,7 +1096,6 @@ static bool condition_virtualization(const char *value) {
             if (fgets(container, sizeof(container), f)) {
                 container[strcspn(container, "\n")] = '\0';
                 is_virtualized = true;
-                strncpy(detected_type, container, sizeof(detected_type) - 1);
                 fclose(f);
                 if (strcmp(value, container) == 0 || strcmp(value, "container") == 0) {
                     return true;
@@ -1245,7 +1242,7 @@ static bool condition_ac_power(const char *value) {
     /* Check /sys/class/power_supply for AC adapters */
     DIR *dir = opendir("/sys/class/power_supply");
     if (dir) {
-        struct dirent *entry;
+        const struct dirent *entry;
         while ((entry = readdir(dir)) != NULL) {
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
                 continue;
@@ -1414,7 +1411,7 @@ static bool condition_kernel_version(const char *value) {
     }
 
     /* Parse comparison operator */
-    const char *op = value;
+    const char *op;
     const char *version_str = value;
 
     if (strncmp(value, ">=", 2) == 0) {
@@ -1664,7 +1661,7 @@ static bool condition_path_is_encrypted(const char *value, const char *unit_name
         return false;
     }
 
-    struct dirent *entry;
+    const struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         if (strncmp(entry->d_name, "dm-", 3) == 0) {
             char name_path[512];

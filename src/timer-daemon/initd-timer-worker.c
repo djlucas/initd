@@ -85,7 +85,7 @@ static void format_time_iso(time_t ts, char *buf, size_t len) {
         return;
     }
 #else
-    struct tm *tmp = localtime(&ts);
+    const struct tm *tmp = localtime(&ts);
     if (!tmp) {
         snprintf(buf, len, "n/a");
         return;
@@ -376,7 +376,7 @@ static time_t daemon_start_time = 0;
 /* Calculate next run time for a timer */
 static time_t calculate_next_run(struct timer_instance *timer) {
     time_t now = time(NULL);
-    struct timer_section *t = &timer->unit->config.timer;
+    const struct timer_section *t = &timer->unit->config.timer;
     time_t next = 0;
 
     /* OnCalendar - calendar-based scheduling (can have multiple entries) */
@@ -721,7 +721,7 @@ static void check_timers(void) {
 
 /* Check if timer should run on startup (persistent + missed) */
 static bool should_run_on_startup(struct timer_instance *timer) {
-    struct timer_section *t = &timer->unit->config.timer;
+    const struct timer_section *t = &timer->unit->config.timer;
 
     if (!timer->enabled) {
         return false;
@@ -1040,7 +1040,7 @@ static void handle_control_command(int client_fd, bool read_only) {
             strncpy(entries[idx].name, t->unit->name, sizeof(entries[idx].name) - 1);
 
             /* Determine service name */
-            char *dot = strrchr(t->unit->name, '.');
+            const char *dot = strrchr(t->unit->name, '.');
             if (dot) {
                 size_t len = dot - t->unit->name;
                 strncpy(entries[idx].unit, t->unit->name, len);

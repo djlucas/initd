@@ -142,7 +142,7 @@ static int build_exec_argv(const char *command, char ***argv_out) {
     }
 
     char *saveptr = NULL;
-    char *token = strtok_r(copy, " \t", &saveptr);
+    const char *token = strtok_r(copy, " \t", &saveptr);
     while (token) {
         if (argc + 1 >= capacity) {
             size_t new_capacity = capacity * 2;
@@ -448,7 +448,7 @@ static int lookup_supervisor_user(uid_t *uid, gid_t *gid) {
         return 0;
     }
 
-    struct passwd *pw = getpwnam(SUPERVISOR_USER);
+    const struct passwd *pw = getpwnam(SUPERVISOR_USER);
     if (!pw) {
         if (!fallback_to_nobody_allowed()) {
             log_error("supervisor",
@@ -1456,7 +1456,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
             log_debug("supervisor", "DynamicUser: allocated uid=%d gid=%d for %s",
                       validated_uid, validated_gid, req->unit_name);
         } else if (unit.config.service.user[0] != '\0') {
-            struct passwd *pw = getpwnam(unit.config.service.user);
+            const struct passwd *pw = getpwnam(unit.config.service.user);
             if (!pw) {
                 log_error("supervisor", "user '%s' not found", unit.config.service.user);
                 resp->type = RESP_ERROR;
@@ -1470,7 +1470,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
         }
 
         if (unit.config.service.group[0] != '\0' && !unit.config.service.dynamic_user) {
-            struct group *gr = getgrnam(unit.config.service.group);
+            const struct group *gr = getgrnam(unit.config.service.group);
             if (!gr) {
                 log_error("supervisor", "group '%s' not found", unit.config.service.group);
                 resp->type = RESP_ERROR;
@@ -1483,7 +1483,7 @@ static int handle_request(struct priv_request *req, struct priv_response *resp) 
                       unit.config.service.group, validated_gid);
         } else if (validated_uid != 0 && !unit.config.service.dynamic_user) {
             /* If User specified but Group not specified, use user's primary group */
-            struct passwd *pw = getpwuid(validated_uid);
+            const struct passwd *pw = getpwuid(validated_uid);
             if (pw) {
                 validated_gid = pw->pw_gid;
             }
@@ -1694,7 +1694,7 @@ start_cleanup:
                 kill_mode = stop_unit.config.service.kill_mode;
 
                 if (stop_unit.config.service.user[0] != '\0') {
-                    struct passwd *pw = getpwnam(stop_unit.config.service.user);
+                    const struct passwd *pw = getpwnam(stop_unit.config.service.user);
                     if (!pw) {
                         log_error("supervisor", "stop: user '%s' not found",
                                   stop_unit.config.service.user);
@@ -1704,7 +1704,7 @@ start_cleanup:
                 }
 
                 if (stop_unit.config.service.group[0] != '\0') {
-                    struct group *gr = getgrnam(stop_unit.config.service.group);
+                    const struct group *gr = getgrnam(stop_unit.config.service.group);
                     if (!gr) {
                         log_error("supervisor", "stop: group '%s' not found",
                                   stop_unit.config.service.group);
@@ -1712,7 +1712,7 @@ start_cleanup:
                         validated_gid = gr->gr_gid;
                     }
                 } else if (validated_uid != 0) {
-                    struct passwd *pw = getpwuid(validated_uid);
+                    const struct passwd *pw = getpwuid(validated_uid);
                     if (pw) {
                         validated_gid = pw->pw_gid;
                     }
@@ -1934,7 +1934,7 @@ start_cleanup:
         gid_t validated_gid = 0;
 
         if (unit.config.service.user[0] != '\0') {
-            struct passwd *pw = getpwnam(unit.config.service.user);
+            const struct passwd *pw = getpwnam(unit.config.service.user);
             if (!pw) {
                 resp->type = RESP_ERROR;
                 resp->error_code = EINVAL;
@@ -1947,7 +1947,7 @@ start_cleanup:
         }
 
         if (unit.config.service.group[0] != '\0') {
-            struct group *gr = getgrnam(unit.config.service.group);
+            const struct group *gr = getgrnam(unit.config.service.group);
             if (!gr) {
                 resp->type = RESP_ERROR;
                 resp->error_code = EINVAL;
@@ -1958,7 +1958,7 @@ start_cleanup:
             }
             validated_gid = gr->gr_gid;
         } else if (validated_uid != 0) {
-            struct passwd *pw = getpwuid(validated_uid);
+            const struct passwd *pw = getpwuid(validated_uid);
             if (pw) {
                 validated_gid = pw->pw_gid;
             }
@@ -2280,7 +2280,7 @@ static int main_loop(void) {
 }
 
 #ifndef UNIT_TEST
-int main(int argc, char *argv[]) {
+int main(int argc, char * const argv[]) {
     const char *runtime_dir_arg = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];

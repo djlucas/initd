@@ -40,7 +40,7 @@ static int is_unit_file(const char *name) {
 /* Scan a single directory for unit files */
 static int scan_directory(const char *dir_path, struct unit_file **units, int *count) {
     DIR *dir;
-    struct dirent *entry;
+    const struct dirent *entry;
     char path[1024];
 
     dir = opendir(dir_path);
@@ -115,7 +115,7 @@ int scan_unit_directories(struct unit_file ***units_out, int *count_out) {
 int scan_unit_directories_filtered(struct unit_file ***units_out, int *count_out, int include_systemd) {
     const char *dirs_str = include_systemd ? UNIT_DIRS : "/etc/initd/system:/lib/initd/system";
     char *dirs = strdup(dirs_str);
-    char *dir;
+    const char *dir;
     struct unit_file **units;
     int count = 0;
     int capacity = 128;

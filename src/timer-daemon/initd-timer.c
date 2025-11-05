@@ -82,7 +82,7 @@ static int lookup_timer_user(uid_t *uid, gid_t *gid) {
         return 0;
     }
 
-    struct passwd *pw = getpwnam(TIMER_USER);
+    const struct passwd *pw = getpwnam(TIMER_USER);
     if (!pw) {
         if (!fallback_to_nobody_allowed()) {
             log_error("timer",
@@ -166,7 +166,7 @@ static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_le
     }
 
     struct rtc_wkalrm alarm = {0};
-    struct tm *tm = gmtime(&wake_time);
+    const struct tm *tm = gmtime(&wake_time);
     if (!tm) {
         close(rtc_fd);
         snprintf(error_msg, error_len, "Invalid wake time");
@@ -188,7 +188,9 @@ static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_le
     }
 
     close(rtc_fd);
-    log_info("timer-daemon", "RTC wake alarm set for %s", asctime(tm));
+    char time_str[64];
+    strftime(time_str, sizeof(time_str), "%a %b %d %H:%M:%S %Y", tm);
+    log_info("timer-daemon", "RTC wake alarm set for %s", time_str);
     return 0;
 
 #elif defined(__FreeBSD__)
@@ -199,7 +201,7 @@ static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_le
         return -1;
     }
 
-    struct tm *tm = gmtime(&wake_time);
+    const struct tm *tm = gmtime(&wake_time);
     if (!tm) {
         close(rtc_fd);
         snprintf(error_msg, error_len, "Invalid wake time");
@@ -216,7 +218,9 @@ static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_le
     }
 
     close(rtc_fd);
-    log_info("timer-daemon", "FreeBSD RTC wake alarm set for %s", asctime(tm));
+    char time_str[64];
+    strftime(time_str, sizeof(time_str), "%a %b %d %H:%M:%S %Y", tm);
+    log_info("timer-daemon", "FreeBSD RTC wake alarm set for %s", time_str);
     return 0;
 
 #elif defined(__OpenBSD__)
@@ -251,8 +255,14 @@ static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_le
     }
 
     close(apm_fd);
-    struct tm *tm = gmtime(&wake_time);
-    log_info("timer-daemon", "OpenBSD APM wake set for %s", asctime(tm));
+    const struct tm *tm = gmtime(&wake_time);
+    char time_str[64];
+    if (tm) {
+        strftime(time_str, sizeof(time_str), "%a %b %d %H:%M:%S %Y", tm);
+    } else {
+        strncpy(time_str, "unknown time", sizeof(time_str) - 1);
+    }
+    log_info("timer-daemon", "OpenBSD APM wake set for %s", time_str);
     return 0;
 
 #elif defined(__NetBSD__)
@@ -291,8 +301,14 @@ static int set_rtc_wake_alarm(time_t wake_time, char *error_msg, size_t error_le
     }
 
     close(apm_fd);
-    struct tm *tm = gmtime(&wake_time);
-    log_info("timer-daemon", "NetBSD APM/ACPI wake set for %s", asctime(tm));
+    const struct tm *tm = gmtime(&wake_time);
+    char time_str[64];
+    if (tm) {
+        strftime(time_str, sizeof(time_str), "%a %b %d %H:%M:%S %Y", tm);
+    } else {
+        strncpy(time_str, "unknown time", sizeof(time_str) - 1);
+    }
+    log_info("timer-daemon", "NetBSD APM/ACPI wake set for %s", time_str);
     return 0;
 
 #else
@@ -486,7 +502,7 @@ static int spawn_worker(void) {
     return sockets[0]; /* Return parent end for IPC */
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char * const argv[]) {
     const char *runtime_dir_arg = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];

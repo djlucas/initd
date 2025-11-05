@@ -70,7 +70,7 @@ static int lookup_socket_user(uid_t *uid, gid_t *gid) {
         return 0;
     }
 
-    struct passwd *pw = getpwnam(SOCKET_USER);
+    const struct passwd *pw = getpwnam(SOCKET_USER);
     if (!pw) {
         if (!fallback_to_nobody_allowed()) {
             log_error("socket",
@@ -247,7 +247,7 @@ static void handle_request(int worker_fd) {
 
         /* Look up owner if specified */
         if (req.owner[0] != '\0') {
-            struct passwd *pw = getpwnam(req.owner);
+            const struct passwd *pw = getpwnam(req.owner);
             if (pw) {
                 uid = pw->pw_uid;
             } else {
@@ -268,7 +268,7 @@ static void handle_request(int worker_fd) {
 
         /* Look up group if specified */
         if (req.group[0] != '\0') {
-            struct group *gr = getgrnam(req.group);
+            const struct group *gr = getgrnam(req.group);
             if (gr) {
                 gid = gr->gr_gid;
             } else {
@@ -390,7 +390,7 @@ static int spawn_worker(void) {
     return sockets[0]; /* Return parent end for IPC */
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char * const argv[]) {
     const char *runtime_dir_arg = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];

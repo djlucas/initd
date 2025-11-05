@@ -158,7 +158,7 @@ static bool parse_boolean(const char *value) {
 /* Parse space-separated list into array */
 static int parse_list(char *value, char **array, int max_count) {
     int count = 0;
-    char *token = strtok(value, " \t");
+    const char *token = strtok(value, " \t");
 
     while (token && count < max_count) {
         array[count++] = strdup(token);
@@ -219,7 +219,7 @@ static void parse_status_list(const char *value, int *array, int *count) {
     }
 
     char *saveptr = NULL;
-    char *token = strtok_r(copy, " \t", &saveptr);
+    const char *token = strtok_r(copy, " \t", &saveptr);
     while (token && *count < MAX_RESTART_STATUS) {
         errno = 0;
         char *end = NULL;
@@ -436,7 +436,7 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
 }
 
 /* Parse [Service] section key/value */
-static int parse_service_key(struct service_section *service, const char *key, char *value) {
+static int parse_service_key(struct service_section *service, const char *key, const char *value) {
     if (strcmp(key, "Type") == 0) {
         if (strcmp(value, "simple") == 0) service->type = SERVICE_SIMPLE;
         else if (strcmp(value, "forking") == 0) service->type = SERVICE_FORKING;
@@ -765,7 +765,7 @@ static int parse_service_key(struct service_section *service, const char *key, c
         char *value_copy = strdup(value);
         if (!value_copy) return -1;
 
-        char *token = strtok(value_copy, " ");
+        const char *token = strtok(value_copy, " ");
         while (token && service->capability_bounding_set_count < MAX_CAPABILITIES) {
             service->capability_bounding_set[service->capability_bounding_set_count] = strdup(token);
             if (!service->capability_bounding_set[service->capability_bounding_set_count]) {
@@ -781,7 +781,7 @@ static int parse_service_key(struct service_section *service, const char *key, c
         char *value_copy = strdup(value);
         if (!value_copy) return -1;
 
-        char *token = strtok(value_copy, " ");
+        const char *token = strtok(value_copy, " ");
         while (token && service->ambient_capabilities_count < MAX_CAPABILITIES) {
             service->ambient_capabilities[service->ambient_capabilities_count] = strdup(token);
             if (!service->ambient_capabilities[service->ambient_capabilities_count]) {
@@ -799,7 +799,7 @@ static int parse_service_key(struct service_section *service, const char *key, c
 }
 
 /* Parse [Timer] section key/value */
-static int parse_timer_key(struct timer_section *timer, const char *key, char *value) {
+static int parse_timer_key(struct timer_section *timer, const char *key, const char *value) {
     if (strcmp(key, "OnCalendar") == 0) {
         if (timer->on_calendar_count < MAX_CALENDAR_ENTRIES) {
             timer->on_calendar[timer->on_calendar_count++] = strdup(value);
@@ -1103,7 +1103,7 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
             char *end = strchr(trimmed, ']');
             if (end) {
                 *end = '\0';
-                char *section_name = trimmed + 1;
+                const char *section_name = trimmed + 1;
 
                 if (strcmp(section_name, "Unit") == 0) {
                     current_section = SECTION_UNIT;
@@ -1127,7 +1127,7 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
         if (!eq) continue;
 
         *eq = '\0';
-        char *key = trim(trimmed);
+        const char *key = trim(trimmed);
         char *value = trim(eq + 1);
 
         /* Dispatch to section parser */
@@ -1250,6 +1250,7 @@ void free_unit_file(struct unit_file *unit) {
             free(unit->config.service.environment[i]);
         }
         free(unit->config.service.pid_file);
+        free(unit->config.service.input_data);
         for (int i = 0; i < unit->config.service.capability_bounding_set_count; i++) {
             free(unit->config.service.capability_bounding_set[i]);
         }

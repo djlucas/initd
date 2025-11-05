@@ -207,7 +207,7 @@ static int parse_component(struct calendar_component *comp, const char *str,
     if (!copy) return -1;
 
     /* Split by commas for lists */
-    char *token = strtok(copy, ",");
+    const char *token = strtok(copy, ",");
     while (token) {
         /* Trim whitespace */
         while (isspace(*token)) token++;
@@ -340,7 +340,7 @@ static struct calendar_spec *parse_calendar_expression(const char *expr) {
 }
 
 /* Check if value matches component */
-static bool matches_component(struct calendar_component *comp, int value) {
+static bool matches_component(const struct calendar_component *comp, int value) {
     if (comp->wildcard) return true;
 
     for (int i = 0; i < comp->count; i++) {
@@ -351,7 +351,7 @@ static bool matches_component(struct calendar_component *comp, int value) {
 }
 
 /* Check if time matches calendar spec */
-static bool matches_calendar(struct calendar_spec *spec, struct tm *tm) {
+static bool matches_calendar(struct calendar_spec *spec, const struct tm *tm) {
     if (!matches_component(&spec->weekday, tm->tm_wday)) return false;
     if (!matches_component(&spec->year, tm->tm_year + 1900)) return false;
     if (!matches_component(&spec->month, tm->tm_mon + 1)) return false;

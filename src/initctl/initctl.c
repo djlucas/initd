@@ -37,7 +37,7 @@ static void format_time_iso(time_t ts, char *buf, size_t len) {
         return;
     }
 #else
-    struct tm *tmp = localtime(&ts);
+    const struct tm *tmp = localtime(&ts);
     if (!tmp) {
         snprintf(buf, len, "n/a");
         return;
@@ -108,7 +108,6 @@ static int configure_runtime_dir(enum runtime_scope scope) {
                                        "%s/%s", user_dir,
                                        CONTROL_STATUS_SOCKET_NAME);
                 if (written >= 0 && (size_t)written < sizeof(socket_path)) {
-                    struct stat st;
                     if (stat(socket_path, &st) == 0) {
                         target = user_dir;
                     }
@@ -585,7 +584,6 @@ static int handle_user_command(int argc, char *argv[], int index) {
     }
 
     int daemon_argc = argc - (index + 3);
-    char **daemon_argv = argv + index + 3;
     bool enable = (strcmp(subcmd, "enable") == 0);
 
     char config_dir[PATH_MAX];
@@ -628,6 +626,7 @@ static int handle_user_command(int argc, char *argv[], int index) {
         cfg.timer = enable;
         cfg.socket_act = enable;
     } else {
+        char **daemon_argv = argv + index + 3;
         for (int i = 0; i < daemon_argc; i++) {
             if (apply_daemon_token(daemon_argv[i], enable, &cfg) < 0) {
                 fprintf(stderr, "Error: unknown daemon '%s'\n", daemon_argv[i]);
