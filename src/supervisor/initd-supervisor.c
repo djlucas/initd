@@ -1285,6 +1285,14 @@ static pid_t start_service_process(const struct service_section *service,
                 }
             }
 
+            /* SECURITY: Keep capabilities across setuid() if ambient caps are configured
+             * Without PR_SET_KEEPCAPS, setuid() clears all capabilities including ambient */
+            if (service->ambient_capabilities_count > 0 && validated_uid != 0) {
+                if (prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) < 0) {
+                    log_warn("supervisor", "Failed to set PR_SET_KEEPCAPS: %s", strerror(errno));
+                }
+            }
+
             cap_free(caps);
         }
 #elif defined(__linux__)
@@ -1318,6 +1326,40 @@ static pid_t start_service_process(const struct service_section *service,
                 log_error("supervisor", "setuid: %s", strerror(errno));
                 _exit(1);
             }
+
+#if defined(__linux__) && defined(__HAVE_LIBCAP__)
+            /* Restore capabilities after setuid if PR_SET_KEEPCAPS was set
+             * This makes ambient capabilities actually work for non-root services */
+            if (service->ambient_capabilities_count > 0) {
+                cap_t caps = cap_get_proc();
+                if (caps) {
+                    /* Re-raise ambient capabilities that were set earlier */
+                    for (int i = 0; i < service->ambient_capabilities_count; i++) {
+                        cap_value_t cap_val;
+                        if (cap_from_name(service->ambient_capabilities[i], &cap_val) == 0) {
+                            /* Ensure capability is in permitted and effective sets */
+                            if (cap_set_flag(caps, CAP_PERMITTED, 1, &cap_val, CAP_SET) == 0 &&
+                                cap_set_flag(caps, CAP_EFFECTIVE, 1, &cap_val, CAP_SET) == 0) {
+                                if (cap_set_proc(caps) == 0) {
+                                    /* Re-raise in ambient set after setuid */
+                                    if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, cap_val, 0, 0) < 0) {
+                                        log_warn("supervisor", "Failed to restore ambient capability %s after setuid: %s",
+                                               service->ambient_capabilities[i], strerror(errno));
+                                    } else {
+                                        log_debug("supervisor", "Restored ambient capability after setuid: %s",
+                                                service->ambient_capabilities[i]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    cap_free(caps);
+                }
+
+                /* Clear PR_SET_KEEPCAPS now that we're done */
+                prctl(PR_SET_KEEPCAPS, 0, 0, 0, 0);
+            }
+#endif
         }
 
         /* Verify we cannot regain privileges */
