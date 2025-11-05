@@ -1178,6 +1178,28 @@ static pid_t start_service_process(const struct service_section *service,
 
         /* Set up Linux capabilities (must be before dropping privileges) */
 #if defined(__linux__) && defined(__HAVE_LIBCAP__)
+        /* Get last valid capability number from kernel */
+        int last_cap = -1;
+        {
+            FILE *f = fopen("/proc/sys/kernel/cap_last_cap", "r");
+            if (f) {
+                if (fscanf(f, "%d", &last_cap) != 1) {
+                    last_cap = -1;
+                }
+                fclose(f);
+            }
+#ifdef CAP_LAST_CAP
+            /* Fall back to compile-time constant if available */
+            if (last_cap < 0) {
+                last_cap = CAP_LAST_CAP;
+            }
+#endif
+            /* Final fallback to a reasonable maximum */
+            if (last_cap < 0) {
+                last_cap = 40; /* Reasonable upper bound for older kernels */
+            }
+        }
+
         /* Linux with libcap - set up capabilities */
         if (service->capability_bounding_set_count > 0 || service->ambient_capabilities_count > 0) {
             cap_t caps = cap_get_proc();
@@ -1200,6 +1222,14 @@ static pid_t start_service_process(const struct service_section *service,
                     }
                 }
 
+                /* SECURITY: Clear all capabilities first, then set only requested ones
+                 * Without this, services running as root retain all unmentioned capabilities */
+                if (cap_clear(caps) < 0) {
+                    log_error("supervisor", "Failed to clear capabilities: %s", strerror(errno));
+                    cap_free(caps);
+                    exit(1);
+                }
+
                 if (cap_count > 0) {
                     if (cap_set_flag(caps, CAP_PERMITTED, cap_count, cap_vals, CAP_SET) < 0 ||
                         cap_set_flag(caps, CAP_EFFECTIVE, cap_count, cap_vals, CAP_SET) < 0) {
@@ -1215,6 +1245,24 @@ static pid_t start_service_process(const struct service_section *service,
                     }
 
                     log_debug("supervisor", "Set %d capabilities in bounding set", cap_count);
+                }
+
+                /* Drop capabilities from the bounding set using prctl
+                 * This ensures even setuid-root binaries can't gain these caps */
+                for (int cap = 0; cap <= last_cap; cap++) {
+                    bool keep = false;
+                    for (int i = 0; i < cap_count; i++) {
+                        if (cap_vals[i] == cap) {
+                            keep = true;
+                            break;
+                        }
+                    }
+                    if (!keep) {
+                        if (prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) < 0 && errno != EINVAL) {
+                            log_warn("supervisor", "Failed to drop capability %d from bounding set: %s",
+                                   cap, strerror(errno));
+                        }
+                    }
                 }
             }
 
