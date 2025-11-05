@@ -245,6 +245,21 @@ static void handle_request(int worker_fd) {
             break;
         }
 
+        /* SECURITY: Validate path is within runtime directory to prevent
+         * arbitrary file chown via symlink attacks */
+        char *runtime_dir = getenv("XDG_RUNTIME_DIR");
+        const char *allowed_prefix = runtime_dir ? runtime_dir : "/run";
+        size_t prefix_len = strlen(allowed_prefix);
+
+        if (strncmp(req.socket_path, allowed_prefix, prefix_len) != 0 ||
+            (req.socket_path[prefix_len] != '/' && req.socket_path[prefix_len] != '\0')) {
+            resp.type = SOCKET_RESP_ERROR;
+            resp.error_code = EPERM;
+            snprintf(resp.error_msg, sizeof(resp.error_msg),
+                    "Socket path must be under %s", allowed_prefix);
+            break;
+        }
+
         /* Look up owner if specified */
         if (req.owner[0] != '\0') {
             const struct passwd *pw = getpwnam(req.owner);
@@ -287,12 +302,13 @@ static void handle_request(int worker_fd) {
             }
         }
 
-        /* Perform chown operation */
-        if (chown(req.socket_path, uid, gid) < 0) {
+        /* Perform chown operation using fchownat with AT_SYMLINK_NOFOLLOW
+         * to prevent following symlinks to arbitrary files */
+        if (fchownat(AT_FDCWD, req.socket_path, uid, gid, AT_SYMLINK_NOFOLLOW) < 0) {
             resp.type = SOCKET_RESP_ERROR;
             resp.error_code = errno;
             snprintf(resp.error_msg, sizeof(resp.error_msg),
-                    "chown failed: %s", strerror(errno));
+                    "fchownat failed: %s", strerror(errno));
         }
         break;
     }
