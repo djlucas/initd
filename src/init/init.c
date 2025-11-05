@@ -34,6 +34,7 @@
 /* Global state */
 static volatile sig_atomic_t shutdown_requested = 0;
 static volatile sig_atomic_t shutdown_type = 0; /* 0=poweroff, 1=reboot, 2=halt */
+static volatile sig_atomic_t shutdown_from_signal = 0;
 static pid_t supervisor_pid = 0;
 static char supervisor_path[MAX_PATH] = SUPERVISOR_PATH;
 static int supervisor_timeout = DEFAULT_TIMEOUT;
@@ -50,18 +51,21 @@ static void sigterm_handler(int sig) {
     (void)sig;
     shutdown_requested = 1;
     shutdown_type = 0; /* poweroff */
+    shutdown_from_signal = 1;
 }
 
 static void sigint_handler(int sig) {
     (void)sig;
     shutdown_requested = 1;
     shutdown_type = 1; /* reboot */
+    shutdown_from_signal = 1;
 }
 
 static void sigusr1_handler(int sig) {
     (void)sig;
     shutdown_requested = 1;
     shutdown_type = 2; /* halt */
+    shutdown_from_signal = 1;
 }
 
 /* Parse command line arguments */
@@ -233,6 +237,51 @@ static void kill_remaining_processes(void) {
     }
 }
 
+/* Run shutdown helper script (/sbin/poweroff, /sbin/reboot, /sbin/halt)
+ * Returns 0 on success, -1 on failure */
+static int run_shutdown_helper(int type) {
+    static const char *helpers[] = {
+        "/sbin/poweroff",
+        "/sbin/reboot",
+        "/sbin/halt"
+    };
+
+    if (type < 0 || type > 2) {
+        return -1;
+    }
+
+    const char *path = helpers[type];
+    if (access(path, X_OK) != 0) {
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        log_error("init", "failed to fork shutdown helper: %s", strerror(errno));
+        return -1;
+    }
+
+    if (pid == 0) {
+        /* Child: exec the shutdown helper */
+        execl(path, path, NULL);
+        _exit(127);
+    }
+
+    /* Parent: wait for helper to complete */
+    int status;
+    if (waitpid(pid, &status, 0) < 0) {
+        log_error("init", "failed to wait for shutdown helper: %s", strerror(errno));
+        return -1;
+    }
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return 0;
+    }
+
+    log_warn("init", "shutdown helper exited with status %d", WEXITSTATUS(status));
+    return -1;
+}
+
 /* Perform system shutdown */
 static void do_shutdown(void) {
     const char *shutdown_names[] = {"poweroff", "reboot", "halt"};
@@ -395,6 +444,17 @@ int main(int argc, char *argv[]) {
     while (1) {
         /* Check for shutdown */
         if (shutdown_requested) {
+            /* If shutdown was triggered by a signal, try to run the helper script first */
+            if (shutdown_from_signal) {
+                shutdown_from_signal = 0;
+                if (run_shutdown_helper(shutdown_type) == 0) {
+                    /* Helper handled shutdown successfully, clear the request */
+                    shutdown_requested = 0;
+                    continue;
+                }
+                log_warn("init", "shutdown helper failed; falling back to builtin shutdown");
+            }
+            /* Either no helper available, or helper failed - use builtin shutdown */
             do_shutdown();
             /* does not return */
         }

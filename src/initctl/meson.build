@@ -3,12 +3,12 @@ initctl = executable(
   'initctl.c',
   dependencies: [common_dep, privileged_ops_dep],
   install: true,
-  install_dir: get_option('bindir')
+  install_dir: get_option('sbindir')
 )
 
 # Create systemctl symlink for compatibility
 install_symlink(
   'systemctl',
   pointing_to: 'initctl',
-  install_dir: get_option('bindir')
+  install_dir: get_option('sbindir')
 )

@@ -112,8 +112,8 @@ if [ "$delay" -gt 0 ]; then
     sleep "$delay"
 fi
 
-if command -v initctl >/dev/null 2>&1; then
-    exec initctl "$action"
+if [ -x @SBINDIR@/initctl ]; then
+    exec @SBINDIR@/initctl "$action"
 fi
 
 # Legacy rc fallback (uncomment and adjust if you are not running initd-supervisor):

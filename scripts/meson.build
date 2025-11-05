@@ -21,6 +21,63 @@ journalctl_script = configure_file(
 
 install_data(
   journalctl_script,
-  install_dir: get_option('bindir'),
+  install_dir: get_option('sbindir'),
+  install_mode: 'rwxr-xr-x',
+)
+
+# Shutdown script and wrappers
+shutdown_script = configure_file(
+  input: 'shutdown',
+  output: 'shutdown',
+  configuration: configuration_data({
+    'SBINDIR': get_option('sbindir').startswith('/') ? get_option('sbindir') : get_option('prefix') / get_option('sbindir'),
+  }),
+)
+
+halt_script = configure_file(
+  input: 'halt',
+  output: 'halt',
+  configuration: configuration_data({
+    'SBINDIR': get_option('sbindir').startswith('/') ? get_option('sbindir') : get_option('prefix') / get_option('sbindir'),
+  }),
+)
+
+poweroff_script = configure_file(
+  input: 'poweroff',
+  output: 'poweroff',
+  configuration: configuration_data({
+    'SBINDIR': get_option('sbindir').startswith('/') ? get_option('sbindir') : get_option('prefix') / get_option('sbindir'),
+  }),
+)
+
+reboot_script = configure_file(
+  input: 'reboot',
+  output: 'reboot',
+  configuration: configuration_data({
+    'SBINDIR': get_option('sbindir').startswith('/') ? get_option('sbindir') : get_option('prefix') / get_option('sbindir'),
+  }),
+)
+
+install_data(
+  shutdown_script,
+  install_dir: get_option('sbindir'),
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
+  halt_script,
+  install_dir: get_option('sbindir'),
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
+  poweroff_script,
+  install_dir: get_option('sbindir'),
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
+  reboot_script,
+  install_dir: get_option('sbindir'),
   install_mode: 'rwxr-xr-x',
 )
