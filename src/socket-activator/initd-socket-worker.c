@@ -13,6 +13,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,9 +36,13 @@
 #include <stdbool.h>
 #include <pwd.h>
 #include <grp.h>
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#include <sys/ucred.h>  /* For getpeereid() on BSD/macOS */
+#endif
 #ifdef __linux__
 #include <sys/xattr.h>  /* For SMACK labels via fsetxattr */
 #include <linux/netlink.h>  /* For AF_NETLINK sockets */
+/* ucred struct for SO_PEERCRED is in sys/socket.h on Linux with _GNU_SOURCE */
 #endif
 #ifdef __has_include
 #  if __has_include(<mqueue.h>)
@@ -344,8 +349,9 @@ static int create_control_socket(void) {
         return -1;
     }
 
-    /* Set permissions - use fchmod to avoid race condition */
-    fchmod(fd, 0666);
+    /* Set permissions - use fchmod to avoid race condition
+     * 0660 restricts access to owner and group (typically root or initd user) */
+    fchmod(fd, 0660);
 
     log_debug("socket-worker", "Control socket created at %s", path);
     return fd;
@@ -1940,6 +1946,36 @@ static bool socket_command_is_read_only(enum control_command cmd) {
     }
 }
 
+/* Verify control socket client credentials
+ * Returns true if client is authorized (root or same uid), false otherwise */
+static bool is_control_client_authorized(int client_fd) {
+#if defined(__linux__)
+    struct ucred cred;
+    socklen_t len = sizeof(cred);
+    if (getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) == 0) {
+        if (cred.uid == 0 || cred.uid == getuid()) {
+            return true;
+        }
+        log_warn("socket-worker", "unauthorized control socket client (uid=%u); connection rejected",
+                 (unsigned int)cred.uid);
+        return false;
+    }
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    uid_t euid;
+    gid_t egid;
+    if (getpeereid(client_fd, &euid, &egid) == 0) {
+        if (euid == 0 || euid == getuid()) {
+            return true;
+        }
+        log_warn("socket-worker", "unauthorized control socket client (uid=%u); connection rejected",
+                 (unsigned int)euid);
+        return false;
+    }
+#endif
+    log_warn("socket-worker", "unable to verify control socket client credentials; permitting connection");
+    return true;
+}
+
 static void handle_control_command(int client_fd, bool read_only) {
     struct control_request req = {0};
     struct control_response resp = {0};
@@ -1947,6 +1983,21 @@ static void handle_control_command(int client_fd, bool read_only) {
     if (recv_control_request(client_fd, &req) < 0) {
         close(client_fd);
         return;
+    }
+
+    /* For write commands on the control socket, verify credentials */
+    if (!read_only && !socket_command_is_read_only(req.header.command)) {
+        if (!is_control_client_authorized(client_fd)) {
+            resp.header.length = sizeof(resp);
+            resp.header.command = req.header.command;
+            resp.code = RESP_PERMISSION_DENIED;
+            snprintf(resp.message, sizeof(resp.message),
+                     "Insufficient privileges for command %s",
+                     command_to_string(req.header.command));
+            send_control_response(client_fd, &resp);
+            close(client_fd);
+            return;
+        }
     }
 
     if (read_only && !socket_command_is_read_only(req.header.command)) {
