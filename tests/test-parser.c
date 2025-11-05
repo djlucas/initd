@@ -1465,6 +1465,69 @@ static void test_parse_socket_selinux_context_from_net(void) {
     PASS();
 }
 
+static void test_parse_socket_netlink_and_usb(void) {
+    TEST("socket ListenNetlink= and ListenUSBFunction= directives");
+
+    /* Test ListenNetlink */
+    const char *unit_content_netlink =
+        "[Unit]\n"
+        "Description=Socket with ListenNetlink\n"
+        "\n"
+        "[Socket]\n"
+        "ListenNetlink=kobject-uevent 1\n";
+
+    const char *path = create_temp_unit(unit_content_netlink, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_netlink != NULL);
+    assert(strcmp(unit.config.socket.listen_netlink, "kobject-uevent 1") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test ListenUSBFunction */
+    const char *unit_content_usb =
+        "[Unit]\n"
+        "Description=Socket with ListenUSBFunction\n"
+        "\n"
+        "[Socket]\n"
+        "ListenUSBFunction=/dev/ffs-test\n";
+
+    path = create_temp_unit(unit_content_usb, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_usb_function != NULL);
+    assert(strcmp(unit.config.socket.listen_usb_function, "/dev/ffs-test") == 0);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test defaults (both NULL) */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket without Netlink or USB\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.listen_netlink == NULL);
+    assert(unit.config.socket.listen_usb_function == NULL);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -1500,6 +1563,7 @@ int main(void) {
     test_parse_socket_max_connections();
     test_parse_socket_smack_directives();
     test_parse_socket_selinux_context_from_net();
+    test_parse_socket_netlink_and_usb();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

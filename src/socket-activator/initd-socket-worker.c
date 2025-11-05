@@ -37,6 +37,7 @@
 #include <grp.h>
 #ifdef __linux__
 #include <sys/xattr.h>  /* For SMACK labels via fsetxattr */
+#include <linux/netlink.h>  /* For AF_NETLINK sockets */
 #endif
 #ifdef __has_include
 #  if __has_include(<mqueue.h>)
@@ -1217,6 +1218,92 @@ static int create_listen_socket(struct socket_instance *sock) {
         log_info("socket-worker", "Listening on special file %s (%s)",
                  s->listen_special, s->writable ? "read-write" : "read-only");
         return fd;
+    }
+
+    /* Netlink socket (Linux-only) */
+    if (s->listen_netlink) {
+#ifdef __linux__
+        /* Parse netlink family and optional multicast group
+         * Format: "kobject-uevent" or "kobject-uevent 1" */
+        char family_str[64];
+        int multicast_group = 0;
+
+        sscanf(s->listen_netlink, "%63s %d", family_str, &multicast_group);
+
+        /* Map family name to protocol number */
+        int netlink_family = -1;
+        if (strcmp(family_str, "kobject-uevent") == 0) {
+            netlink_family = NETLINK_KOBJECT_UEVENT;
+        } else if (strcmp(family_str, "route") == 0) {
+            netlink_family = NETLINK_ROUTE;
+        } else if (strcmp(family_str, "audit") == 0) {
+            netlink_family = 16;  /* NETLINK_AUDIT */
+        } else {
+            log_error("socket-worker", "Unknown netlink family: %s", family_str);
+            return -1;
+        }
+
+        fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, netlink_family);
+        if (fd < 0) {
+            log_error("socket-worker", "netlink socket: %s", strerror(errno));
+            return -1;
+        }
+
+        /* Apply socket options */
+        apply_socket_options(fd, s, AF_NETLINK);
+
+        struct sockaddr_nl addr = {0};
+        addr.nl_family = AF_NETLINK;
+        addr.nl_pid = 0;  /* Kernel will assign PID */
+        addr.nl_groups = multicast_group;
+
+        if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            log_error("socket-worker", "netlink bind: %s", strerror(errno));
+            close(fd);
+            return -1;
+        }
+
+        sock->is_stream = false;
+        log_info("socket-worker", "Listening on netlink %s (group %d)",
+                 family_str, multicast_group);
+        return fd;
+#else
+        log_error("socket-worker", "ListenNetlink not supported (Linux-only feature)");
+        return -1;
+#endif
+    }
+
+    /* USB FunctionFS (Linux-only) */
+    if (s->listen_usb_function) {
+#ifdef __linux__
+        /* Validate absolute path */
+        if (s->listen_usb_function[0] != '/') {
+            log_error("socket-worker", "ListenUSBFunction must be absolute path: %s",
+                     s->listen_usb_function);
+            return -1;
+        }
+
+        /* Open the ep0 endpoint (control endpoint) */
+        char ep0_path[PATH_MAX];
+        snprintf(ep0_path, sizeof(ep0_path), "%s/ep0", s->listen_usb_function);
+
+        fd = open(ep0_path, O_RDWR | O_CLOEXEC);
+        if (fd < 0) {
+            log_error("socket-worker", "Failed to open USB FunctionFS ep0 %s: %s",
+                     ep0_path, strerror(errno));
+            return -1;
+        }
+
+        /* Note: The service using this socket should write USB descriptors
+         * and strings to this fd to activate the USB function */
+
+        sock->is_stream = false;  /* FunctionFS endpoints behave like character devices */
+        log_info("socket-worker", "Listening on USB FunctionFS %s", s->listen_usb_function);
+        return fd;
+#else
+        log_error("socket-worker", "ListenUSBFunction not supported (Linux-only feature)");
+        return -1;
+#endif
     }
 
     return -1;

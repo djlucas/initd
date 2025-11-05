@@ -940,6 +940,10 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->smack_label_ip_out = strdup(value);
     } else if (strcmp(key, "SELinuxContextFromNet") == 0) {
         socket->selinux_context_from_net = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
+    } else if (strcmp(key, "ListenNetlink") == 0) {
+        socket->listen_netlink = strdup(value);
+    } else if (strcmp(key, "ListenUSBFunction") == 0) {
+        socket->listen_usb_function = strdup(value);
     } else {
         return -1;
     }
@@ -1079,6 +1083,8 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.smack_label_ip_in = NULL;        /* Default: none */
     unit->config.socket.smack_label_ip_out = NULL;       /* Default: none */
     unit->config.socket.selinux_context_from_net = false; /* Default: disabled */
+    unit->config.socket.listen_netlink = NULL;           /* Default: none */
+    unit->config.socket.listen_usb_function = NULL;      /* Default: none */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);
@@ -1281,6 +1287,8 @@ void free_unit_file(struct unit_file *unit) {
         free(unit->config.socket.smack_label);
         free(unit->config.socket.smack_label_ip_in);
         free(unit->config.socket.smack_label_ip_out);
+        free(unit->config.socket.listen_netlink);
+        free(unit->config.socket.listen_usb_function);
     }
 
     /* Free [Install] arrays */

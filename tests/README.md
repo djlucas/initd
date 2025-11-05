@@ -7,7 +7,7 @@ Automated tests for the initd init system components.
 ## Running Tests
 
 ```bash
-# Build and run all tests (27 test suites, 268 individual tests; 5 marked privileged)
+# Build and run all tests (27 test suites, 269 individual tests; 5 marked privileged)
 ninja -C build
 ninja -C build test
 
@@ -112,6 +112,7 @@ Tests the unit file parser:
 - Socket MaxConnections= directive (custom value, default 64, unlimited)
 - Socket SmackLabel=, SmackLabelIPIn=, SmackLabelIPOut= (SMACK labels, all three together, defaults, individual)
 - Socket SELinuxContextFromNet= directive (enabled, disabled default, explicit false)
+- Socket ListenNetlink= and ListenUSBFunction= directives (netlink with group, USB path, defaults)
 
 ### test-control (10 tests)
 Tests the control protocol:

@@ -360,6 +360,10 @@ struct socket_section {
 
     /* SELinux context (Linux-only) */
     bool selinux_context_from_net; /* SELinuxContextFromNet= - SO_PASSSEC for SELinux context */
+
+    /* Advanced Linux socket types */
+    char *listen_netlink;       /* ListenNetlink= - AF_NETLINK socket (e.g., "kobject-uevent 1") */
+    char *listen_usb_function;  /* ListenUSBFunction= - FunctionFS path for USB gadgets */
 };
 
 /* [Install] section */

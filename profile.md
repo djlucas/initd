@@ -1615,6 +1615,98 @@ SELinuxContextFromNet=yes
 - In Accept=no mode, applies to single socket activation
 - Compatible with systemd's MLS/MCS security level handling
 
+#### ListenNetlink= (Linux-Only)
+
+**Purpose:** Create AF_NETLINK sockets for kernel-userspace communication
+
+**Implementation:**
+- Creates netlink socket with AF_NETLINK family
+- Supports multicast group subscription for broadcast messages
+- Uses SOCK_RAW socket type for raw netlink protocol
+
+**Platform Support:**
+- Linux only (AF_NETLINK is Linux-specific)
+- Available since Linux 2.2
+
+**Format:** `<family> [multicast_group]`
+- family: Netlink protocol family name (e.g., "kobject-uevent", "route", "audit")
+- multicast_group: Optional group number for multicast subscriptions
+
+**Supported Families:**
+- `kobject-uevent` - Kernel object uevents (NETLINK_KOBJECT_UEVENT=15)
+- `route` - Routing and link updates (NETLINK_ROUTE=0)
+- `audit` - Audit subsystem messages (NETLINK_AUDIT=16)
+
+**Usage:**
+```ini
+[Socket]
+ListenNetlink=kobject-uevent 1
+```
+
+**Behavior:**
+- Creates SOCK_RAW netlink socket
+- Binds to specified protocol family
+- Subscribes to multicast group if specified
+- Kernel assigns unique PID automatically
+- Service receives netlink messages via recvmsg()
+
+**Use Cases:**
+- udev replacement (kobject-uevent for device hotplug)
+- Network monitoring (route for interface/routing changes)
+- Audit log collection (audit messages from kernel)
+- Custom kernel module communication
+
+#### ListenUSBFunction= (Linux-Only)
+
+**Purpose:** Create USB gadget function endpoints via FunctionFS
+
+**Implementation:**
+- Opens FunctionFS ep0 (control endpoint) at specified path
+- FunctionFS must be already mounted at the path
+- Service writes USB descriptors to activate function
+
+**Platform Support:**
+- Linux only (FunctionFS/USB gadget framework)
+- Requires CONFIG_USB_FUNCTIONFS kernel option
+- Typically used on embedded systems with USB device controllers
+
+**Requirements:**
+- FunctionFS must be mounted (e.g., `mount -t functionfs <name> /dev/ffs-<name>`)
+- USB gadget must be configured via configfs
+- Service must provide USBFunctionDescriptors= and USBFunctionStrings=
+
+**Usage:**
+```ini
+[Socket]
+ListenUSBFunction=/dev/ffs-adb
+```
+
+**Behavior:**
+- Opens `/dev/ffs-adb/ep0` for reading and writing
+- Service writes function descriptors and strings to ep0
+- USB function becomes available when descriptors written
+- Service receives USB traffic when host connects
+- Enables lazy USB function activation
+
+**Architecture:**
+1. ConfigFS configures USB gadget composition
+2. FunctionFS provides userspace function implementation
+3. Socket activation enables on-demand daemon start
+4. Service writes descriptors making function ready
+5. Daemon started only when USB traffic arrives
+
+**Use Cases:**
+- Android ADB (Android Debug Bridge)
+- MTP (Media Transfer Protocol) servers
+- Custom USB gadget functions
+- Embedded device USB interfaces
+
+**Systemd Compatibility:**
+- Requires USBFunctionDescriptors= in service unit
+- Requires USBFunctionStrings= in service unit
+- Socket unit must point to mounted FunctionFS instance
+- Service handles descriptor writing to ep0
+
 ## Targets
 
 ### Standard Targets
@@ -2311,9 +2403,6 @@ Notes:
 [Timer]
 
 [Socket]
-  # Hard (Linux-only)
-  ListenNetlink=
-  ListenUSBFunction=
 
 [Install]
 
