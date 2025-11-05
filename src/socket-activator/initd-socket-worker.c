@@ -711,6 +711,19 @@ static int apply_socket_options(int fd, struct socket_section *s, int family) {
                      s->smack_label_ip_out, strerror(errno));
         }
     }
+
+    /* SELinuxContextFromNet= - SO_PASSSEC for SELinux context from peer */
+    if (s->selinux_context_from_net) {
+#if defined(__linux__) && defined(SO_PASSSEC)
+        int optval = 1;
+        ret = setsockopt(fd, SOL_SOCKET, SO_PASSSEC, &optval, sizeof(optval));
+        if (ret < 0) {
+            log_warn("socket-worker", "Failed to set SO_PASSSEC: %s", strerror(errno));
+        }
+#else
+        log_warn("socket-worker", "SO_PASSSEC not supported (Linux-only feature)");
+#endif
+    }
 #endif
 
     return 0;

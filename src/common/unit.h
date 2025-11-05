@@ -357,6 +357,9 @@ struct socket_section {
     char *smack_label;          /* SmackLabel= - SMACK label for socket itself */
     char *smack_label_ip_in;    /* SmackLabelIPIn= - SMACK label for incoming packets */
     char *smack_label_ip_out;   /* SmackLabelIPOut= - SMACK label for outgoing packets */
+
+    /* SELinux context (Linux-only) */
+    bool selinux_context_from_net; /* SELinuxContextFromNet= - SO_PASSSEC for SELinux context */
 };
 
 /* [Install] section */

@@ -938,6 +938,8 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
         socket->smack_label_ip_in = strdup(value);
     } else if (strcmp(key, "SmackLabelIPOut") == 0) {
         socket->smack_label_ip_out = strdup(value);
+    } else if (strcmp(key, "SELinuxContextFromNet") == 0) {
+        socket->selinux_context_from_net = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else {
         return -1;
     }
@@ -1076,6 +1078,7 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     unit->config.socket.smack_label = NULL;              /* Default: none */
     unit->config.socket.smack_label_ip_in = NULL;        /* Default: none */
     unit->config.socket.smack_label_ip_out = NULL;       /* Default: none */
+    unit->config.socket.selinux_context_from_net = false; /* Default: disabled */
 
     /* Determine type from extension */
     unit->type = get_unit_type(name);

@@ -1404,6 +1404,67 @@ static void test_parse_socket_smack_directives(void) {
     PASS();
 }
 
+static void test_parse_socket_selinux_context_from_net(void) {
+    TEST("socket SELinuxContextFromNet= directive");
+
+    /* Test enabled */
+    const char *unit_content =
+        "[Unit]\n"
+        "Description=Socket with SELinuxContextFromNet\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test.sock\n"
+        "SELinuxContextFromNet=yes\n";
+
+    const char *path = create_temp_unit(unit_content, ".socket");
+    assert(path != NULL);
+
+    struct unit_file unit;
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.selinux_context_from_net == true);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test disabled (default) */
+    const char *unit_content_default =
+        "[Unit]\n"
+        "Description=Socket without SELinuxContextFromNet\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test2.sock\n";
+
+    path = create_temp_unit(unit_content_default, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.type == UNIT_SOCKET);
+    assert(unit.config.socket.selinux_context_from_net == false);
+
+    free_unit_file(&unit);
+    unlink(path);
+
+    /* Test explicit false */
+    const char *unit_content_false =
+        "[Unit]\n"
+        "Description=Socket with SELinuxContextFromNet=no\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/test3.sock\n"
+        "SELinuxContextFromNet=no\n";
+
+    path = create_temp_unit(unit_content_false, ".socket");
+    assert(path != NULL);
+
+    assert(parse_unit_file(path, &unit) == 0);
+    assert(unit.config.socket.selinux_context_from_net == false);
+
+    free_unit_file(&unit);
+    unlink(path);
+    PASS();
+}
+
 int main(void) {
     printf("=== Unit File Parser Tests ===\n\n");
 
@@ -1438,6 +1499,7 @@ int main(void) {
     test_parse_socket_sequential_packet();
     test_parse_socket_max_connections();
     test_parse_socket_smack_directives();
+    test_parse_socket_selinux_context_from_net();
 
     printf("\n=== All tests passed! ===\n");
     return 0;

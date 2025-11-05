@@ -1565,6 +1565,56 @@ SmackLabelIPOut=@
 - SMACK-aware firewall rules
 - Security domain network isolation
 
+#### SELinuxContextFromNet= (Linux-Only)
+
+**Purpose:** Enable receiving SELinux security context from network peer
+
+**Implementation:**
+- Sets SO_PASSSEC socket option on socket file descriptor
+- Enables receiving SCM_SECURITY ancillary messages
+- Allows service to obtain SELinux context of connecting process
+
+**Platform Support:**
+- Linux only (SO_PASSSEC socket option)
+- Requires SELinux enabled in kernel (CONFIG_SECURITY_SELINUX)
+- Supported for Unix domain sockets since Linux 2.6.18
+- Supported for Unix stream sockets since Linux 4.2
+
+**Default:** false (disabled)
+
+**Usage:**
+```ini
+[Socket]
+ListenStream=/run/dbus.sock
+SELinuxContextFromNet=yes
+```
+
+**Behavior:**
+- Service receives SELinux security context in SCM_SECURITY ancillary data
+- Context is null-terminated string (allocate NAME_MAX bytes)
+- Obtained via recvmsg() with cmsg_type == SCM_SECURITY
+- Used primarily with MLS/MCS SELinux policies
+- Only security level used from peer; other parts from target binary or SELinuxContext=
+
+**Security Benefits:**
+- Service can inspect peer's SELinux context for access control
+- Enables MLS/MCS security level propagation
+- Allows fine-grained SELinux policy enforcement at application level
+- Complements mandatory access control policies
+
+**Use Cases:**
+- D-Bus system bus (authenticate based on SELinux context)
+- Multi-level security (MLS) systems with netlabel
+- Container runtimes enforcing SELinux boundaries
+- Security-sensitive IPC requiring SELinux awareness
+- Services running in Accept=yes mode with per-connection contexts
+
+**Systemd Compatibility:**
+- Works with both Accept=yes and Accept=no modes
+- In Accept=yes mode, each connection gets unique context
+- In Accept=no mode, applies to single socket activation
+- Compatible with systemd's MLS/MCS security level handling
+
 ## Targets
 
 ### Standard Targets
@@ -2264,7 +2314,6 @@ Notes:
   # Hard (Linux-only)
   ListenNetlink=
   ListenUSBFunction=
-  SELinuxContextFromNet=
 
 [Install]
 
