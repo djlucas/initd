@@ -1,7 +1,7 @@
 [Unit]
 Description=Apply Kernel Parameters
 DefaultDependencies=no
-After=mountfs.service
+After=udev-retry.service
 Before=sysinit.target
 ConditionPathExists=@SYSCONFDIR@/sysctl.conf
 

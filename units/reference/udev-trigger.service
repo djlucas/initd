@@ -2,7 +2,7 @@
 Description=udev Coldplug Trigger
 DefaultDependencies=no
 After=udevd.service
-Before=sysinit.target
+Before=udev-settle.service sysinit.target
 
 [Service]
 Type=oneshot

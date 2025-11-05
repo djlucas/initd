@@ -1,8 +1,8 @@
 [Unit]
 Description=Mount All Filesystems
 DefaultDependencies=no
-After=remount-root.service udev-settle.service shutdown.target swap.service
-Before=sysinit.target local-fs.target
+After=checkfs.service remount-root.service udev-settle.service shutdown.target swap.service
+Before=createfiles.service sysinit.target local-fs.target
 Provides=$local_fs
 
 [Service]

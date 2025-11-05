@@ -2,7 +2,7 @@
 Description=Mount Virtual Filesystems
 DefaultDependencies=no
 Conflicts=shutdown.target
-Before=sysinit.target shutdown.target
+Before=modules-load.service sysinit.target shutdown.target
 
 [Service]
 Type=oneshot

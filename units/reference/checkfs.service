@@ -2,7 +2,7 @@
 Description=Check Filesystems
 DefaultDependencies=no
 After=swap.service
-Before=sysinit.target
+Before=mountfs.service sysinit.target
 
 [Service]
 Type=oneshot

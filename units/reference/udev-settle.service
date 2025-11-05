@@ -2,7 +2,7 @@
 Description=Wait for udev To Complete Device Initialization
 DefaultDependencies=no
 After=udev-trigger.service
-Before=sysinit.target
+Before=swap.service sysinit.target
 
 [Service]
 Type=oneshot

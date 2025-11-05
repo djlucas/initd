@@ -1,8 +1,8 @@
 [Unit]
 Description=udev Daemon
 DefaultDependencies=no
-After=mountvirtfs.service
-Before=sysinit.target
+After=modules-load.service
+Before=udev-trigger.service sysinit.target
 Provides=udev
 
 [Service]

@@ -1,7 +1,7 @@
 [Unit]
 Description=Retry Failed udev Events
 DefaultDependencies=no
-After=mountfs.service
+After=createfiles.service
 Before=sysinit.target
 ConditionPathExists=@INITD_SYSCONFIG_DIR@/udev_retry.conf
 
