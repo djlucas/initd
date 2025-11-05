@@ -1,0 +1,126 @@
+#!/bin/sh
+# shutdown: compatible front-end that calls initctl under initd.
+# Supports the usual time specs (now, +M, HH:MM) before invoking initctl.
+
+usage() {
+    echo ""
+    echo "Usage: ${0} [OPTIONS] [TIME] [MESSAGE]"
+    echo "  -h, --halt, --poweroff   Request poweroff (default)"
+    echo "  -H                       Request halt (no poweroff)"
+    echo "  -r, --reboot             Request reboot"
+    echo "  -P                       Alias for poweroff"
+    echo "  -c                       Cancel is not supported (manual only)"
+    echo "  -?                       Show this help"
+    echo "TIME formats: 'now', '+5' (minutes), '23:15' (24h clock)"
+    exit "${1:-0}"
+}
+
+action=poweroff
+time_spec=now
+reason=
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--halt|--poweroff|-P) action=poweroff ;;
+        -H) action=halt ;;
+        -r|--reboot) action=reboot ;;
+        -c|--cancel)
+            echo "shutdown: cancellation not available (send SIGTERM/SIGINT to PID 1 manually)" >&2
+            exit 1
+            ;;
+        -\?|--help)
+            usage 0
+            ;;
+        now)
+            time_spec=now
+            ;;
+        +[0-9]*)
+            time_spec="$1"
+            ;;
+        [0-9][0-9]:[0-9][0-9])
+            time_spec="$1"
+            ;;
+        --)
+            shift
+            reason="$*"
+            break
+            ;;
+        -*)
+            echo "Invalid argument: ${1}"
+            usage 0
+            ;;
+        *)
+            if [ -z "$reason" ] && [ "$time_spec" = "now" ]; then
+                # first bare argument may be the time spec
+                if [ "${1#*[!:0-9]}" = "" ]; then
+                    time_spec="$1"
+                else
+                    reason="$1"
+                fi
+            else
+                reason="$reason $1"
+            fi
+            ;;
+    esac
+    shift
+done
+
+reason=${reason# }  # trim leading space
+
+compute_delay() {
+    case "$time_spec" in
+        now) echo 0 ;;
+        +[0-9]*)
+            minutes=${time_spec#+}
+            echo $((minutes * 60))
+            ;;
+        [0-9][0-9]:[0-9][0-9])
+            if command -v date >/dev/null 2>&1; then
+                target=$(date -d "$time_spec" +%s 2>/dev/null)
+                if [ -z "$target" ]; then
+                    echo "shutdown: invalid time '$time_spec'" >&2
+                    exit 1
+                fi
+                now=$(date +%s)
+                delay=$((target - now))
+                if [ "$delay" -lt 0 ]; then
+                    delay=$((delay + 24 * 3600))
+                fi
+                echo "$delay"
+            else
+                echo "shutdown: 'date' command required for HH:MM format" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "shutdown: unrecognised time '$time_spec'" >&2
+            exit 1
+            ;;
+    esac
+}
+
+delay=$(compute_delay)
+
+if [ "$delay" -gt 0 ]; then
+    msg="System will ${action} in $((delay / 60)) minute(s)"
+    [ -n "$reason" ] && msg="$msg: $reason"
+    if command -v wall >/dev/null 2>&1; then
+        printf "%s\n" "$msg" | wall
+    else
+        echo "$msg"
+    fi
+    sleep "$delay"
+fi
+
+if command -v initctl >/dev/null 2>&1; then
+    exec initctl "$action"
+fi
+
+# Legacy rc fallback (uncomment and adjust if you are not running initd-supervisor):
+# case "$action" in
+#   reboot) /etc/rc.d/init.d/rc 6 ;;
+#   halt)   /etc/rc.d/init.d/rc 0 ;;  # adjust if you have a dedicated halt
+#   *)      /etc/rc.d/init.d/rc 0 ;;
+# esac
+# kill -TERM 1
+
