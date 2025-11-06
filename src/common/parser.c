@@ -1318,87 +1318,93 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     name = name ? name + 1 : path;
     strncpy(unit->name, name, sizeof(unit->name) - 1);
 
-    /* Set defaults for new fields */
-    unit->config.service.kill_mode = KILL_PROCESS;  /* Default: only kill main process */
-    unit->config.service.limit_nofile = -1;         /* Default: not set (inherit system default) */
-    unit->config.service.limit_cpu = -1;
-    unit->config.service.limit_fsize = -1;
-    unit->config.service.limit_data = -1;
-    unit->config.service.limit_stack = -1;
-    unit->config.service.limit_core = -1;
-    unit->config.service.limit_rss = -1;
-    unit->config.service.limit_as = -1;
-    unit->config.service.limit_nproc = -1;
-    unit->config.service.limit_memlock = -1;
-    unit->config.service.limit_locks = -1;
-    unit->config.service.limit_sigpending = -1;
-    unit->config.service.limit_msgqueue = -1;
-    unit->config.service.limit_nice = -1;
-    unit->config.service.limit_rtprio = -1;
-    unit->config.service.limit_rttime = -1;
-    unit->config.service.private_tmp = false;        /* Default: no private /tmp */
-    unit->config.service.runtime_max_sec = 0;        /* Default: unlimited */
-    unit->unit.default_dependencies = true;          /* Default: implicit dependencies enabled */
-    unit->config.service.restart_max_delay_sec = 0;  /* Default: not set (no exponential backoff) */
-    unit->config.service.restrict_suid_sgid = false; /* Default: allow suid/sgid */
-    unit->config.service.memory_limit = -1;          /* Default: not set */
-    unit->config.service.timeout_abort_sec = 0;      /* Default: use TimeoutStopSec */
-    unit->config.service.timeout_start_failure_mode = 0;  /* Default: terminate */
-    unit->config.service.protect_system = 0;         /* Default: no protection */
-    unit->config.service.protect_home = 0;           /* Default: no protection */
-    unit->config.service.private_devices = false;    /* Default: use host /dev */
-    unit->config.service.protect_kernel_tunables = false; /* Default: writable /proc/sys, /sys */
-    unit->config.service.protect_control_groups = false;  /* Default: writable /sys/fs/cgroup */
-    unit->config.service.mount_flags = 2;            /* Default: private (most restrictive) */
-    unit->config.service.dynamic_user = false;       /* Default: use configured User=/Group= */
-    unit->config.service.device_allow_count = 0;     /* Default: no device whitelist */
-    unit->config.service.log_level_max = -1;         /* Default: not set (no filtering) */
-    unit->config.service.capability_bounding_set_count = 0;  /* Default: no capability restrictions */
-    unit->config.service.ambient_capabilities_count = 0;     /* Default: no ambient capabilities */
-
-    /* Timer defaults */
-    unit->config.timer.accuracy_sec = 60;  /* Default: 1 minute (systemd default) */
-    unit->config.timer.remain_after_elapse = true;  /* Default: true (systemd default) */
-
-    /* Socket defaults */
-    unit->config.socket.socket_mode = 0666;        /* Default: rw-rw-rw- */
-    unit->config.socket.directory_mode = 0755;     /* Default: rwxr-xr-x */
-    unit->config.socket.backlog = SOMAXCONN;       /* Default: system maximum */
-    unit->config.socket.send_buffer = -1;          /* Default: not set */
-    unit->config.socket.receive_buffer = -1;       /* Default: not set */
-    unit->config.socket.ip_tos = -1;               /* Default: not set */
-    unit->config.socket.ip_ttl = -1;               /* Default: not set */
-    unit->config.socket.keep_alive_time = -1;      /* Default: not set */
-    unit->config.socket.keep_alive_interval = -1;  /* Default: not set */
-    unit->config.socket.keep_alive_count = -1;     /* Default: not set */
-    unit->config.socket.trigger_limit_interval_sec = 2;  /* Default: 2 seconds (systemd default) */
-    unit->config.socket.trigger_limit_burst = 2500;      /* Default: 2500 (systemd default) */
-    unit->config.socket.file_descriptor_name = NULL;     /* Default: unit name or "connection" */
-    unit->config.socket.listen_fifo = NULL;              /* Default: none */
-    unit->config.socket.listen_message_queue = NULL;     /* Default: none */
-    unit->config.socket.message_queue_max_messages = -1; /* Default: not set */
-    unit->config.socket.message_queue_message_size = -1; /* Default: not set */
-    unit->config.socket.pipe_size = -1;                  /* Default: not set */
-    unit->config.socket.listen_special = NULL;           /* Default: none */
-    unit->config.socket.writable = false;                /* Default: read-only */
-    unit->config.socket.mark = -1;                       /* Default: not set */
-    unit->config.socket.pass_credentials = false;        /* Default: disabled */
-    unit->config.socket.pass_security = false;           /* Default: disabled */
-    unit->config.socket.bind_ipv6_only = NULL;           /* Default: "default" (system default) */
-    unit->config.socket.listen_sequential_packet = NULL; /* Default: none */
-    unit->config.socket.max_connections = 64;            /* Default: 64 (systemd default) */
-    unit->config.socket.no_delay = false;                /* Default: disabled (Nagle enabled) */
-    unit->config.socket.defer_accept_sec = -1;           /* Default: not set */
-    unit->config.socket.priority = -1;                   /* Default: not set */
-    unit->config.socket.smack_label = NULL;              /* Default: none */
-    unit->config.socket.smack_label_ip_in = NULL;        /* Default: none */
-    unit->config.socket.smack_label_ip_out = NULL;       /* Default: none */
-    unit->config.socket.selinux_context_from_net = false; /* Default: disabled */
-    unit->config.socket.listen_netlink = NULL;           /* Default: none */
-    unit->config.socket.listen_usb_function = NULL;      /* Default: none */
-
     /* Determine type from extension */
     unit->type = get_unit_type(name);
+
+    /* Set defaults for the selected unit type */
+    switch (unit->type) {
+    case UNIT_SERVICE:
+        unit->config.service.kill_mode = KILL_PROCESS;  /* Default: only kill main process */
+        unit->config.service.limit_nofile = -1;         /* Default: not set (inherit system default) */
+        unit->config.service.limit_cpu = -1;
+        unit->config.service.limit_fsize = -1;
+        unit->config.service.limit_data = -1;
+        unit->config.service.limit_stack = -1;
+        unit->config.service.limit_core = -1;
+        unit->config.service.limit_rss = -1;
+        unit->config.service.limit_as = -1;
+        unit->config.service.limit_nproc = -1;
+        unit->config.service.limit_memlock = -1;
+        unit->config.service.limit_locks = -1;
+        unit->config.service.limit_sigpending = -1;
+        unit->config.service.limit_msgqueue = -1;
+        unit->config.service.limit_nice = -1;
+        unit->config.service.limit_rtprio = -1;
+        unit->config.service.limit_rttime = -1;
+        unit->config.service.private_tmp = false;        /* Default: no private /tmp */
+        unit->config.service.runtime_max_sec = 0;        /* Default: unlimited */
+        unit->unit.default_dependencies = true;          /* Default: implicit dependencies enabled */
+        unit->config.service.restart_max_delay_sec = 0;  /* Default: not set (no exponential backoff) */
+        unit->config.service.restrict_suid_sgid = false; /* Default: allow suid/sgid */
+        unit->config.service.memory_limit = -1;          /* Default: not set */
+        unit->config.service.timeout_abort_sec = 0;      /* Default: use TimeoutStopSec */
+        unit->config.service.timeout_start_failure_mode = 0;  /* Default: terminate */
+        unit->config.service.protect_system = 0;         /* Default: no protection */
+        unit->config.service.protect_home = 0;           /* Default: no protection */
+        unit->config.service.private_devices = false;    /* Default: use host /dev */
+        unit->config.service.protect_kernel_tunables = false; /* Default: writable /proc/sys, /sys */
+        unit->config.service.protect_control_groups = false;  /* Default: writable /sys/fs/cgroup */
+        unit->config.service.mount_flags = 2;            /* Default: private (most restrictive) */
+        unit->config.service.dynamic_user = false;       /* Default: use configured User=/Group= */
+        unit->config.service.device_allow_count = 0;     /* Default: no device whitelist */
+        unit->config.service.log_level_max = -1;         /* Default: not set (no filtering) */
+        unit->config.service.capability_bounding_set_count = 0;  /* Default: no capability restrictions */
+        unit->config.service.ambient_capabilities_count = 0;     /* Default: no ambient capabilities */
+        break;
+    case UNIT_TIMER:
+        unit->config.timer.accuracy_sec = 60;  /* Default: 1 minute (systemd default) */
+        unit->config.timer.remain_after_elapse = true;  /* Default: true (systemd default) */
+        break;
+    case UNIT_SOCKET:
+        unit->config.socket.socket_mode = 0666;        /* Default: rw-rw-rw- */
+        unit->config.socket.directory_mode = 0755;     /* Default: rwxr-xr-x */
+        unit->config.socket.backlog = SOMAXCONN;       /* Default: system maximum */
+        unit->config.socket.send_buffer = -1;          /* Default: not set */
+        unit->config.socket.receive_buffer = -1;       /* Default: not set */
+        unit->config.socket.ip_tos = -1;               /* Default: not set */
+        unit->config.socket.ip_ttl = -1;               /* Default: not set */
+        unit->config.socket.keep_alive_time = -1;      /* Default: not set */
+        unit->config.socket.keep_alive_interval = -1;  /* Default: not set */
+        unit->config.socket.keep_alive_count = -1;     /* Default: not set */
+        unit->config.socket.trigger_limit_interval_sec = 2;  /* Default: 2 seconds (systemd default) */
+        unit->config.socket.trigger_limit_burst = 2500;      /* Default: 2500 (systemd default) */
+        unit->config.socket.file_descriptor_name = NULL;     /* Default: unit name or "connection" */
+        unit->config.socket.listen_fifo = NULL;              /* Default: none */
+        unit->config.socket.listen_message_queue = NULL;     /* Default: none */
+        unit->config.socket.message_queue_max_messages = -1; /* Default: not set */
+        unit->config.socket.message_queue_message_size = -1; /* Default: not set */
+        unit->config.socket.pipe_size = -1;                  /* Default: not set */
+        unit->config.socket.listen_special = NULL;           /* Default: none */
+        unit->config.socket.writable = false;                /* Default: read-only */
+        unit->config.socket.mark = -1;                       /* Default: not set */
+        unit->config.socket.pass_credentials = false;        /* Default: disabled */
+        unit->config.socket.pass_security = false;           /* Default: disabled */
+        unit->config.socket.bind_ipv6_only = NULL;           /* Default: "default" (system default) */
+        unit->config.socket.listen_sequential_packet = NULL; /* Default: none */
+        unit->config.socket.max_connections = 64;            /* Default: 64 (systemd default) */
+        unit->config.socket.no_delay = false;                /* Default: disabled (Nagle enabled) */
+        unit->config.socket.defer_accept_sec = -1;           /* Default: not set */
+        unit->config.socket.priority = -1;                   /* Default: not set */
+        unit->config.socket.smack_label = NULL;              /* Default: none */
+        unit->config.socket.smack_label_ip_in = NULL;        /* Default: none */
+        unit->config.socket.smack_label_ip_out = NULL;       /* Default: none */
+        unit->config.socket.selinux_context_from_net = false; /* Default: disabled */
+        unit->config.socket.listen_netlink = NULL;           /* Default: none */
+        unit->config.socket.listen_usb_function = NULL;      /* Default: none */
+        break;
+    default:
+        break;
+    }
 
     /* Parse file */
     while (fgets(line, sizeof(line), f)) {
@@ -1483,6 +1489,20 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
             }
         }
     }
+
+#ifdef UNIT_TEST
+    if (unit->config.service.group[0] != '\0') {
+        fprintf(stderr,
+                "DBG parse group raw='%s' hex=%02X %02X %02X %02X\n",
+                unit->config.service.group,
+                (unsigned char)unit->config.service.group[0],
+                (unsigned char)unit->config.service.group[1],
+                (unsigned char)unit->config.service.group[2],
+                (unsigned char)unit->config.service.group[3]);
+    } else {
+        fprintf(stderr, "DBG parse group empty\n");
+    }
+#endif
 
     fclose(f);
     return 0;
