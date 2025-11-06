@@ -1295,14 +1295,18 @@ int parse_unit_file(const char *path, struct unit_file *unit) {
     char line[MAX_LINE];
     enum parse_section current_section = SECTION_NONE;
 
-    f = fopen(path, "r");
-    if (!f) {
+    /* SECURITY: Open with O_NOFOLLOW to prevent TOCTOU symlink swap attacks
+     * After validate_path_in_directory() checks the path, an attacker could
+     * swap in a symlink before we open, escaping the permitted directory */
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) {
         return -1;
     }
 
-    int fd = fileno(f);
-    if (fd >= 0) {
-        (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+    f = fdopen(fd, "r");
+    if (!f) {
+        close(fd);
+        return -1;
     }
 
     /* Initialize unit */
