@@ -91,7 +91,23 @@ static long parse_limit_value(const char *value) {
     if (strcmp(value, "infinity") == 0) {
         return 0; /* 0 = unlimited */
     }
-    return atol(value);
+
+    char *end = NULL;
+    errno = 0;
+    long val = strtol(value, &end, 10);
+
+    /* Error checking */
+    if (errno != 0 || end == value || *end != '\0') {
+        fprintf(stderr, "parser: invalid limit value: %s\n", value);
+        return -1;
+    }
+
+    if (val < 0) {
+        fprintf(stderr, "parser: limit value cannot be negative: %s\n", value);
+        return -1;
+    }
+
+    return val;
 }
 
 /* Parse size value (handles K, M, G suffixes) */
@@ -149,6 +165,31 @@ static int parse_size(const char *value) {
     }
 
     return (int)size;
+}
+
+/* SECURITY: Safe integer parsing with validation
+ * Replaces unsafe atoi/atol that silently return 0 on invalid input */
+static int parse_positive_int(const char *str, int *out, int min, int max) {
+    if (!str || !out) {
+        return -1;
+    }
+
+    char *end = NULL;
+    errno = 0;
+    long val = strtol(str, &end, 10);
+
+    /* Check for parsing errors */
+    if (errno != 0 || end == str || *end != '\0') {
+        return -1;
+    }
+
+    /* Check range */
+    if (val < min || val > max) {
+        return -1;
+    }
+
+    *out = (int)val;
+    return 0;
 }
 
 /* Current section being parsed */
@@ -299,11 +340,23 @@ static int parse_unit_key(struct unit_section *unit, const char *key, char *valu
     } else if (strcmp(key, "DefaultDependencies") == 0) {
         unit->default_dependencies = parse_boolean(value);
     } else if (strcmp(key, "StartLimitIntervalSec") == 0) {
-        unit->start_limit_interval_sec = atoi(value);
-        unit->start_limit_interval_set = true;
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            unit->start_limit_interval_sec = val;
+            unit->start_limit_interval_set = true;
+        } else {
+            fprintf(stderr, "parser: invalid StartLimitIntervalSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "StartLimitBurst") == 0) {
-        unit->start_limit_burst = atoi(value);
-        unit->start_limit_burst_set = true;
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            unit->start_limit_burst = val;
+            unit->start_limit_burst_set = true;
+        } else {
+            fprintf(stderr, "parser: invalid StartLimitBurst value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "StartLimitAction") == 0) {
         if (strcasecmp(value, "reboot") == 0) {
             unit->start_limit_action = START_LIMIT_ACTION_REBOOT;
@@ -510,13 +563,37 @@ static int parse_service_key(struct service_section *service, const char *key, c
         else if (strcmp(value, "always") == 0) service->restart = RESTART_ALWAYS;
         else if (strcmp(value, "on-failure") == 0) service->restart = RESTART_ON_FAILURE;
     } else if (strcmp(key, "RestartSec") == 0) {
-        service->restart_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            service->restart_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid RestartSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "TimeoutStartSec") == 0) {
-        service->timeout_start_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            service->timeout_start_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid TimeoutStartSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "TimeoutStopSec") == 0) {
-        service->timeout_stop_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            service->timeout_stop_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid TimeoutStopSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "RuntimeMaxSec") == 0) {
-        service->runtime_max_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            service->runtime_max_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid RuntimeMaxSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "PrivateTmp") == 0) {
         if (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "1") == 0) {
             service->private_tmp = true;
@@ -539,7 +616,13 @@ static int parse_service_key(struct service_section *service, const char *key, c
         if (strcmp(value, "infinity") == 0) {
             service->limit_nofile = 0; /* 0 = unlimited */
         } else {
-            service->limit_nofile = atoi(value);
+            int val;
+            if (parse_positive_int(value, &val, 1, INT_MAX) == 0) {
+                service->limit_nofile = val;
+            } else {
+                fprintf(stderr, "parser: invalid LimitNOFILE value: %s\n", value);
+                return -1;
+            }
         }
     } else if (strcmp(key, "LimitCPU") == 0) {
         service->limit_cpu = parse_limit_value(value);
@@ -706,11 +789,12 @@ static int parse_service_key(struct service_section *service, const char *key, c
         else if (strcmp(value, "debug") == 0) service->log_level_max = LOG_DEBUG;
         else {
             /* Try parsing as numeric value (0-7) */
-            int level = atoi(value);
-            if (level >= 0 && level <= 7) {
+            int level;
+            if (parse_positive_int(value, &level, 0, 7) == 0) {
                 service->log_level_max = level;
             } else {
-                service->log_level_max = LOG_DEBUG; /* Default: allow all */
+                fprintf(stderr, "parser: invalid LogLevelMax value: %s (must be 0-7)\n", value);
+                return -1;
             }
         }
     } else if (strcmp(key, "UMask") == 0) {
@@ -729,13 +813,25 @@ static int parse_service_key(struct service_section *service, const char *key, c
         strncpy(service->root_image, value, sizeof(service->root_image) - 1);
         service->root_image[sizeof(service->root_image) - 1] = '\0';
     } else if (strcmp(key, "RestartMaxDelaySec") == 0) {
-        service->restart_max_delay_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            service->restart_max_delay_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid RestartMaxDelaySec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "RestrictSUIDSGID") == 0) {
         service->restrict_suid_sgid = parse_boolean(value);
     } else if (strcmp(key, "MemoryLimit") == 0) {
         service->memory_limit = parse_limit_value(value);
     } else if (strcmp(key, "TimeoutAbortSec") == 0) {
-        service->timeout_abort_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            service->timeout_abort_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid TimeoutAbortSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "TimeoutStartFailureMode") == 0) {
         if (strcmp(value, "terminate") == 0) {
             service->timeout_start_failure_mode = 0;
@@ -853,19 +949,55 @@ static int parse_timer_key(struct timer_section *timer, const char *key, const c
             timer->on_calendar[timer->on_calendar_count++] = strdup(value);
         }
     } else if (strcmp(key, "OnBootSec") == 0) {
-        timer->on_boot_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            timer->on_boot_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid OnBootSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "OnStartupSec") == 0) {
-        timer->on_startup_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            timer->on_startup_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid OnStartupSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "OnUnitActiveSec") == 0) {
-        timer->on_unit_active_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            timer->on_unit_active_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid OnUnitActiveSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "OnUnitInactiveSec") == 0) {
-        timer->on_unit_inactive_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            timer->on_unit_inactive_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid OnUnitInactiveSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "Persistent") == 0) {
         timer->persistent = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "RandomizedDelaySec") == 0) {
-        timer->randomized_delay_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            timer->randomized_delay_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid RandomizedDelaySec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "AccuracySec") == 0) {
-        timer->accuracy_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            timer->accuracy_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid AccuracySec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "Unit") == 0) {
         timer->unit = strdup(value);
     } else if (strcmp(key, "FixedRandomDelay") == 0) {
@@ -891,7 +1023,13 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
     } else if (strcmp(key, "ListenDatagram") == 0) {
         socket->listen_datagram = strdup(value);
     } else if (strcmp(key, "IdleTimeout") == 0) {
-        socket->idle_timeout = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->idle_timeout = val;
+        } else {
+            fprintf(stderr, "parser: invalid IdleTimeout value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "Accept") == 0) {
         socket->accept = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "1") == 0);
     } else if (strcmp(key, "SocketMode") == 0) {
@@ -899,21 +1037,51 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
     } else if (strcmp(key, "DirectoryMode") == 0) {
         socket->directory_mode = (mode_t)strtol(value, NULL, 8);  /* Octal */
     } else if (strcmp(key, "Backlog") == 0) {
-        socket->backlog = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->backlog = val;
+        } else {
+            fprintf(stderr, "parser: invalid Backlog value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "Service") == 0) {
         socket->service = strdup(value);
     } else if (strcmp(key, "KeepAlive") == 0) {
         socket->keep_alive = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "SendBuffer") == 0) {
-        socket->send_buffer = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->send_buffer = val;
+        } else {
+            fprintf(stderr, "parser: invalid SendBuffer value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "ReceiveBuffer") == 0) {
-        socket->receive_buffer = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->receive_buffer = val;
+        } else {
+            fprintf(stderr, "parser: invalid ReceiveBuffer value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "Broadcast") == 0) {
         socket->broadcast = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "IPTOS") == 0) {
-        socket->ip_tos = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->ip_tos = val;
+        } else {
+            fprintf(stderr, "parser: invalid IPTOS value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "IPTTL") == 0) {
-        socket->ip_ttl = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->ip_ttl = val;
+        } else {
+            fprintf(stderr, "parser: invalid IPTTL value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "RemoveOnStop") == 0) {
         socket->remove_on_stop = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "Symlinks") == 0) {
@@ -923,11 +1091,29 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
     } else if (strcmp(key, "SocketGroup") == 0) {
         strncpy(socket->socket_group, value, sizeof(socket->socket_group) - 1);
     } else if (strcmp(key, "KeepAliveTimeSec") == 0) {
-        socket->keep_alive_time = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->keep_alive_time = val;
+        } else {
+            fprintf(stderr, "parser: invalid KeepAliveTimeSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "KeepAliveIntervalSec") == 0) {
-        socket->keep_alive_interval = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->keep_alive_interval = val;
+        } else {
+            fprintf(stderr, "parser: invalid KeepAliveIntervalSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "KeepAliveProbes") == 0) {
-        socket->keep_alive_count = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->keep_alive_count = val;
+        } else {
+            fprintf(stderr, "parser: invalid KeepAliveProbes value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "ReusePort") == 0) {
         socket->reuse_port = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "FreeBind") == 0) {
@@ -943,9 +1129,21 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
     } else if (strcmp(key, "ExecStopPost") == 0) {
         socket->exec_stop_post = strdup(value);
     } else if (strcmp(key, "TriggerLimitIntervalSec") == 0) {
-        socket->trigger_limit_interval_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->trigger_limit_interval_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid TriggerLimitIntervalSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "TriggerLimitBurst") == 0) {
-        socket->trigger_limit_burst = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->trigger_limit_burst = val;
+        } else {
+            fprintf(stderr, "parser: invalid TriggerLimitBurst value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "FileDescriptorName") == 0) {
         socket->file_descriptor_name = strdup(value);
     } else if (strcmp(key, "ListenFIFO") == 0) {
@@ -953,9 +1151,21 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
     } else if (strcmp(key, "ListenMessageQueue") == 0) {
         socket->listen_message_queue = strdup(value);
     } else if (strcmp(key, "MessageQueueMaxMessages") == 0) {
-        socket->message_queue_max_messages = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->message_queue_max_messages = val;
+        } else {
+            fprintf(stderr, "parser: invalid MessageQueueMaxMessages value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "MessageQueueMessageSize") == 0) {
-        socket->message_queue_message_size = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->message_queue_message_size = val;
+        } else {
+            fprintf(stderr, "parser: invalid MessageQueueMessageSize value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "PipeSize") == 0) {
         socket->pipe_size = parse_size(value);
     } else if (strcmp(key, "ListenSpecial") == 0) {
@@ -963,7 +1173,13 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
     } else if (strcmp(key, "Writable") == 0) {
         socket->writable = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "Mark") == 0) {
-        socket->mark = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->mark = val;
+        } else {
+            fprintf(stderr, "parser: invalid Mark value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "PassCredentials") == 0) {
         socket->pass_credentials = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "PassSecurity") == 0) {
@@ -973,13 +1189,31 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
     } else if (strcmp(key, "ListenSequentialPacket") == 0) {
         socket->listen_sequential_packet = strdup(value);
     } else if (strcmp(key, "MaxConnections") == 0) {
-        socket->max_connections = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->max_connections = val;
+        } else {
+            fprintf(stderr, "parser: invalid MaxConnections value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "NoDelay") == 0) {
         socket->no_delay = (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "DeferAcceptSec") == 0) {
-        socket->defer_accept_sec = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->defer_accept_sec = val;
+        } else {
+            fprintf(stderr, "parser: invalid DeferAcceptSec value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "Priority") == 0) {
-        socket->priority = atoi(value);
+        int val;
+        if (parse_positive_int(value, &val, 0, INT_MAX) == 0) {
+            socket->priority = val;
+        } else {
+            fprintf(stderr, "parser: invalid Priority value: %s\n", value);
+            return -1;
+        }
     } else if (strcmp(key, "SmackLabel") == 0) {
         socket->smack_label = strdup(value);
     } else if (strcmp(key, "SmackLabelIPIn") == 0) {
