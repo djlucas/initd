@@ -1405,8 +1405,18 @@ static int build_exec_argv(const char *command, char ***argv_out) {
     char *saveptr = NULL;
     const char *token = strtok_r(copy, " \t", &saveptr);
     while (token) {
+        /* SECURITY: Enforce argument count limit to prevent DoS via excessive args */
+        if (argc >= MAX_ARGS) {
+            log_error("socket-worker", "Command exceeds maximum argument count (%d)", MAX_ARGS);
+            errno = E2BIG;
+            goto error;
+        }
+
         if (argc + 1 >= capacity) {
             size_t new_capacity = capacity * 2;
+            if (new_capacity > MAX_ARGS + 1) {
+                new_capacity = MAX_ARGS + 1;
+            }
             char **tmp = realloc(argv, new_capacity * sizeof(char *));
             if (!tmp) {
                 goto error;
@@ -1668,17 +1678,12 @@ static int activate_direct(struct socket_instance *sock) {
         }
 #endif
 
-        /* Parse and exec */
-        char *argv[64];
-        int argc = 0;
-        char *cmd = strdup(unit.config.service.exec_start);
-        char *token = strtok(cmd, " ");
-
-        while (token && argc < 63) {
-            argv[argc++] = token;
-            token = strtok(NULL, " ");
+        /* Parse command into argv */
+        char **argv = NULL;
+        if (build_exec_argv(unit.config.service.exec_start, &argv) < 0) {
+            log_error("socket-worker", "Failed to parse ExecStart: %s", strerror(errno));
+            exit(1);
         }
-        argv[argc] = NULL;
 
         /* SECURITY: Scrub dangerous environment variables before exec
          * Prevents LD_PRELOAD/BASH_ENV hijacking of socket-activated services */
@@ -1686,6 +1691,7 @@ static int activate_direct(struct socket_instance *sock) {
 
         execvp(argv[0], argv);
         log_error("socket-worker", "exec: %s", strerror(errno));
+        free_exec_argv(argv);
         exit(1);
     }
 
@@ -1829,17 +1835,12 @@ static int activate_per_connection(struct socket_instance *sock) {
             close(i);
         }
 
-        /* Parse and exec */
-        char *argv[64];
-        int argc = 0;
-        char *cmd = strdup(unit.config.service.exec_start);
-        char *token = strtok(cmd, " ");
-
-        while (token && argc < 63) {
-            argv[argc++] = token;
-            token = strtok(NULL, " ");
+        /* Parse command into argv */
+        char **argv = NULL;
+        if (build_exec_argv(unit.config.service.exec_start, &argv) < 0) {
+            log_error("socket-worker", "Failed to parse ExecStart: %s", strerror(errno));
+            exit(1);
         }
-        argv[argc] = NULL;
 
         /* SECURITY: Scrub dangerous environment variables before exec
          * Prevents LD_PRELOAD/BASH_ENV hijacking of socket-activated services */
@@ -1847,6 +1848,7 @@ static int activate_per_connection(struct socket_instance *sock) {
 
         execvp(argv[0], argv);
         log_error("socket-worker", "exec: %s", strerror(errno));
+        free_exec_argv(argv);
         exit(1);
     }
 
