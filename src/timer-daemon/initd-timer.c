@@ -54,6 +54,7 @@
 #endif
 
 static volatile sig_atomic_t shutdown_requested = 0;
+static volatile sig_atomic_t worker_exited = 0;
 static pid_t worker_pid = 0;
 static bool user_mode = false;
 
@@ -114,15 +115,13 @@ static void sigterm_handler(int sig) {
     }
 }
 
+/* SECURITY: Async-signal-safe handler - only sets flag
+ * Calling log_warn() or other non-async-signal-safe functions here can cause
+ * deadlock if the signal interrupts logging code that holds internal locks */
 static void sigchld_handler(int sig) {
     (void)sig;
-    /* Worker exited */
-    int status;
-    pid_t pid = waitpid(-1, &status, WNOHANG);
-    if (pid == worker_pid) {
-        log_warn("timer", "Worker exited");
-        worker_pid = 0;
-    }
+    /* Just set flag - reaping and logging happens in main loop */
+    worker_exited = 1;
 }
 
 /* Setup signal handlers */
@@ -625,6 +624,19 @@ int main(int argc, char * const argv[]) {
     /* Main loop: handle IPC requests from worker */
     log_debug("timer", "Entering main loop");
     while (!shutdown_requested && worker_pid > 0) {
+        /* Check if worker exited (set by signal handler) */
+        if (worker_exited) {
+            worker_exited = 0;
+            int status;
+            pid_t pid = waitpid(-1, &status, WNOHANG);
+            if (pid == worker_pid) {
+                log_warn("timer", "Worker exited (status %d)",
+                        WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+                worker_pid = 0;
+                break;
+            }
+        }
+
         fd_set rfds;
         struct timeval tv;
 

@@ -91,6 +91,7 @@ struct socket_instance {
 };
 
 static volatile sig_atomic_t shutdown_requested = 0;
+static volatile sig_atomic_t child_exited = 0;
 static int control_socket = -1;
 static int status_socket = -1;
 static struct socket_instance *sockets = NULL;
@@ -268,14 +269,13 @@ static void sigterm_handler(int sig) {
     shutdown_requested = 1;
 }
 
+/* SECURITY: Async-signal-safe handler - only sets flag
+ * Calling mark_service_exit() (which calls log_info, notify_supervisor, etc.)
+ * is not async-signal-safe and can cause deadlock */
 static void sigchld_handler(int sig) {
     (void)sig;
-    /* Reap zombie processes */
-    int status;
-    pid_t pid;
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        mark_service_exit(pid);
-    }
+    /* Just set flag - reaping happens in main loop */
+    child_exited = 1;
 }
 
 /* Setup signal handlers */
@@ -2278,6 +2278,16 @@ static int event_loop(void) {
     struct pollfd pfds[MAX_SOCKETS + 2];
 
     while (!shutdown_requested) {
+        /* Reap any exited child processes (set by signal handler) */
+        if (child_exited) {
+            child_exited = 0;
+            int status;
+            pid_t pid;
+            while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+                mark_service_exit(pid);
+            }
+        }
+
         int nfds = 0;
         int status_idx = -1;
 
