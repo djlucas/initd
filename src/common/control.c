@@ -21,6 +21,9 @@
 #include "control.h"
 #include "log.h"
 
+/* SECURITY: Upper bound for IPC list counts to prevent multi-gigabyte allocations */
+#define MAX_IPC_LIST_COUNT 10000
+
 static char runtime_dir_buf[PATH_MAX];
 static bool runtime_dir_initialized = false;
 
@@ -747,6 +750,12 @@ int recv_unit_list(int fd, struct unit_list_entry **entries, size_t *count) {
         return 0;
     }
 
+    /* SECURITY: Enforce sanity limit to prevent multi-gigabyte allocations */
+    if (*count > MAX_IPC_LIST_COUNT) {
+        errno = ENOMEM;
+        return -1;
+    }
+
     /* Allocate entries */
     *entries = malloc(*count * sizeof(struct unit_list_entry));
     if (!*entries) {
@@ -808,6 +817,12 @@ int recv_timer_list(int fd, struct timer_list_entry **entries, size_t *count) {
     if (*count == 0) {
         *entries = NULL;
         return 0;
+    }
+
+    /* SECURITY: Enforce sanity limit to prevent multi-gigabyte allocations */
+    if (*count > MAX_IPC_LIST_COUNT) {
+        errno = ENOMEM;
+        return -1;
     }
 
     /* Allocate entries */
@@ -872,6 +887,12 @@ int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count) 
     if (*count == 0) {
         *entries = NULL;
         return 0;
+    }
+
+    /* SECURITY: Enforce sanity limit to prevent multi-gigabyte allocations */
+    if (*count > MAX_IPC_LIST_COUNT) {
+        errno = ENOMEM;
+        return -1;
     }
 
     /* Allocate entries */
