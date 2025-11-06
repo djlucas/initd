@@ -503,6 +503,12 @@ int recv_control_response(int fd, struct control_response *resp) {
     /* SECURITY: Force NUL termination of message field */
     resp->message[sizeof(resp->message) - 1] = '\0';
 
+    /* Reject if message contains no NUL byte (completely filled) */
+    if (memchr(resp->message, '\0', sizeof(resp->message) - 1) == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
     return 0;
 }
 
