@@ -42,6 +42,7 @@
 #ifdef __linux__
 #include <sys/xattr.h>  /* For SMACK labels via fsetxattr */
 #include <linux/netlink.h>  /* For AF_NETLINK sockets */
+#include <sys/syscall.h>  /* For syscall() and __NR_close_range */
 /* ucred struct for SO_PEERCRED is in sys/socket.h on Linux with _GNU_SOURCE */
 #endif
 #ifdef __has_include
@@ -1576,10 +1577,27 @@ static int activate_direct(struct socket_instance *sock) {
         /* Close the original listening fd in the child (fd 3 remains) */
         close(sock->listen_fd);
 
-        /* Close other fds */
-        for (int i = 4; i < 1024; i++) {
+        /* SECURITY: Close all other file descriptors to prevent leaks
+         * Must close up to actual limit, not hardcoded 1024, to prevent
+         * leaking status sockets, IPC fds, etc. on systems with high RLIMIT_NOFILE */
+#if defined(__linux__) && defined(__NR_close_range)
+        /* Linux 5.9+: Use close_range for efficiency */
+        if (syscall(__NR_close_range, 4, ~0U, 0) < 0) {
+            /* Fallback if close_range fails */
+            long max_fd = sysconf(_SC_OPEN_MAX);
+            if (max_fd < 0) max_fd = 1024;
+            for (int i = 4; i < max_fd; i++) {
+                close(i);
+            }
+        }
+#else
+        /* Portable fallback: close up to sysconf limit */
+        long max_fd = sysconf(_SC_OPEN_MAX);
+        if (max_fd < 0) max_fd = 1024;
+        for (int i = 4; i < max_fd; i++) {
             close(i);
         }
+#endif
 
         /* Parse and exec */
         char *argv[64];
