@@ -1553,7 +1553,15 @@ static int activate_direct(struct socket_instance *sock) {
         /* Set LISTEN_FDNAMES if FileDescriptorName= is configured */
         const char *fd_name = sock->unit->config.socket.file_descriptor_name;
         if (fd_name) {
-            setenv("LISTEN_FDNAMES", fd_name, 1);
+            /* SECURITY: Validate fd_name doesn't contain '=' which would break setenv
+             * If invalid, log warning and fall back to unit name */
+            if (strchr(fd_name, '=') != NULL) {
+                log_warn("socket-worker", "FileDescriptorName contains '=', ignoring: %s",
+                        fd_name);
+                setenv("LISTEN_FDNAMES", sock->unit->name, 1);
+            } else {
+                setenv("LISTEN_FDNAMES", fd_name, 1);
+            }
         } else {
             /* Default: unit name (including .socket suffix) */
             setenv("LISTEN_FDNAMES", sock->unit->name, 1);

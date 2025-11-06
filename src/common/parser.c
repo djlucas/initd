@@ -553,10 +553,30 @@ static int parse_service_key(struct service_section *service, const char *key, c
     } else if (strcmp(key, "WorkingDirectory") == 0) {
         strncpy(service->working_directory, value, sizeof(service->working_directory) - 1);
     } else if (strcmp(key, "Environment") == 0) {
+        /* SECURITY: Validate environment variable format KEY=VALUE
+         * Reject embedded NUL bytes and ensure KEY doesn't contain = */
+        const char *equals = strchr(value, '=');
+        if (!equals || equals == value) {
+            fprintf(stderr, "parser: invalid Environment format (must be KEY=VALUE): %s\n", value);
+            return -1;
+        }
+        /* Check KEY portion doesn't contain embedded = or NUL */
+        size_t key_len = equals - value;
+        if (memchr(value, '\0', key_len) != NULL) {
+            fprintf(stderr, "parser: Environment KEY contains embedded NUL\n");
+            return -1;
+        }
+        /* Check VALUE length is reasonable (prevent DoS) */
+        size_t value_len = strlen(equals + 1);
+        if (value_len > 32768) {  /* 32KB limit per variable */
+            fprintf(stderr, "parser: Environment VALUE too long (max 32KB)\n");
+            return -1;
+        }
         if (service->environment_count < MAX_ENV_VARS) {
             service->environment[service->environment_count++] = strdup(value);
         }
     } else if (strcmp(key, "EnvironmentFile") == 0) {
+        /* Validation of EnvironmentFile path happens at load time */
         service->environment_file = strdup(value);
     } else if (strcmp(key, "Restart") == 0) {
         if (strcmp(value, "no") == 0) service->restart = RESTART_NO;
@@ -1145,6 +1165,11 @@ static int parse_socket_key(struct socket_section *socket, const char *key, char
             return -1;
         }
     } else if (strcmp(key, "FileDescriptorName") == 0) {
+        /* SECURITY: Reject if contains '=' which would break setenv(LISTEN_FDNAMES) */
+        if (strchr(value, '=') != NULL) {
+            fprintf(stderr, "parser: FileDescriptorName cannot contain '=': %s\n", value);
+            return -1;
+        }
         socket->file_descriptor_name = strdup(value);
     } else if (strcmp(key, "ListenFIFO") == 0) {
         socket->listen_fifo = strdup(value);

@@ -196,6 +196,9 @@ static void free_exec_argv(char **argv) {
     free(argv);
 }
 
+/* Forward declaration */
+static void scrub_dangerous_environment(void);
+
 static int run_lifecycle_command(const struct service_section *service,
                                  const char *command,
                                  uid_t validated_uid,
@@ -275,6 +278,9 @@ static int run_lifecycle_command(const struct service_section *service,
                 _exit(1);
             }
         }
+
+        /* SECURITY: Scrub dangerous environment variables */
+        scrub_dangerous_environment();
 
         execv(exec_path, argv);
         log_error("supervisor", "execv lifecycle: %s", strerror(errno));
@@ -546,6 +552,41 @@ static pid_t start_worker(int worker_fd) {
     close(worker_fd); /* Master doesn't need worker's end */
     log_info("supervisor", "Started worker (pid %d)", pid);
     return pid;
+}
+
+/* SECURITY: Scrub dangerous environment variables before exec
+ * Removes LD_*, TMPDIR, IFS, and other variables that can hijack execution */
+static void scrub_dangerous_environment(void) {
+    static const char *dangerous_vars[] = {
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        "LD_BIND_NOW",
+        "LD_DEBUG",
+        "LD_PROFILE",
+        "LD_USE_LOAD_BIAS",
+        "LD_DYNAMIC_WEAK",
+        "LD_SHOW_AUXV",
+        "LD_ORIGIN_PATH",
+        "LD_HWCAP_MASK",
+        "LD_AOUT_LIBRARY_PATH",
+        "LD_AOUT_PRELOAD",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "IFS",
+        "BASH_ENV",
+        "ENV",
+        "CDPATH",
+        "GLOBIGNORE",
+        "PS4",
+        "SHELLOPTS",
+        NULL
+    };
+
+    for (int i = 0; dangerous_vars[i] != NULL; i++) {
+        unsetenv(dangerous_vars[i]);
+    }
 }
 
 /* Start a service process with privilege dropping
@@ -1425,6 +1466,10 @@ static pid_t start_service_process(const struct service_section *service,
             log_warn("supervisor", "RestrictSUIDSGID= not supported on this platform");
 #endif
         }
+
+        /* SECURITY: Scrub dangerous environment variables that could hijack execution
+         * Must be done after all our setenv calls but before execv */
+        scrub_dangerous_environment();
 
         /* Exec service using argv (NO SHELL - prevents injection) */
         execv(exec_path, argv);
