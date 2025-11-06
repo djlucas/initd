@@ -235,23 +235,33 @@ static void handle_request(int worker_fd) {
             break;
         }
 
-        /* Validate path is absolute and doesn't contain .. */
-        if (req.socket_path[0] != '/' || strstr(req.socket_path, "..")) {
+        /* Validate path is absolute */
+        if (req.socket_path[0] != '/') {
             resp.type = SOCKET_RESP_ERROR;
             resp.error_code = EINVAL;
             snprintf(resp.error_msg, sizeof(resp.error_msg),
-                    "Invalid socket path (must be absolute, no ..)");
+                    "Socket path must be absolute");
             break;
         }
 
-        /* SECURITY: Validate path is within runtime directory to prevent
-         * arbitrary file chown via symlink attacks */
+        /* SECURITY: Canonicalize path to prevent .. and symlink bypasses
+         * Paths like /run/../etc/shadow could bypass prefix checks */
+        char canonical_path[PATH_MAX];
+        if (realpath(req.socket_path, canonical_path) == NULL) {
+            resp.type = SOCKET_RESP_ERROR;
+            resp.error_code = errno;
+            snprintf(resp.error_msg, sizeof(resp.error_msg),
+                    "Cannot resolve socket path: %s", strerror(errno));
+            break;
+        }
+
+        /* SECURITY: Validate canonical path is within runtime directory */
         char *runtime_dir = getenv("XDG_RUNTIME_DIR");
         const char *allowed_prefix = runtime_dir ? runtime_dir : "/run";
         size_t prefix_len = strlen(allowed_prefix);
 
-        if (strncmp(req.socket_path, allowed_prefix, prefix_len) != 0 ||
-            (req.socket_path[prefix_len] != '/' && req.socket_path[prefix_len] != '\0')) {
+        if (strncmp(canonical_path, allowed_prefix, prefix_len) != 0 ||
+            (canonical_path[prefix_len] != '/' && canonical_path[prefix_len] != '\0')) {
             resp.type = SOCKET_RESP_ERROR;
             resp.error_code = EPERM;
             snprintf(resp.error_msg, sizeof(resp.error_msg),
