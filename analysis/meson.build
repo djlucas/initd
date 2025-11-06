@@ -124,6 +124,135 @@ if clang_supports_fuzzing
     build_by_default: true
   )
 
+  # Socket IPC protocol fuzzer
+  fuzz_socket_ipc = custom_target(
+    'fuzz-socket-ipc',
+    output: 'fuzz-socket-ipc',
+    input: [
+      'fuzz/socket_ipc_fuzz.c',
+      '../src/common/socket-ipc.c',
+      '../src/common/log.c',
+    ],
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
+  )
+
+  # Path security validation fuzzer
+  fuzz_path_security = custom_target(
+    'fuzz-path-security',
+    output: 'fuzz-path-security',
+    input: [
+      'fuzz/path_security_fuzz.c',
+      '../src/common/path-security.c',
+      '../src/common/log.c',
+    ],
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
+  )
+
+  # Exec argv parsing fuzzer
+  fuzz_exec_argv = custom_target(
+    'fuzz-exec-argv',
+    output: 'fuzz-exec-argv',
+    input: [
+      'fuzz/exec_argv_fuzz.c',
+    ],
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
+  )
+
+  # IPC list receivers fuzzer
+  fuzz_list_recv = custom_target(
+    'fuzz-list-recv',
+    output: 'fuzz-list-recv',
+    input: [
+      'fuzz/list_recv_fuzz.c',
+      '../src/common/control.c',
+      '../src/common/log.c',
+    ],
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
+  )
+
+  # Environment parsing fuzzer
+  fuzz_environment = custom_target(
+    'fuzz-environment',
+    output: 'fuzz-environment',
+    input: [
+      'fuzz/environment_fuzz.c',
+      '../src/common/parser.c',
+      '../src/common/scanner.c',
+    ],
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
+  )
+
+  # Timer IPC protocol fuzzer
+  fuzz_timer_ipc = custom_target(
+    'fuzz-timer-ipc',
+    output: 'fuzz-timer-ipc',
+    input: [
+      'fuzz/timer_ipc_fuzz.c',
+      '../src/common/timer-ipc.c',
+    ],
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
+  )
+
+  # Privileged master/worker IPC fuzzer
+  fuzz_priv_ipc = custom_target(
+    'fuzz-priv-ipc',
+    output: 'fuzz-priv-ipc',
+    input: [
+      'fuzz/priv_ipc_fuzz.c',
+      '../src/common/ipc.c',
+    ],
+    command: [
+      clang,
+      fuzz_flags,
+      fuzz_includes,
+      '@INPUT@',
+      '-o', '@OUTPUT@'
+    ],
+    build_by_default: true
+  )
+
   # Unified fuzzing target
   run_target(
     'analyze-fuzz',
@@ -132,7 +261,10 @@ if clang_supports_fuzzing
       meson.project_source_root() / 'analysis' / 'fuzz' / 'run-all-fuzzers.sh',
       meson.project_build_root()
     ],
-    depends: [fuzz_calendar, fuzz_parser, fuzz_control, fuzz_ipc]
+    depends: [fuzz_calendar, fuzz_parser, fuzz_control, fuzz_ipc,
+              fuzz_socket_ipc, fuzz_path_security, fuzz_exec_argv,
+              fuzz_list_recv, fuzz_environment, fuzz_timer_ipc,
+              fuzz_priv_ipc]
   )
 endif
 
