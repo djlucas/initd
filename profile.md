@@ -2306,12 +2306,14 @@ Before presenting any commit message, update:
 ### Commit Message Guidelines
 
 Keep history easy to scan by using a consistent four-part structure. Wrap every
-line at 80 characters maximum (72 preferred for the subject line) without
-exceeding the limit. The only indentation should be the bullet list; all other
-lines begin flush left. Leave a single blank line between the major summary
-sentence and the `What Changed:` heading. Place the bullet list immediately
-after the `What Changed:` line (no intervening blank line), and keep bullet
-items sentence-case without trailing periods.
+line at 80 characters maximum (72 preferred for the subject line). Before
+sharing a commit message, manually confirm that every line meets the 80-character
+limit; the reviewer will expect you to state that check explicitly. The only
+indentation should be the bullet list; all other lines begin flush left. Leave a
+single blank line between the major summary sentence and the `What Changed:`
+heading. Place the bullet list immediately after the `What Changed:` line (no
+intervening blank line), and keep bullet items sentence-case without trailing
+periods.
 
 **Feature commits**
 ```
