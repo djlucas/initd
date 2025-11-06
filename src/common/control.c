@@ -450,7 +450,9 @@ int send_control_request(int fd, const struct control_request *req) {
     return 0;
 }
 
-/* Receive a control request */
+/* Receive a control request
+ * SECURITY: Ensures all string fields are NUL-terminated to prevent
+ * buffer overruns when passed to strcmp/strlen/printf */
 int recv_control_request(int fd, struct control_request *req) {
     ssize_t n = read(fd, req, sizeof(*req));
     if (n == 0) {
@@ -459,6 +461,19 @@ int recv_control_request(int fd, struct control_request *req) {
     if (n != sizeof(*req)) {
         return -1;
     }
+
+    /* SECURITY: Force NUL termination of unit_name to prevent overrun.
+     * Without this, an attacker can send 256 non-zero bytes causing strcmp(),
+     * strlen(), and printf() to read past the buffer into stack memory,
+     * leading to crash or information disclosure. */
+    req->unit_name[sizeof(req->unit_name) - 1] = '\0';
+
+    /* Reject if unit_name contains no NUL byte (completely filled) */
+    if (memchr(req->unit_name, '\0', sizeof(req->unit_name) - 1) == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -471,7 +486,8 @@ int send_control_response(int fd, const struct control_response *resp) {
     return 0;
 }
 
-/* Receive a control response */
+/* Receive a control response
+ * SECURITY: Ensures all string fields are NUL-terminated */
 int recv_control_response(int fd, struct control_response *resp) {
     ssize_t n = read(fd, resp, sizeof(*resp));
     if (n == 0) {
@@ -480,6 +496,10 @@ int recv_control_response(int fd, struct control_response *resp) {
     if (n != sizeof(*resp)) {
         return -1;
     }
+
+    /* SECURITY: Force NUL termination of message field */
+    resp->message[sizeof(resp->message) - 1] = '\0';
+
     return 0;
 }
 
@@ -709,7 +729,8 @@ int send_unit_list(int fd, const struct unit_list_entry *entries, size_t count) 
     return 0;
 }
 
-/* Receive unit list */
+/* Receive unit list
+ * SECURITY: Ensures all string fields in all entries are NUL-terminated */
 int recv_unit_list(int fd, struct unit_list_entry **entries, size_t *count) {
     /* Receive count */
     uint32_t count32;
@@ -741,6 +762,12 @@ int recv_unit_list(int fd, struct unit_list_entry **entries, size_t *count) {
         return -1;
     }
 
+    /* SECURITY: Force NUL termination of all string fields */
+    for (size_t i = 0; i < *count; i++) {
+        (*entries)[i].name[sizeof((*entries)[i].name) - 1] = '\0';
+        (*entries)[i].description[sizeof((*entries)[i].description) - 1] = '\0';
+    }
+
     return 0;
 }
 
@@ -765,7 +792,8 @@ int send_timer_list(int fd, const struct timer_list_entry *entries, size_t count
     return 0;
 }
 
-/* Receive timer list */
+/* Receive timer list
+ * SECURITY: Ensures all string fields in all entries are NUL-terminated */
 int recv_timer_list(int fd, struct timer_list_entry **entries, size_t *count) {
     /* Receive count */
     uint32_t count32;
@@ -797,6 +825,13 @@ int recv_timer_list(int fd, struct timer_list_entry **entries, size_t *count) {
         return -1;
     }
 
+    /* SECURITY: Force NUL termination of all string fields */
+    for (size_t i = 0; i < *count; i++) {
+        (*entries)[i].name[sizeof((*entries)[i].name) - 1] = '\0';
+        (*entries)[i].unit[sizeof((*entries)[i].unit) - 1] = '\0';
+        (*entries)[i].description[sizeof((*entries)[i].description) - 1] = '\0';
+    }
+
     return 0;
 }
 
@@ -821,7 +856,8 @@ int send_socket_list(int fd, const struct socket_list_entry *entries, size_t cou
     return 0;
 }
 
-/* Receive socket list */
+/* Receive socket list
+ * SECURITY: Ensures all string fields in all entries are NUL-terminated */
 int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count) {
     /* Receive count */
     uint32_t count32;
@@ -851,6 +887,14 @@ int recv_socket_list(int fd, struct socket_list_entry **entries, size_t *count) 
         free(*entries);
         *entries = NULL;
         return -1;
+    }
+
+    /* SECURITY: Force NUL termination of all string fields */
+    for (size_t i = 0; i < *count; i++) {
+        (*entries)[i].name[sizeof((*entries)[i].name) - 1] = '\0';
+        (*entries)[i].listen[sizeof((*entries)[i].listen) - 1] = '\0';
+        (*entries)[i].unit[sizeof((*entries)[i].unit) - 1] = '\0';
+        (*entries)[i].description[sizeof((*entries)[i].description) - 1] = '\0';
     }
 
     return 0;
