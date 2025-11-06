@@ -105,6 +105,41 @@ static int test_runtime_kill_count = 0;
 /* Forward declaration */
 static int run_socket_exec_command(const char *command, const char *unit_name, const char *stage);
 
+/* SECURITY: Remove dangerous environment variables that could hijack child processes
+ * Must be called before any execvp() to prevent LD_PRELOAD attacks on activated services */
+static void scrub_dangerous_environment(void) {
+    static const char *dangerous_vars[] = {
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        "LD_BIND_NOW",
+        "LD_DEBUG",
+        "LD_PROFILE",
+        "LD_USE_LOAD_BIAS",
+        "LD_DYNAMIC_WEAK",
+        "LD_SHOW_AUXV",
+        "LD_ORIGIN_PATH",
+        "LD_HWCAP_MASK",
+        "LD_AOUT_LIBRARY_PATH",
+        "LD_AOUT_PRELOAD",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "IFS",
+        "BASH_ENV",
+        "ENV",
+        "CDPATH",
+        "GLOBIGNORE",
+        "PS4",
+        "SHELLOPTS",
+        NULL
+    };
+
+    for (int i = 0; dangerous_vars[i] != NULL; i++) {
+        unsetenv(dangerous_vars[i]);
+    }
+}
+
 /* Check if socket activation is within trigger rate limit
  * Returns: true if activation allowed, false if rate limit exceeded */
 static bool check_trigger_limit(struct socket_instance *sock) {
@@ -1482,6 +1517,9 @@ static int run_socket_exec_command(const char *command, const char *unit_name, c
             }
         }
 
+        /* SECURITY: Scrub dangerous environment variables before exec */
+        scrub_dangerous_environment();
+
         execv(exec_path, argv);
         log_error("socket-worker", "execv %s: %s", stage, strerror(errno));
         _exit(1);
@@ -1642,6 +1680,10 @@ static int activate_direct(struct socket_instance *sock) {
         }
         argv[argc] = NULL;
 
+        /* SECURITY: Scrub dangerous environment variables before exec
+         * Prevents LD_PRELOAD/BASH_ENV hijacking of socket-activated services */
+        scrub_dangerous_environment();
+
         execvp(argv[0], argv);
         log_error("socket-worker", "exec: %s", strerror(errno));
         exit(1);
@@ -1798,6 +1840,10 @@ static int activate_per_connection(struct socket_instance *sock) {
             token = strtok(NULL, " ");
         }
         argv[argc] = NULL;
+
+        /* SECURITY: Scrub dangerous environment variables before exec
+         * Prevents LD_PRELOAD/BASH_ENV hijacking of socket-activated services */
+        scrub_dangerous_environment();
 
         execvp(argv[0], argv);
         log_error("socket-worker", "exec: %s", strerror(errno));
