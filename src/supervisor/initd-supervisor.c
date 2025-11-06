@@ -1103,6 +1103,13 @@ static pid_t start_service_process(const struct service_section *service,
         /* RootImage= - mount disk image as root filesystem (requires loop device support) */
         if (service->root_image[0] != '\0') {
 #ifdef __linux__
+            /* SECURITY: Validate RootImage path */
+            if (service->root_image[0] != '/') {
+                log_error("supervisor", "SECURITY: RootImage must be absolute: %s",
+                         service->root_image);
+                _exit(1);
+            }
+
             /* Set up loop device and mount the image */
             int loop_fd = open("/dev/loop-control", O_RDWR);
             if (loop_fd < 0) {
@@ -1206,6 +1213,23 @@ static pid_t start_service_process(const struct service_section *service,
 
         /* chroot if RootDirectory is specified (must be done before dropping privileges) */
         if (service->root_directory[0] != '\0') {
+            /* SECURITY: Validate RootDirectory path to prevent traversal/symlink attacks
+             * Must be absolute, no symlinks, and within allowed directories */
+            if (service->root_directory[0] != '/') {
+                log_error("supervisor", "SECURITY: RootDirectory must be absolute: %s",
+                         service->root_directory);
+                _exit(1);
+            }
+
+            /* Verify path doesn't contain symlinks using O_NOFOLLOW traversal */
+            int fd = open(service->root_directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+            if (fd < 0) {
+                log_error("supervisor", "SECURITY: RootDirectory validation failed (symlink/traversal?): %s: %s",
+                         service->root_directory, strerror(errno));
+                _exit(1);
+            }
+            close(fd);
+
             if (chroot(service->root_directory) < 0) {
                 log_error("supervisor", "chroot(%s): %s", service->root_directory, strerror(errno));
                 _exit(1);

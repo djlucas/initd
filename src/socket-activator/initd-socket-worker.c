@@ -782,6 +782,23 @@ static int create_listen_socket(struct socket_instance *sock) {
 
     /* Unix stream socket */
     if (s->listen_stream && s->listen_stream[0] == '/') {
+        /* SECURITY: Validate Unix socket path to prevent binding to sensitive locations
+         * Enforce absolute paths under /run to prevent attacks on system files */
+        if (strncmp(s->listen_stream, "/run/", 5) != 0 &&
+            strncmp(s->listen_stream, "/tmp/", 5) != 0 &&
+            strncmp(s->listen_stream, "/var/run/", 9) != 0) {
+            log_error("socket-worker", "SECURITY: Unix socket must be under /run, /tmp, or /var/run: %s",
+                     s->listen_stream);
+            return -1;
+        }
+
+        /* Check for path traversal */
+        if (strstr(s->listen_stream, "..") != NULL) {
+            log_error("socket-worker", "SECURITY: Unix socket path contains '..': %s",
+                     s->listen_stream);
+            return -1;
+        }
+
         fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
             log_error("socket-worker", "socket: %s", strerror(errno));
@@ -855,6 +872,20 @@ static int create_listen_socket(struct socket_instance *sock) {
 
     /* Unix sequential packet socket */
     if (s->listen_sequential_packet) {
+        /* SECURITY: Validate Unix socket path */
+        if (strncmp(s->listen_sequential_packet, "/run/", 5) != 0 &&
+            strncmp(s->listen_sequential_packet, "/tmp/", 5) != 0 &&
+            strncmp(s->listen_sequential_packet, "/var/run/", 9) != 0) {
+            log_error("socket-worker", "SECURITY: Unix socket must be under /run, /tmp, or /var/run: %s",
+                     s->listen_sequential_packet);
+            return -1;
+        }
+        if (strstr(s->listen_sequential_packet, "..") != NULL) {
+            log_error("socket-worker", "SECURITY: Unix socket path contains '..': %s",
+                     s->listen_sequential_packet);
+            return -1;
+        }
+
         fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
         if (fd < 0) {
             log_error("socket-worker", "socket: %s", strerror(errno));
