@@ -345,7 +345,7 @@ static void load_timer_state(struct timer_instance *timer) {
 }
 
 /* Save timer state for persistence */
-static void save_timer_state(struct timer_instance *timer) {
+static void save_timer_state(const struct timer_instance *timer) {
     char path[1024];
     FILE *f;
 
@@ -1368,7 +1368,7 @@ int timer_daemon_test_notify_inactive(const char *service_name, time_t now) {
 }
 
 time_t timer_daemon_test_get_next_run(const char *timer_name) {
-    struct timer_instance *timer = find_timer(timer_name);
+    const struct timer_instance *timer = find_timer(timer_name);
     if (!timer) {
         return 0;
     }
@@ -1376,7 +1376,7 @@ time_t timer_daemon_test_get_next_run(const char *timer_name) {
 }
 
 time_t timer_daemon_test_get_last_inactive(const char *timer_name) {
-    struct timer_instance *timer = find_timer(timer_name);
+    const struct timer_instance *timer = find_timer(timer_name);
     if (!timer) {
         return 0;
     }

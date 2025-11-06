@@ -2532,7 +2532,7 @@ static void handle_control_command(int client_fd, bool read_only) {
         }
 
         for (int i = 0; i < scanned_count; i++) {
-            struct unit_file *u = scanned_units[i];
+            const struct unit_file *u = scanned_units[i];
             strncpy(entries[i].name, u->name, sizeof(entries[i].name) - 1);
             entries[i].state = convert_state(u->state);
             entries[i].pid = u->pid;
@@ -2639,7 +2639,7 @@ static void handle_control_command(int client_fd, bool read_only) {
         for (int i = 0; i < new_count; i++) {
             struct unit_file *new_unit = new_units[i];
             for (int j = 0; j < old_count; j++) {
-                struct unit_file *old_unit = old_units[j];
+                const struct unit_file *old_unit = old_units[j];
                 if (strcmp(new_unit->name, old_unit->name) == 0) {
                     new_unit->state = old_unit->state;
                     new_unit->pid = old_unit->pid;

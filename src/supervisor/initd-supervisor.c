@@ -2447,7 +2447,7 @@ static int main_loop(void) {
 }
 
 #ifndef UNIT_TEST
-int main(int argc, char * const argv[]) {
+int main(int argc, const char * const argv[]) {
     const char *runtime_dir_arg = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];

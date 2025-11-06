@@ -2151,7 +2151,7 @@ static void handle_control_command(int client_fd, bool read_only) {
                 strncpy(entries[i].name, s->unit->name, sizeof(entries[i].name) - 1);
 
                 /* Determine listen address */
-                struct socket_section *sock_config = &s->unit->config.socket;
+                const struct socket_section *sock_config = &s->unit->config.socket;
                 if (sock_config->listen_stream) {
                     strncpy(entries[i].listen, sock_config->listen_stream,
                            sizeof(entries[i].listen) - 1);
@@ -2197,7 +2197,7 @@ static void handle_control_command(int client_fd, bool read_only) {
     /* Handle status command */
     if (req.header.command == CMD_STATUS || req.header.command == CMD_IS_ACTIVE) {
         /* Find socket by name */
-        struct socket_instance *sock = NULL;
+        const struct socket_instance *sock = NULL;
         for (struct socket_instance *s = sockets; s; s = s->next) {
             if (strcmp(s->unit->name, req.unit_name) == 0) {
                 sock = s;
