@@ -1299,9 +1299,17 @@ static pid_t start_service_process(const struct service_section *service,
                         }
                     }
                     if (!keep) {
-                        if (prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) < 0 && errno != EINVAL) {
-                            log_warn("supervisor", "Failed to drop capability %d from bounding set: %s",
+                        /* SECURITY: Hard-fail on drop errors (except EINVAL for unsupported caps)
+                         * If we can't drop a capability, the service runs with extra privilege */
+                        if (prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) < 0) {
+                            if (errno == EINVAL) {
+                                /* Capability not supported by kernel - safe to ignore */
+                                continue;
+                            }
+                            log_error("supervisor", "SECURITY: Failed to drop capability %d from bounding set: %s",
                                    cap, strerror(errno));
+                            cap_free(caps);
+                            _exit(1);
                         }
                     }
                 }
