@@ -23,7 +23,7 @@
 #endif
 
 /* Forward declarations */
-static int scan_directory(const char *dir_path, struct unit_file **units, int *count);
+static int scan_directory(const char *dir_path, struct unit_file ***units, int *count, int *capacity);
 int scan_unit_directories_filtered(struct unit_file ***units_out, int *count_out, int include_systemd);
 
 /* Check if file has valid unit extension */
@@ -38,7 +38,7 @@ static int is_unit_file(const char *name) {
 }
 
 /* Scan a single directory for unit files */
-static int scan_directory(const char *dir_path, struct unit_file **units, int *count) {
+static int scan_directory(const char *dir_path, struct unit_file ***units, int *count, int *capacity) {
     DIR *dir;
     const struct dirent *entry;
     char path[1024];
@@ -60,7 +60,7 @@ static int scan_directory(const char *dir_path, struct unit_file **units, int *c
         /* Check if we already loaded this unit (from higher priority dir) */
         int exists = 0;
         for (int i = 0; i < *count; i++) {
-            if (strcmp(units[i]->name, entry->d_name) == 0) {
+            if (strcmp((*units)[i]->name, entry->d_name) == 0) {
                 exists = 1;
                 break;
             }
@@ -92,13 +92,27 @@ static int scan_directory(const char *dir_path, struct unit_file **units, int *c
             continue;
         }
 
+        /* SECURITY: Grow array before adding to prevent heap overflow */
+        if (*count >= *capacity) {
+            int new_cap = *capacity * 2;
+            struct unit_file **tmp = realloc(*units, new_cap * sizeof(struct unit_file *));
+            if (!tmp) {
+                free_unit_file(unit);
+                free(unit);
+                closedir(dir);
+                return -1;
+            }
+            *units = tmp;
+            *capacity = new_cap;
+        }
+
         /* Add to list */
-        units[*count] = unit;
+        (*units)[*count] = unit;
         (*count)++;
 
         /* Link into list */
         if (*count > 1) {
-            units[*count - 2]->next = unit;
+            (*units)[*count - 2]->next = unit;
         }
     }
 
@@ -132,22 +146,10 @@ int scan_unit_directories_filtered(struct unit_file ***units_out, int *count_out
     while (dir) {
         fprintf(stderr, "scanner: scanning %s\n", dir);
 
-        if (scan_directory(dir, units, &count) < 0) {
+        if (scan_directory(dir, &units, &count, &capacity) < 0) {
             free(dirs);
             free(units);
             return -1;
-        }
-
-        /* Grow array if needed */
-        if (count >= capacity - 1) {
-            capacity *= 2;
-            struct unit_file **tmp = realloc(units, capacity * sizeof(struct unit_file *));
-            if (!tmp) {
-                free(dirs);
-                free(units);
-                return -1;
-            }
-            units = tmp;
         }
 
         dir = strtok(NULL, ":");

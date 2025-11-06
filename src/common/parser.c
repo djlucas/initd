@@ -12,6 +12,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <strings.h>
@@ -21,6 +22,7 @@
 #include "unit.h"
 
 #define MAX_LINE 1024
+#define MAX_EMBEDDED_INPUT (1024 * 1024) /* 1 MiB cap for StandardInputText/Data */
 
 /* Base64 decoding table */
 static const unsigned char base64_decode_table[256] = {
@@ -95,25 +97,55 @@ static long parse_limit_value(const char *value) {
 /* Parse size value (handles K, M, G suffixes) */
 static int parse_size(const char *value) {
     char *endptr;
-    long size = strtol(value, &endptr, 10);
+    errno = 0;
+    long long size = strtoll(value, &endptr, 10);
 
-    if (size < 0) return -1;
+    /* SECURITY: Check for parsing errors and negative values */
+    if (errno != 0 || endptr == value || size < 0) {
+        return -1;
+    }
 
     /* Handle suffix */
     if (*endptr != '\0') {
+        long long scale = 1;
         switch (*endptr) {
             case 'K': case 'k':
-                size *= 1024;
+                scale = 1024LL;
                 break;
             case 'M': case 'm':
-                size *= 1024 * 1024;
+                scale = 1024LL * 1024;
                 break;
             case 'G': case 'g':
-                size *= 1024 * 1024 * 1024;
+                scale = 1024LL * 1024 * 1024;
                 break;
             default:
                 return -1; /* Invalid suffix */
         }
+
+        /* Ensure no trailing chars after suffix */
+        if (endptr[1] != '\0') {
+            return -1;
+        }
+
+        /* SECURITY: Check for integer overflow using __builtin_mul_overflow */
+#if defined(__GNUC__) || defined(__clang__)
+        long long result;
+        if (__builtin_mul_overflow(size, scale, &result) || result > INT_MAX) {
+            return -1;
+        }
+        size = result;
+#else
+        /* Fallback for non-GCC/Clang compilers */
+        if (size > INT_MAX / scale) {
+            return -1;
+        }
+        size *= scale;
+        if (size > INT_MAX) {
+            return -1;
+        }
+#endif
+    } else if (size > INT_MAX) {
+        return -1;
     }
 
     return (int)size;
@@ -584,6 +616,14 @@ static int parse_service_key(struct service_section *service, const char *key, c
         /* Append text to input_data buffer with newline */
         size_t value_len = strlen(value);
         size_t new_size = service->input_data_size + value_len + 1; /* +1 for newline */
+
+        /* SECURITY: Enforce size limit to prevent unbounded memory allocation */
+        if (new_size > MAX_EMBEDDED_INPUT) {
+            fprintf(stderr, "parser: %s: embedded input exceeds maximum size (%zu bytes)\n",
+                    key, (size_t)MAX_EMBEDDED_INPUT);
+            return -1;
+        }
+
         char *new_data = realloc(service->input_data, new_size + 1); /* +1 for null terminator */
         if (new_data) {
             service->input_data = new_data;
@@ -597,6 +637,14 @@ static int parse_service_key(struct service_section *service, const char *key, c
         /* For now, implement a simple base64 decoder */
         size_t value_len = strlen(value);
         size_t decoded_max_size = (value_len * 3) / 4 + 1;
+
+        /* SECURITY: Enforce size limit to prevent unbounded memory allocation */
+        if (service->input_data_size + decoded_max_size > MAX_EMBEDDED_INPUT) {
+            fprintf(stderr, "parser: %s: embedded input exceeds maximum size (%zu bytes)\n",
+                    key, (size_t)MAX_EMBEDDED_INPUT);
+            return -1;
+        }
+
         char *decoded = malloc(decoded_max_size);
         if (decoded) {
             size_t decoded_size = base64_decode(value, value_len, decoded, decoded_max_size);
