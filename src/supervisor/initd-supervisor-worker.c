@@ -3105,6 +3105,33 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         /* Service started successfully - log it */
         log_service_started(unit->name, unit->unit.description);
     } else if (unit->type == UNIT_TARGET) {
+        /* Check that all required/bound dependencies are actually active */
+        for (int i = 0; i < unit->unit.requires_count; i++) {
+            struct unit_file *dep = resolve_unit(unit->unit.requires[i]);
+            if (dep && dep->state != STATE_ACTIVE) {
+                char reason[256];
+                snprintf(reason, sizeof(reason), "required dependency %s is not active (state=%d)",
+                         unit->unit.requires[i], dep->state);
+                log_service_failed(unit->name, unit->unit.description, reason);
+                unit->state = STATE_FAILED;
+                trigger_on_failure(unit);
+                unit->start_visit_state = DEP_VISIT_NONE;
+                return -1;
+            }
+        }
+        for (int i = 0; i < unit->unit.binds_to_count; i++) {
+            struct unit_file *dep = resolve_unit(unit->unit.binds_to[i]);
+            if (dep && dep->state != STATE_ACTIVE) {
+                char reason[256];
+                snprintf(reason, sizeof(reason), "bound dependency %s is not active (state=%d)",
+                         unit->unit.binds_to[i], dep->state);
+                log_service_failed(unit->name, unit->unit.description, reason);
+                unit->state = STATE_FAILED;
+                trigger_on_failure(unit);
+                unit->start_visit_state = DEP_VISIT_NONE;
+                return -1;
+            }
+        }
         unit->state = STATE_ACTIVE;
         log_target_reached(unit->name, unit->unit.description);
     }

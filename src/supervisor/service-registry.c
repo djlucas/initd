@@ -10,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "service-registry.h"
+#include "../common/log-enhanced.h"
 
 static struct service_record service_registry[MAX_SERVICES];
 
@@ -86,12 +87,10 @@ int register_service(pid_t pid, const char *unit_name, const char *unit_path, in
             } else {
                 service_registry[i].unit_path[0] = '\0';
             }
-            fprintf(stderr, "initd-supervisor: registered service %s (pid=%d, pgid=%d)\n",
-                    unit_name, pid, service_registry[i].pgid);
             return 0;
         }
     }
-    fprintf(stderr, "initd-supervisor: service registry full!\n");
+    log_error("supervisor", "service registry full (max %d services)", MAX_SERVICES);
     return -1;
 }
 
@@ -109,8 +108,6 @@ struct service_record *lookup_service(pid_t pid) {
 void unregister_service(pid_t pid) {
     for (int i = 0; i < MAX_SERVICES; i++) {
         if (service_registry[i].in_use && service_registry[i].pid == pid) {
-            fprintf(stderr, "initd-supervisor: unregistered service %s (pid=%d)\n",
-                    service_registry[i].unit_name, pid);
             char unit_name_copy[sizeof(service_registry[i].unit_name)];
             strncpy(unit_name_copy, service_registry[i].unit_name, sizeof(unit_name_copy));
             unit_name_copy[sizeof(unit_name_copy) - 1] = '\0';
@@ -245,8 +242,6 @@ struct service_record *get_all_services(int *count) {
 int can_restart_service(const char *unit_name) {
     struct restart_tracker *tracker = get_restart_tracker(unit_name);
     if (!tracker) {
-        fprintf(stderr, "initd-supervisor: [DoS Prevention] restart tracker table full, treating %s as denied\n",
-                unit_name ? unit_name : "<null>");
         return 0;
     }
     time_t now = get_monotonic_time();
@@ -258,9 +253,6 @@ int can_restart_service(const char *unit_name) {
     if (tracker->last_attempt > 0) {
         time_t elapsed = now - tracker->last_attempt;
         if (elapsed < min_interval) {
-            fprintf(stderr, "initd-supervisor: [DoS Prevention] %s restart too soon "
-                    "(%ld sec < %d sec minimum)\n",
-                    unit_name, (long)elapsed, min_interval);
             return 0;  /* Rate limited: too fast */
         }
     }
@@ -283,15 +275,6 @@ int can_restart_service(const char *unit_name) {
 
     /* Check if we've exceeded max restarts in window */
     if (tracker->attempt_count >= max_restarts) {
-        time_t oldest = tracker->attempts[0];
-        time_t window_age = now - oldest;
-        fprintf(stderr, "initd-supervisor: [DoS Prevention] %s exceeded restart limit "
-                "(%d restarts in %ld sec < %d sec window)\n",
-                unit_name, tracker->attempt_count, (long)window_age, window_sec);
-        if (tracker->start_limit_action != START_LIMIT_ACTION_NONE) {
-            fprintf(stderr, "initd-supervisor: StartLimitAction=%d requested but not implemented; ignoring\n",
-                    tracker->start_limit_action);
-        }
         return 0;  /* Rate limited: too many attempts */
     }
 
@@ -302,8 +285,6 @@ int can_restart_service(const char *unit_name) {
 void record_restart_attempt(const char *unit_name) {
     struct restart_tracker *tracker = get_restart_tracker(unit_name);
     if (!tracker) {
-        fprintf(stderr, "initd-supervisor: [DoS Prevention] restart tracker table full, tracking disabled for %s\n",
-                unit_name ? unit_name : "<null>");
         return;
     }
     time_t now = get_monotonic_time();
@@ -321,10 +302,6 @@ void record_restart_attempt(const char *unit_name) {
     }
 
     tracker->last_attempt = now;
-
-    fprintf(stderr, "initd-supervisor: [DoS Prevention] %s restart attempt recorded "
-            "(%d/%d in window)\n",
-            unit_name, tracker->attempt_count, max_restarts);
 }
 
 void update_restart_limits(const char *unit_name,
