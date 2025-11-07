@@ -3090,6 +3090,24 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         }
     }
 
+    /* Process After= dependencies first (ordering constraint must be satisfied before starting our deps) */
+    for (int i = 0; i < unit->unit.after_count; i++) {
+        struct unit_file *dep = resolve_unit(unit->unit.after[i]);
+        if (dep && dep->state != STATE_ACTIVE && dep->state != STATE_FAILED) {
+            if (dep->state == STATE_INACTIVE) {
+                if (start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
+                    /* After= dependency not ready yet - block this unit */
+                    unit->start_visit_state = DEP_VISIT_NONE;
+                    return -1;
+                }
+            } else if (dep->state == STATE_ACTIVATING) {
+                /* After= dependency is still activating - block this unit */
+                unit->start_visit_state = DEP_VISIT_NONE;
+                return -1;
+            }
+        }
+    }
+
     for (int i = 0; i < unit->unit.binds_to_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.binds_to[i]);
         if (dep && start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
@@ -3128,23 +3146,6 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
                 return -1;
             }
             /* If dep is FAILED, continue anyway (Wants doesn't propagate failures) */
-        }
-    }
-
-    for (int i = 0; i < unit->unit.after_count; i++) {
-        struct unit_file *dep = resolve_unit(unit->unit.after[i]);
-        if (dep && dep->state != STATE_ACTIVE && dep->state != STATE_FAILED) {
-            if (dep->state == STATE_INACTIVE) {
-                if (start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-                    /* After= dependency not ready yet - block this unit */
-                    unit->start_visit_state = DEP_VISIT_NONE;
-                    return -1;
-                }
-            } else if (dep->state == STATE_ACTIVATING) {
-                /* After= dependency is still activating - block this unit */
-                unit->start_visit_state = DEP_VISIT_NONE;
-                return -1;
-            }
         }
     }
 
