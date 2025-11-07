@@ -2565,17 +2565,17 @@ int main(int argc, const char * const argv[]) {
     log_info("supervisor", "Starting%s", user_mode ? " (user mode)" : "");
 
     /* Initialize service registry */
-    log_debug("supervisor", "Initializing service registry");
+    log_msg_silent(LOG_DEBUG, "supervisor", "Initializing service registry");
     service_registry_init();
 
     /* Setup signals */
-    log_debug("supervisor", "Setting up signal handlers");
+    log_msg_silent(LOG_DEBUG, "supervisor", "Setting up signal handlers");
     if (setup_signals() < 0) {
         return 1;
     }
 
     /* Create IPC socket */
-    log_debug("supervisor", "Creating IPC socket pair");
+    log_msg_silent(LOG_DEBUG, "supervisor", "Creating IPC socket pair");
     int master_fd, worker_fd;
     if (create_ipc_socket(&master_fd, &worker_fd) < 0) {
         return 1;

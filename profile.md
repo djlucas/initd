@@ -2499,6 +2499,17 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - Cleaner code
 - Current standard
 
+### Asynchronous dependency resolution for oneshot services
+- **Problem:** Oneshot services (Type=oneshot) execute a command and exit. Before=/After= ordering requires waiting for completion, but the worker process can't block on waitpid() since the master process manages child PIDs.
+- **Solution:** Event-driven dependency satisfaction:
+  1. Oneshot services are marked STATE_ACTIVATING when started (not STATE_ACTIVE)
+  2. When master notifies worker of process exit, handle_service_exit() transitions oneshot to STATE_ACTIVE on success
+  3. `start_units_waiting_for()` scans all INACTIVE units to find those depending on the newly-active service
+  4. Units whose After=/Requires=/BindsTo= dependencies are now all satisfied get started automatically
+  5. `start_unit_recursive_depth()` returns error when encountering ACTIVATING dependencies, keeping dependent units INACTIVE until ready
+- **Result:** Proper sequential execution of oneshot services and their dependents without blocking the worker event loop
+- **Implementation:** src/supervisor/initd-supervisor-worker.c:2105 (start_units_waiting_for), line 3064 (ACTIVATING check), line 2123 (oneshot STATE_ACTIVE transition)
+
 ## Testing Strategy
 
 ### Unit Tests (Implemented)

@@ -2101,6 +2101,80 @@ static void stop_bound_dependents(struct unit_file *unit, const char *reason) {
 }
 
 /* Handle service exit notification from master */
+/* Check if any units are waiting for this dependency and try to start them */
+static void start_units_waiting_for(const char *dep_name) {
+    for (int i = 0; i < unit_count; i++) {
+        struct unit_file *unit = units[i];
+
+        /* Skip if already active or activating */
+        if (unit->state != STATE_INACTIVE) {
+            continue;
+        }
+
+        /* Check if this unit has the completed service as a dependency */
+        bool depends_on_it = false;
+        for (int j = 0; j < unit->unit.after_count; j++) {
+            if (strcmp(unit->unit.after[j], dep_name) == 0) {
+                depends_on_it = true;
+                break;
+            }
+        }
+        for (int j = 0; j < unit->unit.requires_count && !depends_on_it; j++) {
+            if (strcmp(unit->unit.requires[j], dep_name) == 0) {
+                depends_on_it = true;
+                break;
+            }
+        }
+        for (int j = 0; j < unit->unit.binds_to_count && !depends_on_it; j++) {
+            if (strcmp(unit->unit.binds_to[j], dep_name) == 0) {
+                depends_on_it = true;
+                break;
+            }
+        }
+
+        if (!depends_on_it) {
+            continue;
+        }
+
+        /* This unit depends on the newly-active service. Check if all its dependencies are satisfied */
+        bool all_deps_ready = true;
+
+        /* Check After= dependencies - all must be ACTIVE or INACTIVE, not ACTIVATING */
+        for (int j = 0; j < unit->unit.after_count; j++) {
+            struct unit_file *dep = resolve_unit(unit->unit.after[j]);
+            if (dep && dep->state == STATE_ACTIVATING) {
+                all_deps_ready = false;
+                break;
+            }
+        }
+
+        /* Check Requires= dependencies - all must be ACTIVE */
+        for (int j = 0; j < unit->unit.requires_count && all_deps_ready; j++) {
+            struct unit_file *dep = resolve_unit(unit->unit.requires[j]);
+            if (dep && dep->state != STATE_ACTIVE) {
+                all_deps_ready = false;
+                break;
+            }
+        }
+
+        /* Check BindsTo= dependencies - all must be ACTIVE */
+        for (int j = 0; j < unit->unit.binds_to_count && all_deps_ready; j++) {
+            struct unit_file *dep = resolve_unit(unit->unit.binds_to[j]);
+            if (dep && dep->state != STATE_ACTIVE) {
+                all_deps_ready = false;
+                break;
+            }
+        }
+
+        /* If all dependencies are satisfied, start this unit */
+        if (all_deps_ready) {
+            log_debug("worker", "Dependencies satisfied for %s, starting now", unit->name);
+            start_traversal_generation++;
+            start_unit_recursive_depth(unit, 0, start_traversal_generation);
+        }
+    }
+}
+
 static void handle_service_exit(pid_t pid, int exit_status) {
     struct unit_file *unit = find_unit_by_pid(pid);
     if (!unit) {
@@ -2117,16 +2191,23 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 
     /* Update state based on exit status */
     if (success) {
-        /* For RemainAfterExit=yes services, stay active after successful exit */
-        if (unit->config.service.remain_after_exit) {
+        /* For oneshot services, successful exit means the job is done - mark ACTIVE
+         * For RemainAfterExit=yes services, stay active after successful exit
+         * For other types (simple/forking), mark INACTIVE */
+        if (unit->config.service.type == SERVICE_ONESHOT || unit->config.service.remain_after_exit) {
             unit->state = STATE_ACTIVE;
-            log_debug(unit->name, "exited successfully, remaining active (RemainAfterExit=yes)");
+            if (unit->config.service.remain_after_exit) {
+                log_debug(unit->name, "exited successfully, remaining active (RemainAfterExit=yes)");
+            } else {
+                log_debug(unit->name, "oneshot completed successfully");
+            }
+            /* Log "Started" for oneshot services that complete successfully */
+            if (unit->config.service.type == SERVICE_ONESHOT) {
+                log_service_started(unit->name, unit->unit.description);
+            }
         } else {
             unit->state = STATE_INACTIVE;
-            /* Only show "Stopped" for long-running services, not oneshot */
-            if (unit->config.service.type != SERVICE_ONESHOT) {
-                log_service_stopped(unit->name, unit->unit.description);
-            }
+            log_service_stopped(unit->name, unit->unit.description);
         }
     } else {
         unit->state = STATE_FAILED;
@@ -2145,6 +2226,10 @@ static void handle_service_exit(pid_t pid, int exit_status) {
                                      : "dependency failed";
         stop_bound_dependents(unit, reason);
         enforce_stop_when_unneeded();
+    } else {
+        /* Service is now ACTIVE - check if any units were waiting for it
+         * and try to start them now that this dependency is satisfied */
+        start_units_waiting_for(unit->name);
     }
 
     /* Handle restart policy */
@@ -2974,12 +3059,11 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         return 0;
     }
 
-    /* If unit is already activating, treat it as in-progress to avoid re-starting.
-     * This handles race conditions where multiple units depend on the same service
-     * that is currently activating (e.g., After= dependencies on oneshot services).
-     * The unit will be marked DONE when it finishes activating. */
+    /* If unit is already activating, we can't start it again.
+     * Return success if we're just checking (no depth), or error if we're a dependency.
+     * Units waiting for this will be started by start_units_waiting_for() when it completes. */
     if (unit->state == STATE_ACTIVATING) {
-        return 0;
+        return (depth == 0) ? 0 : -1;
     }
 
     unit->start_visit_state = DEP_VISIT_IN_PROGRESS;
@@ -3060,86 +3144,12 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
             return -1;
         }
 
-        /* For Type=oneshot: Always wait for process to complete to maintain ordering
-         * For Type=simple/forking: Don't wait, they run in background */
-        if (unit->config.service.type == SERVICE_ONESHOT) {
-            int timeout_start = unit->config.service.timeout_start_sec;
-            /* Wait for completion or timeout (if no timeout, wait indefinitely) */
-            int waited = 0;
-            int wstatus = 0;
-            pid_t result = 0;
-
-            while (timeout_start <= 0 || waited < timeout_start) {
-                /* Try non-blocking wait to check if process exited */
-                result = waitpid(unit->pid, &wstatus, WNOHANG);
-                if (result == unit->pid) {
-                    /* Process completed - check exit status */
-                    int exit_status = WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : -1;
-                    if (exit_status != 0) {
-                        char reason[128];
-                        snprintf(reason, sizeof(reason), "exited with status %d", exit_status);
-                        log_service_failed(unit->name, unit->unit.description, reason);
-                        unit->state = STATE_FAILED;
-                        unit->pid = 0;
-                        trigger_on_failure(unit);
-                        unit->start_visit_state = DEP_VISIT_NONE;
-                        return -1;
-                    }
-                    /* Success - mark active and continue */
-                    unit->state = STATE_ACTIVE;
-                    unit->pid = 0;
-                    break;
-                } else if (result < 0 && errno != ECHILD) {
-                    /* wait error */
-                    log_error("worker", "waitpid failed for %s: %s", unit->name, strerror(errno));
-                    break;
-                }
-                sleep(1);
-                waited++;
-            }
-
-            /* Check if process is still running after timeout */
-            if (result == 0 || (result < 0 && errno == ECHILD)) {
-                /* Process still running - exceeded timeout, kill it per TimeoutStartFailureMode */
-                log_service_failed(unit->name, unit->unit.description,
-                                   "start timeout expired (oneshot did not complete)");
-
-                int failure_mode = unit->config.service.timeout_start_failure_mode;
-                int signal_to_send = SIGTERM;  /* Default: terminate */
-
-                if (failure_mode == 1) {
-                    signal_to_send = SIGABRT;  /* abort */
-                } else if (failure_mode == 2) {
-                    signal_to_send = SIGKILL;  /* kill */
-                }
-
-                kill(unit->pid, signal_to_send);
-
-                /* Wait briefly for process to die */
-                int kill_waited = 0;
-                while (kill_waited < 5) {
-                    if (kill(unit->pid, 0) < 0) {
-                        break;
-                    }
-                    sleep(1);
-                    kill_waited++;
-                }
-
-                /* Final SIGKILL if still alive and we didn't already use SIGKILL */
-                if (signal_to_send != SIGKILL && kill(unit->pid, 0) == 0) {
-                    kill(unit->pid, SIGKILL);
-                }
-
-                unit->state = STATE_FAILED;
-                unit->pid = 0;
-                trigger_on_failure(unit);
-                unit->start_visit_state = DEP_VISIT_NONE;
-                return -1;
-            }
+        /* For oneshot services, state transitions to ACTIVE happen in handle_service_exited
+         * when the master notifies us of process completion. For now, just log that it started.
+         * Non-oneshot services (simple/forking) are already marked ACTIVE above. */
+        if (unit->state == STATE_ACTIVE) {
+            log_service_started(unit->name, unit->unit.description);
         }
-
-        /* Service started successfully - log it */
-        log_service_started(unit->name, unit->unit.description);
     } else if (unit->type == UNIT_TARGET) {
         /* Check that all required/bound dependencies are actually active */
         for (int i = 0; i < unit->unit.requires_count; i++) {
@@ -3378,13 +3388,13 @@ int main(int argc, char *argv[]) {
     log_info("worker", "Starting (ipc_fd=%d)", master_socket);
 
     /* Setup signals */
-    log_debug("worker", "Setting up signal handlers");
+    log_msg_silent(LOG_DEBUG, "worker", "Setting up signal handlers");
     if (setup_signals() < 0) {
         return 1;
     }
 
     /* Create control socket */
-    log_debug("worker", "Creating control socket");
+    log_msg_silent(LOG_DEBUG, "worker", "Creating control socket");
     control_socket = create_control_socket();
     if (control_socket < 0) {
         log_error("worker", "failed to create control socket");
@@ -3396,7 +3406,7 @@ int main(int argc, char *argv[]) {
                   control_socket, ctrl_path_dbg ? ctrl_path_dbg : "<null>");
     }
 
-    log_debug("worker", "Creating status socket");
+    log_msg_silent(LOG_DEBUG, "worker", "Creating status socket");
     status_socket = create_status_socket();
     if (status_socket < 0) {
         log_error("worker", "failed to create status socket");
@@ -3409,7 +3419,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Scan unit directories */
-    log_debug("worker", "Scanning unit directories");
+    log_msg_silent(LOG_DEBUG, "worker", "Scanning unit directories");
     if (scan_unit_directories(&units, &unit_count) < 0) {
         log_error("worker", "failed to scan unit directories");
         close(control_socket);
@@ -3445,7 +3455,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (boot_target) {
-        log_debug("worker", "Activating target: %s", boot_target->name);
+        log_msg_silent(LOG_DEBUG, "worker", "Activating target: %s", boot_target->name);
         if (start_unit_recursive(boot_target) < 0) {
             log_error("worker", "failed to start %s (OnFailure units will be triggered)", target_name);
         }
@@ -3454,7 +3464,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Main loop */
-    log_debug("worker", "Entering main loop");
+    log_msg_silent(LOG_DEBUG, "worker", "Entering main loop");
     main_loop();
 
     /* Cleanup */
