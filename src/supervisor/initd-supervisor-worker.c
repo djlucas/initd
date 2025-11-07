@@ -655,7 +655,7 @@ static void notify_timer_daemon_inactive(const char *service_name) {
 
     int fd = connect_to_timer_daemon();
     if (fd < 0) {
-        log_msg(LOG_DEBUG, service_name, "timer daemon unavailable for notify-inactive");
+        log_msg_silent(LOG_DEBUG, service_name, "timer daemon unavailable for notify-inactive");
         return;
     }
 
@@ -2168,7 +2168,7 @@ static void start_units_waiting_for(const char *dep_name) {
 
         /* If all dependencies are satisfied, start this unit */
         if (all_deps_ready) {
-            log_debug("worker", "Dependencies satisfied for %s, starting now", unit->name);
+            log_msg_silent(LOG_DEBUG, "worker", "Dependencies satisfied for %s, starting now", unit->name);
             start_traversal_generation++;
             start_unit_recursive_depth(unit, 0, start_traversal_generation);
         }
@@ -2182,7 +2182,7 @@ static void handle_service_exit(pid_t pid, int exit_status) {
         return;
     }
 
-    log_msg(LOG_INFO, unit->name, "exited with status %d", exit_status);
+    log_msg_silent(LOG_INFO, unit->name, "exited with status %d", exit_status);
 
     unit->pid = 0;
 
@@ -3120,7 +3120,14 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     for (int i = 0; i < unit->unit.wants_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.wants[i]);
         if (dep) {
-            start_unit_recursive_depth(dep, depth + 1, generation);
+            int result = start_unit_recursive_depth(dep, depth + 1, generation);
+            /* Block if dependency is still activating or waiting, but don't fail if it failed */
+            if (result < 0 && dep->state != STATE_FAILED) {
+                /* Dependency not ready yet - block this unit */
+                unit->start_visit_state = DEP_VISIT_NONE;
+                return -1;
+            }
+            /* If dep is FAILED, continue anyway (Wants doesn't propagate failures) */
         }
     }
 
@@ -3129,8 +3136,14 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         if (dep && dep->state != STATE_ACTIVE && dep->state != STATE_FAILED) {
             if (dep->state == STATE_INACTIVE) {
                 if (start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-                    log_warn(unit->name, "After= dependency %s failed", unit->unit.after[i]);
+                    /* After= dependency not ready yet - block this unit */
+                    unit->start_visit_state = DEP_VISIT_NONE;
+                    return -1;
                 }
+            } else if (dep->state == STATE_ACTIVATING) {
+                /* After= dependency is still activating - block this unit */
+                unit->start_visit_state = DEP_VISIT_NONE;
+                return -1;
             }
         }
     }

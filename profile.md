@@ -2510,6 +2510,23 @@ To avoid writing ourselves into a corner, the following must be considered durin
 - **Result:** Proper sequential execution of oneshot services and their dependents without blocking the worker event loop
 - **Implementation:** src/supervisor/initd-supervisor-worker.c:2105 (start_units_waiting_for), line 3064 (ACTIVATING check), line 2123 (oneshot STATE_ACTIVE transition)
 
+### Dependency blocking semantics (Wants= and After=)
+- **Wants= behavior:** Soft dependency that doesn't propagate failures
+  - Starts the wanted unit if inactive
+  - **Blocks** until wanted unit reaches a determined state (ACTIVE or FAILED)
+  - Continues regardless of whether wanted unit succeeded or failed
+  - Implementation: src/supervisor/initd-supervisor-worker.c:3120-3132
+- **After= behavior:** Pure ordering constraint without failure propagation
+  - If After= unit is INACTIVE, starts it and blocks until complete
+  - If After= unit is ACTIVATING, blocks until it reaches ACTIVE or FAILED
+  - Continues regardless of After= unit's final state
+  - Does not propagate failures (unlike Requires=/BindsTo=)
+  - Implementation: src/supervisor/initd-supervisor-worker.c:3134-3149
+- **Requires= behavior:** Hard dependency that propagates failures
+  - Starts the required unit and blocks until complete
+  - If required unit fails, the requiring unit also fails
+  - Implementation: src/supervisor/initd-supervisor-worker.c:3107-3118
+
 ## Testing Strategy
 
 ### Unit Tests (Implemented)

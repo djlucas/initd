@@ -1,6 +1,6 @@
 [Unit]
 Description=Multi-User System
-Wants=basic.target
+Requires=basic.target
 After=basic.target
 Before=graphical.target
 OnFailure=basic.target

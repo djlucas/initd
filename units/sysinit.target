@@ -1,6 +1,7 @@
 [Unit]
 Description=System Initialization
-Wants=mountvirtfs.service modules-load.service udevd.service udev-trigger.service udev-settle.service localnet.service swap.service checkfs.service remount-root.service mountfs.service sysctl.service udev-retry.service createfiles.service
+Requires=mountvirtfs.service checkfs.service remount-root.service udevd.service udev-trigger.service udev-settle.service udev-retry.service modules-load.service createfiles.service
+Wants=localnet.service swap.service mountfs.service sysctl.service
 After=mountvirtfs.service modules-load.service udevd.service udev-trigger.service udev-settle.service localnet.service swap.service checkfs.service remount-root.service mountfs.service sysctl.service udev-retry.service createfiles.service
 Before=basic.target
 OnFailure=emergency.target

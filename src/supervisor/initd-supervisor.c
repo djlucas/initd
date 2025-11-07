@@ -2329,7 +2329,7 @@ static void reap_zombies(void) {
         } else {
             /* Service process exited - unregister and notify worker */
             int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-            log_debug("supervisor", "service pid %d exited (status %d)",
+            log_msg_silent(LOG_DEBUG, "supervisor", "service pid %d exited (status %d)",
                       pid, exit_status);
 
             /* Remove from service registry */

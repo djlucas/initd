@@ -3,7 +3,6 @@ Description=Load Kernel Modules
 DefaultDependencies=no
 After=mountvirtfs.service
 Before=udevd.service sysinit.target
-ConditionPathExists=@INITD_SYSCONFIG_DIR@/modules.conf
 
 [Service]
 Type=oneshot

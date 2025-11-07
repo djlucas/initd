@@ -1,6 +1,7 @@
 [Unit]
 Description=Basic System
-Wants=sysinit.target console.service
+Requires=sysinit.target
+Wants=console.service
 After=sysinit.target console.service
 Before=multi-user.target graphical.target
 OnFailure=rescue.target

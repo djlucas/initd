@@ -2,4 +2,4 @@
 Description=Network is Online
 Documentation=man:systemd.special(7)
 After=network.target network-online
-Wants=network-online
+Requires=network-online

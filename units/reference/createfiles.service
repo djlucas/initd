@@ -3,7 +3,6 @@ Description=Create Files and Directories
 DefaultDependencies=no
 After=mountfs.service
 Before=udev-retry.service sysinit.target
-ConditionPathExists=@INITD_SYSCONFIG_DIR@/createfiles.conf
 
 [Service]
 Type=oneshot
