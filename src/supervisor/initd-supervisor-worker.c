@@ -218,7 +218,7 @@ static int enable_unit(struct unit_file *unit) {
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
     strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
-    log_debug("worker", "enabling %s", unit->name);
+    log_msg_silent(LOG_DEBUG, "worker", "enabling %s", unit->name);
 
     /* Send request to master */
     if (send_request(master_socket, &req) < 0) {
@@ -250,7 +250,7 @@ static int disable_unit(struct unit_file *unit) {
     strncpy(req.unit_name, unit->name, sizeof(req.unit_name) - 1);
     strncpy(req.unit_path, unit->path, sizeof(req.unit_path) - 1);
 
-    log_debug("worker", "disabling %s", unit->name);
+    log_msg_silent(LOG_DEBUG, "worker", "disabling %s", unit->name);
 
     /* Send request to master */
     if (send_request(master_socket, &req) < 0) {
@@ -2197,9 +2197,9 @@ static void handle_service_exit(pid_t pid, int exit_status) {
         if (unit->config.service.type == SERVICE_ONESHOT || unit->config.service.remain_after_exit) {
             unit->state = STATE_ACTIVE;
             if (unit->config.service.remain_after_exit) {
-                log_debug(unit->name, "exited successfully, remaining active (RemainAfterExit=yes)");
+                log_msg_silent(LOG_DEBUG, unit->name, "exited successfully, remaining active (RemainAfterExit=yes)");
             } else {
-                log_debug(unit->name, "oneshot completed successfully");
+                log_msg_silent(LOG_DEBUG, unit->name, "oneshot completed successfully");
             }
             /* Log "Started" for oneshot services that complete successfully */
             if (unit->config.service.type == SERVICE_ONESHOT) {
@@ -3240,7 +3240,7 @@ static void trigger_on_failure(struct unit_file *unit) {
         return;
     }
 
-    log_info(unit->name, "triggering OnFailure units (%d)", unit->unit.on_failure_count);
+    log_msg_silent(LOG_INFO, unit->name, "triggering OnFailure units (%d)", unit->unit.on_failure_count);
 
     for (int i = 0; i < unit->unit.on_failure_count; i++) {
         const char *failure_unit_name = unit->unit.on_failure[i];
@@ -3251,7 +3251,7 @@ static void trigger_on_failure(struct unit_file *unit) {
             continue;
         }
 
-        log_info(unit->name, "activating OnFailure unit: %s", failure_unit_name);
+        log_msg_silent(LOG_INFO, unit->name, "activating OnFailure unit: %s", failure_unit_name);
         if (start_unit_recursive(failure_unit) < 0) {
             log_warn(unit->name, "failed to activate OnFailure unit %s", failure_unit_name);
         }
@@ -3263,7 +3263,7 @@ static void trigger_on_failure(struct unit_file *unit) {
 __attribute__((unused))
 #endif
 static int main_loop(void) {
-    log_debug("worker", "Entering main loop");
+    log_msg_silent(LOG_DEBUG, "worker", "Entering main loop");
 
     /* Defensive check: ensure sockets are valid */
     if (control_socket < 0 || master_socket < 0) {
@@ -3339,7 +3339,7 @@ static int main_loop(void) {
     }
 
     /* Shutdown sequence */
-    log_info("worker", "Shutting down services");
+    log_msg_silent(LOG_INFO, "worker", "Shutting down services");
 
     /* Stop all active services in reverse dependency order */
     /* We iterate through all units and stop them; the recursive function
@@ -3350,7 +3350,7 @@ static int main_loop(void) {
         }
     }
 
-    log_info("worker", "All services stopped");
+    log_msg_silent(LOG_INFO, "worker", "All services stopped");
 
     /* Notify master we're done */
     notify_shutdown_complete();
@@ -3386,7 +3386,7 @@ int main(int argc, char *argv[]) {
     /* Initialize logging */
     log_init("supervisor-worker");
     log_enhanced_init("worker", NULL);
-    log_debug("worker", "Logging initialized, IPC socket fd=%d", master_socket);
+    log_msg_silent(LOG_DEBUG, "worker", "Logging initialized, IPC socket fd=%d", master_socket);
 
     const char *debug_env = getenv("INITD_DEBUG_SUPERVISOR");
     debug_mode = (debug_env && strcmp(debug_env, "0") != 0);
@@ -3398,7 +3398,7 @@ int main(int argc, char *argv[]) {
         log_set_file_level(LOGLEVEL_INFO);
     }
 
-    log_info("worker", "Starting (ipc_fd=%d)", master_socket);
+    log_msg_silent(LOG_INFO, "worker", "Starting (ipc_fd=%d)", master_socket);
 
     /* Setup signals */
     log_msg_silent(LOG_DEBUG, "worker", "Setting up signal handlers");
