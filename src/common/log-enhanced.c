@@ -206,8 +206,8 @@ void log_service_starting(const char *unit_name, const char *description) {
                 timestamp, unit_name, display);
     }
 
-    /* Also send to syslog buffer */
-    log_msg(LOG_INFO, unit_name, "Starting %s", display);
+    /* Also send to syslog buffer (silent to avoid duplicate console output) */
+    log_msg_silent(LOG_INFO, unit_name, "Starting %s", display);
 }
 
 void log_service_started(const char *unit_name, const char *description) {
@@ -235,8 +235,8 @@ void log_service_started(const char *unit_name, const char *description) {
                 timestamp, unit_name, display);
     }
 
-    /* Also send to syslog buffer */
-    log_msg(LOG_INFO, unit_name, "Started %s", display);
+    /* Also send to syslog buffer (silent to avoid duplicate console output) */
+    log_msg_silent(LOG_INFO, unit_name, "Started %s", display);
 }
 
 void log_service_failed(const char *unit_name, const char *description, const char *reason) {
@@ -279,11 +279,11 @@ void log_service_failed(const char *unit_name, const char *description, const ch
         }
     }
 
-    /* Also send to syslog buffer */
+    /* Also send to syslog buffer (silent to avoid duplicate console output) */
     if (reason && reason[0]) {
-        log_msg(LOG_ERR, unit_name, "Failed to start %s - %s", display, reason);
+        log_msg_silent(LOG_ERR, unit_name, "Failed to start %s - %s", display, reason);
     } else {
-        log_msg(LOG_ERR, unit_name, "Failed to start %s", display);
+        log_msg_silent(LOG_ERR, unit_name, "Failed to start %s", display);
     }
 }
 
@@ -309,8 +309,8 @@ void log_service_stopped(const char *unit_name, const char *description) {
                 timestamp, unit_name, display);
     }
 
-    /* Also send to syslog buffer */
-    log_msg(LOG_INFO, unit_name, "Stopped %s", display);
+    /* Also send to syslog buffer (silent to avoid duplicate console output) */
+    log_msg_silent(LOG_INFO, unit_name, "Stopped %s", display);
 }
 
 void log_target_reached(const char *target_name, const char *description) {
@@ -335,6 +335,6 @@ void log_target_reached(const char *target_name, const char *description) {
                 timestamp, target_name, display);
     }
 
-    /* Also send to syslog buffer */
-    log_msg(LOG_INFO, target_name, "Reached %s", display);
+    /* Also send to syslog buffer (silent to avoid duplicate console output) */
+    log_msg_silent(LOG_INFO, target_name, "Reached %s", display);
 }

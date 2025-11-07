@@ -33,6 +33,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <errno.h>
@@ -570,7 +571,13 @@ static pid_t start_service(struct unit_file *unit) {
 
     if (resp.type == RESP_SERVICE_STARTED) {
         unit->pid = resp.service_pid;
-        unit->state = STATE_ACTIVE;
+        /* For oneshot services, stay in ACTIVATING state until process completes
+         * For other types (simple, forking), become active immediately */
+        if (unit->config.service.type == SERVICE_ONESHOT) {
+            unit->state = STATE_ACTIVATING;
+        } else {
+            unit->state = STATE_ACTIVE;
+        }
 
         /* Check if this service provides syslog */
         if (unit_provides(unit, "syslog")) {
@@ -2967,6 +2974,14 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         return 0;
     }
 
+    /* If unit is already activating, treat it as in-progress to avoid re-starting.
+     * This handles race conditions where multiple units depend on the same service
+     * that is currently activating (e.g., After= dependencies on oneshot services).
+     * The unit will be marked DONE when it finishes activating. */
+    if (unit->state == STATE_ACTIVATING) {
+        return 0;
+    }
+
     unit->start_visit_state = DEP_VISIT_IN_PROGRESS;
 
     if (!unit_conditions_met(unit)) {
@@ -3045,17 +3060,38 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
             return -1;
         }
 
-        /* Monitor start timeout if configured
-         * For Type=oneshot: Wait for process to complete within timeout
-         * For Type=simple/forking: This feature is less useful without sd_notify,
-         * but we implement it as: if process dies within timeout, it's a failure */
-        int timeout_start = unit->config.service.timeout_start_sec;
-        if (timeout_start > 0 && unit->config.service.type == SERVICE_ONESHOT) {
-            /* For oneshot services, wait for completion or timeout */
+        /* For Type=oneshot: Always wait for process to complete to maintain ordering
+         * For Type=simple/forking: Don't wait, they run in background */
+        if (unit->config.service.type == SERVICE_ONESHOT) {
+            int timeout_start = unit->config.service.timeout_start_sec;
+            /* Wait for completion or timeout (if no timeout, wait indefinitely) */
             int waited = 0;
-            while (waited < timeout_start) {
-                if (kill(unit->pid, 0) < 0) {
-                    /* Process completed - check exit status will be done elsewhere */
+            int wstatus = 0;
+            pid_t result = 0;
+
+            while (timeout_start <= 0 || waited < timeout_start) {
+                /* Try non-blocking wait to check if process exited */
+                result = waitpid(unit->pid, &wstatus, WNOHANG);
+                if (result == unit->pid) {
+                    /* Process completed - check exit status */
+                    int exit_status = WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : -1;
+                    if (exit_status != 0) {
+                        char reason[128];
+                        snprintf(reason, sizeof(reason), "exited with status %d", exit_status);
+                        log_service_failed(unit->name, unit->unit.description, reason);
+                        unit->state = STATE_FAILED;
+                        unit->pid = 0;
+                        trigger_on_failure(unit);
+                        unit->start_visit_state = DEP_VISIT_NONE;
+                        return -1;
+                    }
+                    /* Success - mark active and continue */
+                    unit->state = STATE_ACTIVE;
+                    unit->pid = 0;
+                    break;
+                } else if (result < 0 && errno != ECHILD) {
+                    /* wait error */
+                    log_error("worker", "waitpid failed for %s: %s", unit->name, strerror(errno));
                     break;
                 }
                 sleep(1);
@@ -3063,7 +3099,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
             }
 
             /* Check if process is still running after timeout */
-            if (kill(unit->pid, 0) == 0) {
+            if (result == 0 || (result < 0 && errno == ECHILD)) {
                 /* Process still running - exceeded timeout, kill it per TimeoutStartFailureMode */
                 log_service_failed(unit->name, unit->unit.description,
                                    "start timeout expired (oneshot did not complete)");
