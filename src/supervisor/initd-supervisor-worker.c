@@ -70,13 +70,40 @@ static unsigned int stop_traversal_generation = 0;
 static unsigned int isolate_generation = 0;
 static bool debug_mode = false;
 static bool stop_when_unneeded_guard = false;
+static struct unit_file *waiting_units_head = NULL;
+
+/* Maximum recursion depth for dependency resolution */
+#define MAX_RECURSION_DEPTH 100
+#define MAX_START_DEPENDENCIES (MAX_DEPS * 3)
+
+enum start_result {
+    START_RESULT_FAILURE = -1,
+    START_RESULT_SUCCESS = 0,
+    START_RESULT_WAITING = 1
+};
+
+enum dep_relation_type {
+    DEP_RELATION_BINDS,
+    DEP_RELATION_REQUIRES,
+    DEP_RELATION_WANTS
+};
+
+struct dependency_to_start {
+    struct unit_file *unit;
+    enum dep_relation_type relation;
+    const char *name;
+    unsigned int pending_after;
+    bool queued;
+};
 
 /* Forward declarations */
 static bool unit_provides(const struct unit_file *unit, const char *service_name);
 static int stop_unit_recursive(struct unit_file *unit);
 static int start_unit_recursive(struct unit_file *unit);
+static int start_unit_recursive_override(struct unit_file *unit);
 static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
-static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation);
+static enum start_result start_unit_recursive_depth(struct unit_file *unit, int depth,
+                                                    unsigned int generation, bool override);
 static void mark_isolate_closure(struct unit_file *unit, unsigned int generation);
 static void trigger_on_failure(struct unit_file *unit);
 static bool unit_conditions_met(struct unit_file *unit);
@@ -84,9 +111,312 @@ static bool unit_has_active_dependents(struct unit_file *unit);
 static void enforce_stop_when_unneeded(void);
 static void stop_bound_dependents(struct unit_file *unit, const char *reason);
 static bool dependency_matches(struct unit_file *candidate, const char *name);
+static struct unit_file *find_unit(const char *name);
+static struct unit_file *resolve_unit(const char *name);
+static bool target_allows_dependency_override(const struct unit_file *unit);
+static void enqueue_waiting_unit(struct unit_file *unit);
+static void dequeue_waiting_unit(struct unit_file *unit);
+static bool unit_dependencies_ready(const struct unit_file *unit);
+static bool unit_depends_on_name(const struct unit_file *unit, const char *name);
+static bool unit_dependency_relation(const struct unit_file *unit, const char *name,
+                                     enum dep_relation_type *relation_out);
+static enum start_result start_ordered_dependencies(struct unit_file *unit,
+                                                    struct dependency_to_start *deps,
+                                                    int dep_count,
+                                                    int depth,
+                                                    unsigned int generation,
+                                                    bool override);
 
-/* Maximum recursion depth for dependency resolution */
-#define MAX_RECURSION_DEPTH 100
+/* Promote to stricter dependency semantics when the same unit appears multiple times */
+static bool relation_is_stronger(enum dep_relation_type lhs, enum dep_relation_type rhs) {
+    return lhs < rhs;
+}
+
+static bool target_allows_dependency_override(const struct unit_file *unit) {
+    if (!unit || unit->name[0] == '\0') {
+        return false;
+    }
+    return strcmp(unit->name, "emergency.target") == 0 ||
+           strcmp(unit->name, "rescue.target") == 0 ||
+           strcmp(unit->name, "shutdown.target") == 0;
+}
+
+static void enqueue_waiting_unit(struct unit_file *unit) {
+    if (!unit || unit->waiting_for_dependencies) {
+        return;
+    }
+
+    unit->waiting_for_dependencies = true;
+    unit->waiting_next = waiting_units_head;
+    waiting_units_head = unit;
+}
+
+static void dequeue_waiting_unit(struct unit_file *unit) {
+    if (!unit || !unit->waiting_for_dependencies) {
+        return;
+    }
+
+    struct unit_file **cursor = &waiting_units_head;
+    while (*cursor) {
+        if (*cursor == unit) {
+            *cursor = unit->waiting_next;
+            break;
+        }
+        cursor = &(*cursor)->waiting_next;
+    }
+
+    unit->waiting_next = NULL;
+    unit->waiting_for_dependencies = false;
+}
+
+static bool unit_depends_on_name(const struct unit_file *unit, const char *name) {
+    if (!unit || !name) {
+        return false;
+    }
+
+    for (int j = 0; j < unit->unit.after_count; j++) {
+        if (strcmp(unit->unit.after[j], name) == 0) {
+            return true;
+        }
+    }
+    for (int j = 0; j < unit->unit.requires_count; j++) {
+        if (strcmp(unit->unit.requires[j], name) == 0) {
+            return true;
+        }
+    }
+    for (int j = 0; j < unit->unit.binds_to_count; j++) {
+        if (strcmp(unit->unit.binds_to[j], name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool unit_dependencies_ready(const struct unit_file *unit) {
+    if (!unit) {
+        return false;
+    }
+
+    for (int j = 0; j < unit->unit.after_count; j++) {
+        struct unit_file *dep = resolve_unit(unit->unit.after[j]);
+        if (dep && dep->state == STATE_ACTIVATING) {
+            return false;
+        }
+    }
+
+    for (int j = 0; j < unit->unit.requires_count; j++) {
+        struct unit_file *dep = resolve_unit(unit->unit.requires[j]);
+        if (dep && dep->state != STATE_ACTIVE) {
+            return false;
+        }
+    }
+
+    for (int j = 0; j < unit->unit.binds_to_count; j++) {
+        struct unit_file *dep = resolve_unit(unit->unit.binds_to[j]);
+        if (dep && dep->state != STATE_ACTIVE) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool unit_dependency_relation(const struct unit_file *unit,
+                                     const char *name,
+                                     enum dep_relation_type *relation_out) {
+    if (!unit || !name) {
+        return false;
+    }
+
+    for (int j = 0; j < unit->unit.binds_to_count; j++) {
+        if (strcmp(unit->unit.binds_to[j], name) == 0) {
+            if (relation_out) {
+                *relation_out = DEP_RELATION_BINDS;
+            }
+            return true;
+        }
+    }
+
+    for (int j = 0; j < unit->unit.requires_count; j++) {
+        if (strcmp(unit->unit.requires[j], name) == 0) {
+            if (relation_out) {
+                *relation_out = DEP_RELATION_REQUIRES;
+            }
+            return true;
+        }
+    }
+
+    for (int j = 0; j < unit->unit.wants_count; j++) {
+        if (strcmp(unit->unit.wants[j], name) == 0) {
+            if (relation_out) {
+                *relation_out = DEP_RELATION_WANTS;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static int add_dependency_entry(const struct unit_file *parent,
+                                struct dependency_to_start *deps,
+                                int *dep_count,
+                                struct unit_file *dep,
+                                enum dep_relation_type relation,
+                                const char *name) {
+    if (!dep) {
+        return 0;
+    }
+
+    for (int i = 0; i < *dep_count; i++) {
+        if (deps[i].unit == dep) {
+            if (relation_is_stronger(relation, deps[i].relation)) {
+                deps[i].relation = relation;
+                deps[i].name = name;
+            }
+            return 0;
+        }
+    }
+
+    if (*dep_count >= MAX_START_DEPENDENCIES) {
+        log_error("worker", "unit %s exceeds start dependency limit (%d)",
+                  parent->name, MAX_START_DEPENDENCIES);
+        return -1;
+    }
+
+    deps[*dep_count].unit = dep;
+    deps[*dep_count].relation = relation;
+    deps[*dep_count].name = name;
+    deps[*dep_count].pending_after = 0;
+    deps[*dep_count].queued = false;
+    (*dep_count)++;
+    return 0;
+}
+
+static int find_dependency_index(struct dependency_to_start *deps,
+                                 int dep_count,
+                                 const struct unit_file *unit) {
+    if (!unit) {
+        return -1;
+    }
+    for (int i = 0; i < dep_count; i++) {
+        if (deps[i].unit == unit) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static enum start_result start_ordered_dependencies(struct unit_file *unit,
+                                                    struct dependency_to_start *deps,
+                                                    int dep_count,
+                                                    int depth,
+                                                    unsigned int generation,
+                                                    bool override) {
+    if (dep_count == 0) {
+        return START_RESULT_SUCCESS;
+    }
+
+    unsigned char edges[MAX_START_DEPENDENCIES][MAX_START_DEPENDENCIES] = {{0}};
+
+    for (int i = 0; i < dep_count; i++) {
+        deps[i].pending_after = 0;
+        deps[i].queued = false;
+    }
+
+    for (int i = 0; i < dep_count; i++) {
+        struct unit_file *u = deps[i].unit;
+        if (!u) {
+            continue;
+        }
+        for (int j = 0; j < u->unit.after_count; j++) {
+            struct unit_file *after_unit = resolve_unit(u->unit.after[j]);
+            int idx = find_dependency_index(deps, dep_count, after_unit);
+            if (idx >= 0 && idx != i) {
+                if (!edges[idx][i]) {
+                    edges[idx][i] = 1;
+                    deps[i].pending_after++;
+                }
+            } else if (after_unit && after_unit->state == STATE_ACTIVATING && !override) {
+                unit->start_visit_state = DEP_VISIT_NONE;
+                enqueue_waiting_unit(unit);
+                return START_RESULT_WAITING;
+            }
+        }
+        for (int j = 0; j < u->unit.before_count; j++) {
+            struct unit_file *before_unit = resolve_unit(u->unit.before[j]);
+            int idx = find_dependency_index(deps, dep_count, before_unit);
+            if (idx >= 0 && idx != i) {
+                if (!edges[i][idx]) {
+                    edges[i][idx] = 1;
+                    deps[idx].pending_after++;
+                }
+            }
+        }
+    }
+
+    int started = 0;
+    bool progress = true;
+
+    while (started < dep_count) {
+        progress = false;
+        for (int i = 0; i < dep_count; i++) {
+            struct dependency_to_start *dep = &deps[i];
+            if (!dep->unit || dep->queued) {
+                continue;
+            }
+            if (dep->pending_after > 0) {
+                continue;
+            }
+
+            dep->queued = true;
+            progress = true;
+
+            enum start_result result = start_unit_recursive_depth(dep->unit, depth + 1,
+                                                                  generation, override);
+            if (result == START_RESULT_FAILURE) {
+                if (!(override || dep->relation == DEP_RELATION_WANTS)) {
+                    char reason[256];
+                    if (dep->relation == DEP_RELATION_BINDS) {
+                        snprintf(reason, sizeof(reason), "failed to start bound dependency %s", dep->name);
+                    } else {
+                        snprintf(reason, sizeof(reason), "failed to start required dependency %s", dep->name);
+                    }
+                    log_service_failed(unit->name, unit->unit.description, reason);
+                    unit->state = STATE_FAILED;
+                    trigger_on_failure(unit);
+                    unit->start_visit_state = DEP_VISIT_NONE;
+                    return START_RESULT_FAILURE;
+                }
+            } else if (result == START_RESULT_WAITING) {
+                if (!(override || dep->relation == DEP_RELATION_WANTS)) {
+                    unit->start_visit_state = DEP_VISIT_NONE;
+                    enqueue_waiting_unit(unit);
+                    return START_RESULT_WAITING;
+                }
+            }
+
+            started++;
+
+            for (int j = 0; j < dep_count; j++) {
+                if (edges[i][j] && deps[j].pending_after > 0) {
+                    deps[j].pending_after--;
+                }
+            }
+        }
+
+        if (!progress) {
+            log_service_failed(unit->name, unit->unit.description,
+                               "dependency ordering cycle detected");
+            unit->state = STATE_FAILED;
+            trigger_on_failure(unit);
+            unit->start_visit_state = DEP_VISIT_NONE;
+            return START_RESULT_FAILURE;
+        }
+    }
+
+    return START_RESULT_SUCCESS;
+}
 
 static void reset_start_traversal_marks(void) {
     for (int i = 0; i < unit_count; i++) {
@@ -2101,77 +2431,51 @@ static void stop_bound_dependents(struct unit_file *unit, const char *reason) {
 }
 
 /* Handle service exit notification from master */
-/* Check if any units are waiting for this dependency and try to start them */
+/* Check if waiting units can now proceed because dep_name became ready */
 static void start_units_waiting_for(const char *dep_name) {
-    for (int i = 0; i < unit_count; i++) {
-        struct unit_file *unit = units[i];
+    struct unit_file *dependency = resolve_unit(dep_name);
+    bool dep_failed = dependency && dependency->state == STATE_FAILED;
+    struct unit_file **cursor = &waiting_units_head;
 
-        /* Skip if already active or activating */
-        if (unit->state != STATE_INACTIVE) {
+    while (*cursor) {
+        struct unit_file *unit = *cursor;
+
+        if (!unit_depends_on_name(unit, dep_name)) {
+            cursor = &unit->waiting_next;
             continue;
         }
 
-        /* Check if this unit has the completed service as a dependency */
-        bool depends_on_it = false;
-        for (int j = 0; j < unit->unit.after_count; j++) {
-            if (strcmp(unit->unit.after[j], dep_name) == 0) {
-                depends_on_it = true;
-                break;
-            }
-        }
-        for (int j = 0; j < unit->unit.requires_count && !depends_on_it; j++) {
-            if (strcmp(unit->unit.requires[j], dep_name) == 0) {
-                depends_on_it = true;
-                break;
-            }
-        }
-        for (int j = 0; j < unit->unit.binds_to_count && !depends_on_it; j++) {
-            if (strcmp(unit->unit.binds_to[j], dep_name) == 0) {
-                depends_on_it = true;
-                break;
-            }
-        }
+        if (unit_dependencies_ready(unit)) {
+            *cursor = unit->waiting_next;
+            unit->waiting_next = NULL;
+            unit->waiting_for_dependencies = false;
 
-        if (!depends_on_it) {
+            log_msg_silent(LOG_DEBUG, "worker", "Dependencies satisfied for %s, restarting activation", unit->name);
+            unsigned int generation = next_start_generation();
+            (void)start_unit_recursive_depth(unit, 0, generation, false);
+            cursor = &waiting_units_head;
             continue;
         }
 
-        /* This unit depends on the newly-active service. Check if all its dependencies are satisfied */
-        bool all_deps_ready = true;
+        if (dep_failed) {
+            enum dep_relation_type relation;
+            if (unit_dependency_relation(unit, dep_name, &relation) &&
+                relation != DEP_RELATION_WANTS) {
+                *cursor = unit->waiting_next;
+                unit->waiting_next = NULL;
+                unit->waiting_for_dependencies = false;
 
-        /* Check After= dependencies - all must be ACTIVE or INACTIVE, not ACTIVATING */
-        for (int j = 0; j < unit->unit.after_count; j++) {
-            struct unit_file *dep = resolve_unit(unit->unit.after[j]);
-            if (dep && dep->state == STATE_ACTIVATING) {
-                all_deps_ready = false;
-                break;
+                char reason[256];
+                snprintf(reason, sizeof(reason), "dependency %s failed before activation", dep_name);
+                log_service_failed(unit->name, unit->unit.description, reason);
+                unit->state = STATE_FAILED;
+                trigger_on_failure(unit);
+                cursor = &waiting_units_head;
+                continue;
             }
         }
 
-        /* Check Requires= dependencies - all must be ACTIVE */
-        for (int j = 0; j < unit->unit.requires_count && all_deps_ready; j++) {
-            struct unit_file *dep = resolve_unit(unit->unit.requires[j]);
-            if (dep && dep->state != STATE_ACTIVE) {
-                all_deps_ready = false;
-                break;
-            }
-        }
-
-        /* Check BindsTo= dependencies - all must be ACTIVE */
-        for (int j = 0; j < unit->unit.binds_to_count && all_deps_ready; j++) {
-            struct unit_file *dep = resolve_unit(unit->unit.binds_to[j]);
-            if (dep && dep->state != STATE_ACTIVE) {
-                all_deps_ready = false;
-                break;
-            }
-        }
-
-        /* If all dependencies are satisfied, start this unit */
-        if (all_deps_ready) {
-            log_msg_silent(LOG_DEBUG, "worker", "Dependencies satisfied for %s, starting now", unit->name);
-            start_traversal_generation++;
-            start_unit_recursive_depth(unit, 0, start_traversal_generation);
-        }
+        cursor = &unit->waiting_next;
     }
 }
 
@@ -2226,11 +2530,10 @@ static void handle_service_exit(pid_t pid, int exit_status) {
                                      : "dependency failed";
         stop_bound_dependents(unit, reason);
         enforce_stop_when_unneeded();
-    } else {
-        /* Service is now ACTIVE - check if any units were waiting for it
-         * and try to start them now that this dependency is satisfied */
-        start_units_waiting_for(unit->name);
     }
+
+    /* Notify waiters regardless of success so failures propagate */
+    start_units_waiting_for(unit->name);
 
     /* Handle restart policy */
     bool should_restart = false;
@@ -2790,12 +3093,17 @@ static void handle_control_command(int client_fd, bool read_only) {
             if (stop_failed) {
                 resp.code = RESP_FAILURE;
                 snprintf(resp.message, sizeof(resp.message), "Failed to stop non-target units");
-            } else if (start_unit_recursive(unit) < 0) {
-                resp.code = RESP_FAILURE;
-                snprintf(resp.message, sizeof(resp.message), "Failed to activate %s", req.unit_name);
             } else {
-                resp.code = RESP_SUCCESS;
-                snprintf(resp.message, sizeof(resp.message), "Isolated %s", req.unit_name);
+                bool use_override = target_allows_dependency_override(unit);
+                int start_rc = use_override ? start_unit_recursive_override(unit)
+                                            : start_unit_recursive(unit);
+                if (start_rc < 0) {
+                    resp.code = RESP_FAILURE;
+                    snprintf(resp.message, sizeof(resp.message), "Failed to activate %s", req.unit_name);
+                } else {
+                    resp.code = RESP_SUCCESS;
+                    snprintf(resp.message, sizeof(resp.message), "Isolated %s", req.unit_name);
+                }
             }
         }
         break;
@@ -2852,7 +3160,10 @@ static void handle_control_command(int client_fd, bool read_only) {
         }
 
         /* Start shutdown.target - this runs After=shutdown.target units (swap, mountfs) */
-        if (start_unit_recursive(shutdown_target) < 0) {
+        int shutdown_start = target_allows_dependency_override(shutdown_target)
+                                 ? start_unit_recursive_override(shutdown_target)
+                                 : start_unit_recursive(shutdown_target);
+        if (shutdown_start < 0) {
             resp.code = RESP_FAILURE;
             snprintf(resp.message, sizeof(resp.message), "Failed to reach shutdown.target");
             break;
@@ -2897,6 +3208,10 @@ static void handle_control_command(int client_fd, bool read_only) {
 static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation) {
     if (!unit) {
         return -1;
+    }
+
+    if (unit->waiting_for_dependencies) {
+        dequeue_waiting_unit(unit);
     }
 
     if (depth > MAX_RECURSION_DEPTH) {
@@ -3027,15 +3342,18 @@ static void mark_isolate_closure(struct unit_file *unit, unsigned int generation
 }
 
 /* Start a unit and its dependencies (recursive with depth limit) */
-static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigned int generation) {
+static enum start_result start_unit_recursive_depth(struct unit_file *unit,
+                                                    int depth,
+                                                    unsigned int generation,
+                                                    bool override) {
     if (!unit) {
-        return -1;
+        return START_RESULT_FAILURE;
     }
 
     if (depth > MAX_RECURSION_DEPTH) {
         /* fprintf(stderr, "worker: maximum recursion depth exceeded starting %s\n", unit->name); */
         log_msg(LOG_ERR, unit->name, "maximum recursion depth exceeded (possible circular dependency)");
-        return -1;
+        return START_RESULT_FAILURE;
     }
 
     if (unit->start_traversal_id != generation) {
@@ -3043,27 +3361,39 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
         unit->start_visit_state = DEP_VISIT_NONE;
     }
 
+    if (unit->waiting_for_dependencies) {
+        dequeue_waiting_unit(unit);
+    }
+
     if (unit->start_visit_state == DEP_VISIT_DONE) {
-        return 0;
+        return START_RESULT_SUCCESS;
     }
 
     if (unit->start_visit_state == DEP_VISIT_IN_PROGRESS) {
         log_service_failed(unit->name, unit->unit.description, "circular dependency detected");
         unit->state = STATE_FAILED;
         trigger_on_failure(unit);
-        return -1;
+        return START_RESULT_FAILURE;
     }
 
     if (unit->state == STATE_ACTIVE) {
         unit->start_visit_state = DEP_VISIT_DONE;
-        return 0;
+        return START_RESULT_SUCCESS;
     }
 
     /* If unit is already activating, we can't start it again.
      * Return success if we're just checking (no depth), or error if we're a dependency.
      * Units waiting for this will be started by start_units_waiting_for() when it completes. */
     if (unit->state == STATE_ACTIVATING) {
-        return (depth == 0) ? 0 : -1;
+        if (unit->start_visit_state == DEP_VISIT_NONE && depth == 0) {
+            /* Resuming a previously blocked activation; continue */
+        } else {
+            if (depth == 0 || override) {
+                return START_RESULT_SUCCESS;
+            }
+            enqueue_waiting_unit(unit);
+            return START_RESULT_WAITING;
+        }
     }
 
     unit->start_visit_state = DEP_VISIT_IN_PROGRESS;
@@ -3071,7 +3401,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
     if (!unit_conditions_met(unit)) {
         unit->state = STATE_INACTIVE;
         unit->start_visit_state = DEP_VISIT_DONE;
-        return 0;
+        return START_RESULT_SUCCESS;
     }
 
     unit->state = STATE_ACTIVATING;
@@ -3084,7 +3414,18 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
             struct unit_file *basic = resolve_unit("basic.target");
             if (basic && basic->state != STATE_ACTIVE && basic->state != STATE_FAILED) {
                 if (basic->state == STATE_INACTIVE) {
-                    start_unit_recursive_depth(basic, depth + 1, generation);
+                    enum start_result basic_result = start_unit_recursive_depth(basic, depth + 1,
+                                                                                 generation, override);
+                    if (basic_result == START_RESULT_FAILURE) {
+                        unit->start_visit_state = DEP_VISIT_NONE;
+                        return START_RESULT_FAILURE;
+                    } else if (basic_result == START_RESULT_WAITING) {
+                        if (!override) {
+                            unit->start_visit_state = DEP_VISIT_NONE;
+                            enqueue_waiting_unit(unit);
+                            return START_RESULT_WAITING;
+                        }
+                    }
                 }
             }
         }
@@ -3094,53 +3435,61 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
      * NOTE: After= only enforces ordering, it doesn't pull in units. Only block if the unit is ACTIVATING. */
     for (int i = 0; i < unit->unit.after_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.after[i]);
-        if (dep && dep->state == STATE_ACTIVATING) {
+        if (dep && dep->state == STATE_ACTIVATING && !override) {
             /* After= dependency is still activating - block this unit */
             unit->start_visit_state = DEP_VISIT_NONE;
-            return -1;
+            enqueue_waiting_unit(unit);
+            return START_RESULT_WAITING;
         }
         /* If dep is INACTIVE, don't start it (After= doesn't pull in units) */
         /* If dep is ACTIVE or FAILED, continue (ordering satisfied) */
     }
 
+    struct dependency_to_start deps[MAX_START_DEPENDENCIES] = {0};
+    int dep_count = 0;
+
     for (int i = 0; i < unit->unit.binds_to_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.binds_to[i]);
-        if (dep && start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-            char reason[256];
-            snprintf(reason, sizeof(reason), "failed to start bound dependency %s",
-                     unit->unit.binds_to[i]);
-            log_service_failed(unit->name, unit->unit.description, reason);
+        if (add_dependency_entry(unit, deps, &dep_count, dep, DEP_RELATION_BINDS,
+                                 unit->unit.binds_to[i]) < 0) {
             unit->state = STATE_FAILED;
             trigger_on_failure(unit);
             unit->start_visit_state = DEP_VISIT_NONE;
-            return -1;
+            return START_RESULT_FAILURE;
         }
     }
 
     for (int i = 0; i < unit->unit.requires_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.requires[i]);
-        if (dep && start_unit_recursive_depth(dep, depth + 1, generation) < 0) {
-            char reason[256];
-            snprintf(reason, sizeof(reason), "failed to start required dependency %s", unit->unit.requires[i]);
-            log_service_failed(unit->name, unit->unit.description, reason);
+        if (add_dependency_entry(unit, deps, &dep_count, dep, DEP_RELATION_REQUIRES,
+                                 unit->unit.requires[i]) < 0) {
             unit->state = STATE_FAILED;
             trigger_on_failure(unit);
             unit->start_visit_state = DEP_VISIT_NONE;
-            return -1;
+            return START_RESULT_FAILURE;
         }
     }
 
     for (int i = 0; i < unit->unit.wants_count; i++) {
         struct unit_file *dep = resolve_unit(unit->unit.wants[i]);
-        if (dep) {
-            int result = start_unit_recursive_depth(dep, depth + 1, generation);
-            /* Block if dependency is still activating or waiting, but don't fail if it failed */
-            if (result < 0 && dep->state != STATE_FAILED) {
-                /* Dependency not ready yet - block this unit */
-                unit->start_visit_state = DEP_VISIT_NONE;
-                return -1;
-            }
-            /* If dep is FAILED, continue anyway (Wants doesn't propagate failures) */
+        if (add_dependency_entry(unit, deps, &dep_count, dep, DEP_RELATION_WANTS,
+                                 unit->unit.wants[i]) < 0) {
+            unit->state = STATE_FAILED;
+            trigger_on_failure(unit);
+            unit->start_visit_state = DEP_VISIT_NONE;
+            return START_RESULT_FAILURE;
+        }
+    }
+
+    enum start_result dep_result = start_ordered_dependencies(unit, deps, dep_count,
+                                                             depth, generation, override);
+    if (dep_result == START_RESULT_FAILURE) {
+        return START_RESULT_FAILURE;
+    } else if (dep_result == START_RESULT_WAITING) {
+        if (!override) {
+            unit->start_visit_state = DEP_VISIT_NONE;
+            enqueue_waiting_unit(unit);
+            return START_RESULT_WAITING;
         }
     }
 
@@ -3150,7 +3499,7 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
             unit->state = STATE_FAILED;
             trigger_on_failure(unit);
             unit->start_visit_state = DEP_VISIT_NONE;
-            return -1;
+            return START_RESULT_FAILURE;
         }
 
         /* For oneshot services, state transitions to ACTIVE happen in handle_service_exited
@@ -3158,12 +3507,13 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
          * Non-oneshot services (simple/forking) are already marked ACTIVE above. */
         if (unit->state == STATE_ACTIVE) {
             log_service_started(unit->name, unit->unit.description);
+            start_units_waiting_for(unit->name);
         }
     } else if (unit->type == UNIT_TARGET) {
         /* Check that all required/bound dependencies are actually active */
         for (int i = 0; i < unit->unit.requires_count; i++) {
             struct unit_file *dep = resolve_unit(unit->unit.requires[i]);
-            if (dep && dep->state != STATE_ACTIVE) {
+            if (!override && dep && dep->state != STATE_ACTIVE) {
                 char reason[256];
                 snprintf(reason, sizeof(reason), "required dependency %s is not active (state=%d)",
                          unit->unit.requires[i], dep->state);
@@ -3171,12 +3521,12 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
                 unit->state = STATE_FAILED;
                 trigger_on_failure(unit);
                 unit->start_visit_state = DEP_VISIT_NONE;
-                return -1;
+                return START_RESULT_FAILURE;
             }
         }
         for (int i = 0; i < unit->unit.binds_to_count; i++) {
             struct unit_file *dep = resolve_unit(unit->unit.binds_to[i]);
-            if (dep && dep->state != STATE_ACTIVE) {
+            if (!override && dep && dep->state != STATE_ACTIVE) {
                 char reason[256];
                 snprintf(reason, sizeof(reason), "bound dependency %s is not active (state=%d)",
                          unit->unit.binds_to[i], dep->state);
@@ -3184,15 +3534,16 @@ static int start_unit_recursive_depth(struct unit_file *unit, int depth, unsigne
                 unit->state = STATE_FAILED;
                 trigger_on_failure(unit);
                 unit->start_visit_state = DEP_VISIT_NONE;
-                return -1;
+                return START_RESULT_FAILURE;
             }
         }
         unit->state = STATE_ACTIVE;
         log_target_reached(unit->name, unit->unit.description);
+        start_units_waiting_for(unit->name);
     }
 
     unit->start_visit_state = DEP_VISIT_DONE;
-    return 0;
+    return START_RESULT_SUCCESS;
 }
 
 #ifdef UNIT_TEST
@@ -3222,12 +3573,47 @@ void supervisor_test_handle_control_fd(int fd) {
 void supervisor_test_handle_status_fd(int fd) {
     handle_control_command(fd, true);
 }
+
+int supervisor_test_start_unit(struct unit_file *unit) {
+    return start_unit_recursive(unit);
+}
+
+int supervisor_test_start_unit_override(struct unit_file *unit) {
+    return start_unit_recursive_override(unit);
+}
+
+void supervisor_test_dependency_ready(const char *name) {
+    start_units_waiting_for(name);
+}
+
+void supervisor_test_reset_waiters(void) {
+    waiting_units_head = NULL;
+    if (!units) {
+        return;
+    }
+    for (int i = 0; i < unit_count; i++) {
+        if (!units[i]) {
+            continue;
+        }
+        units[i]->waiting_for_dependencies = false;
+        units[i]->waiting_next = NULL;
+    }
+}
 #endif
 
 /* Public wrapper without depth parameter */
-static int start_unit_recursive(struct unit_file *unit) {
+static int start_unit_recursive_internal(struct unit_file *unit, bool override) {
     unsigned int generation = next_start_generation();
-    return start_unit_recursive_depth(unit, 0, generation);
+    enum start_result result = start_unit_recursive_depth(unit, 0, generation, override);
+    return (result == START_RESULT_FAILURE) ? -1 : 0;
+}
+
+static int start_unit_recursive(struct unit_file *unit) {
+    return start_unit_recursive_internal(unit, false);
+}
+
+static int start_unit_recursive_override(struct unit_file *unit) {
+    return start_unit_recursive_internal(unit, true);
 }
 
 /* Trigger OnFailure= units when a unit fails */
@@ -3465,7 +3851,10 @@ int main(int argc, char *argv[]) {
 
     if (boot_target) {
         log_msg_silent(LOG_DEBUG, "worker", "Activating target: %s", boot_target->name);
-        if (start_unit_recursive(boot_target) < 0) {
+        int boot_rc = target_allows_dependency_override(boot_target)
+                          ? start_unit_recursive_override(boot_target)
+                          : start_unit_recursive(boot_target);
+        if (boot_rc < 0) {
             log_error("worker", "failed to start %s (OnFailure units will be triggered)", target_name);
         }
     } else {

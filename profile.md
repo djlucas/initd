@@ -308,6 +308,24 @@ Oct  6 12:34:56 hostname supervisor[123]: [nginx.service] Server started
 
 Daemons are **independent** but can **optionally communicate** when both are present. No daemon requires another to function.
 
+#### Dependency Scheduling Implementation
+
+The supervisor worker now builds an explicit dependency DAG for every activation:
+1. `start_unit_recursive_depth()` collects BindsTo/Requires/Wants into a deduplicated
+   array, recording the strongest relation for each dependency.
+2. An adjacency matrix encodes `After=`/`Before=` constraints and initializes a
+   `pending_after` counter so dependents only queue once all ordering edges are
+   satisfied.
+3. A dedicated wait queue tracks units blocked on in-flight dependencies; the
+   queue drains when `start_units_waiting_for()` observes a dependency reaching
+   ACTIVE or FAILED.
+4. `Requires=` and `BindsTo=` propagate failures immediately, while `Wants=` stay
+   best-effort. Emergency/rescue/shutdown targets run in override mode so they
+   can bypass broken dependencies and bring up recovery shells.
+5. The regression suite `tests/test-supervisor-worker-dag.c` asserts ordering,
+   wait-queue release, failure propagation, and override behavior, ensuring the
+   old reactive path is permanently retired.
+
 ### Communication Patterns
 
 #### 1. User Control (initctl → daemons)
@@ -2530,7 +2548,7 @@ To avoid writing ourselves into a corner, the following must be considered durin
 ## Testing Strategy
 
 ### Unit Tests (Implemented)
-**27 test suites, 252 individual tests - all passing**
+**28 test suites, 256 individual tests - all passing**
 
 1. **calendar parser** - Calendar expression parsing
 2. **unit file parser** - Unit file parsing & validation
@@ -2552,13 +2570,14 @@ To avoid writing ourselves into a corner, the following must be considered durin
 18. **socket worker** - Unix stream listeners, IdleTimeout, RuntimeMaxSec
 19. **supervisor socket IPC** - CMD_SOCKET_ADOPT control path
 20. **isolate closure** - Target isolation and dependency closure
-21. **initctl routing** - Command routing to correct daemon sockets
-22. **user persistence** - Per-user reboot persistence helpers
-23. **offline enable/disable** (privileged) - Unit enable/disable without running daemons
-24. **Exec lifecycle** (privileged) - ExecStartPre/Post/Stop/Reload execution
-25. **privileged operations** (privileged) - Root-only operations (systemd conversion, symlinks)
-26. **chroot confinement** (privileged) - RootDirectory= chroot jail functionality
-27. **PrivateDevices security** (privileged) - Device node major/minor validation (prevents kernel memory exposure)
+21. **supervisor worker DAG** - DAG ordering, wait queue release, and override handling
+22. **initctl routing** - Command routing to correct daemon sockets
+23. **user persistence** - Per-user reboot persistence helpers
+24. **offline enable/disable** (privileged) - Unit enable/disable without running daemons
+25. **Exec lifecycle** (privileged) - ExecStartPre/Post/Stop/Reload execution
+26. **privileged operations** (privileged) - Root-only operations (systemd conversion, symlinks)
+27. **chroot confinement** (privileged) - RootDirectory= chroot jail functionality
+28. **PrivateDevices security** (privileged) - Device node major/minor validation (prevents kernel memory exposure)
 
 **Coverage:**
 - ✅ Unit file parsing (all types)

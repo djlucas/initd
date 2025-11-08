@@ -170,6 +170,16 @@ test_isolate = executable(
   c_args: ['-DUNIT_TEST']
 )
 
+test_supervisor_worker_dag = executable(
+  'test-supervisor-worker-dag',
+  [
+    'test-supervisor-worker-dag.c',
+    '../src/supervisor/initd-supervisor-worker.c',
+  ],
+  dependencies: [common_dep, privileged_ops_dep],
+  c_args: ['-DUNIT_TEST']
+)
+
 cc = meson.get_compiler('c')
 
 initctl_route_lib = static_library(
@@ -216,6 +226,7 @@ test('Linux-only conditions', test_linux_conditions)
 test('service registry', test_service_registry, timeout: 90)  # DoS tests include 62s sleep
 test('socket worker', test_socket_worker)
 test('isolate closure', test_isolate)
+test('supervisor worker DAG', test_supervisor_worker_dag)
 test('supervisor socket IPC', test_supervisor_socket)
 test('timer inactivity notify', test_timer_notify)
 

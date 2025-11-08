@@ -412,6 +412,10 @@ struct unit_file {
 
     /* Linked list for dependency graph */
     struct unit_file *next;
+
+    /* Deferred start tracking */
+    bool waiting_for_dependencies;
+    struct unit_file *waiting_next;
 };
 
 #endif /* UNIT_H */

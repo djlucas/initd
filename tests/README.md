@@ -431,6 +431,13 @@ Uses UNIT_TEST hooks in the socket worker to verify:
 - IdleTimeout kills idle services exactly once
 - RuntimeMaxSec enforcement triggers as expected
 
+### test-supervisor-worker-dag (supervisor dependency DAG)
+Validates the new DAG-based dependency scheduler inside the supervisor worker:
+- Ensures Requires= chains activate strictly after their prerequisites
+- Confirms wait-queue processing wakes dependents when dependencies succeed
+- Verifies failure propagation tears down waiting Requires=/BindsTo= units
+- Exercises override mode so emergency/rescue targets can bypass failures
+
 ### test-supervisor-socket (supervisor socket IPC)
 Exercises the supervisor/worker control path:
 - Sends `CMD_SOCKET_ADOPT` over the control socket
@@ -498,9 +505,9 @@ Run with: `sudo meson test -C build --suite privileged`
 
 ## Test Statistics
 
-**Total: 27 test suites, 252 individual tests - all passing ✅**
+**Total: 28 test suites, 256 individual tests - all passing ✅**
 
-**Regular tests:** 22 suites (no root required)
+**Regular tests:** 23 suites (no root required)
 **Privileged tests:** 5 suites (offline enable/disable, Exec lifecycle, privileged operations, chroot confinement, PrivateDevices security)
 
 ## CI Integration
