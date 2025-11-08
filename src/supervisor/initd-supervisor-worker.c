@@ -974,7 +974,7 @@ static pid_t start_service(struct unit_file *unit) {
 
         /* Check if this service provides syslog */
         if (unit_provides(unit, "syslog")) {
-            log_msg(LOG_INFO, NULL, "syslog provider started, flushing buffered logs");
+            log_msg_silent(LOG_INFO, NULL, "syslog provider started, flushing buffered logs");
             log_syslog_ready();
         }
 
@@ -2482,10 +2482,10 @@ static void stop_bound_dependents(struct unit_file *unit, const char *reason) {
         }
 
         if (binds) {
-            log_msg(LOG_INFO, other->name,
+            log_msg_silent(LOG_INFO, other->name,
                     "stopping (BindsTo=%s) because %s", unit->name, reason);
         } else if (part) {
-            log_msg(LOG_INFO, other->name,
+            log_msg_silent(LOG_INFO, other->name,
                     "stopping (PartOf=%s) because %s", unit->name, reason);
         }
 
@@ -2550,6 +2550,9 @@ static void handle_service_exit(pid_t pid, int exit_status) {
     }
 
     log_msg_silent(LOG_INFO, unit->name, "exited with status %d", exit_status);
+    log_msg_silent(LOG_INFO, unit->name,
+                   "handle_service_exit: pid=%d type=%d success=%s",
+                   pid, unit->type, (exit_status == 0) ? "yes" : "no");
 
     unit->pid = 0;
 
@@ -3358,7 +3361,7 @@ static int stop_unit_recursive_depth(struct unit_file *unit, int depth, unsigned
         stop_service(unit);
     } else if (unit->type == UNIT_TARGET) {
         unit->state = STATE_INACTIVE;
-        log_msg(LOG_INFO, unit->name, "target deactivated");
+        log_msg_silent(LOG_INFO, unit->name, "target deactivated");
     }
 
     unit->stop_visit_state = DEP_VISIT_DONE;
@@ -3948,7 +3951,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    log_msg(LOG_INFO, NULL, "exiting");
+    log_msg_silent(LOG_INFO, NULL, "exiting");
     log_close();
     return 0;
 }
