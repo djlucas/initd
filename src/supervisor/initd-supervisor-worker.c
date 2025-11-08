@@ -3574,6 +3574,10 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
         if (unit->state == STATE_ACTIVE) {
             log_service_started(unit->name, unit->unit.description);
             start_units_waiting_for(unit->name);
+        } else if (unit->state == STATE_ACTIVATING) {
+            /* Oneshot service is running - return WAITING so dependents wait for completion */
+            unit->start_visit_state = DEP_VISIT_NONE;
+            return START_RESULT_WAITING;
         }
     } else if (unit->type == UNIT_TARGET) {
         /* Check that all required/bound dependencies are actually active */

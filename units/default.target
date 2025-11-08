@@ -1,3 +1,4 @@
 [Unit]
 Description=Default Target
 Wants=multi-user.target
+After=multi-user.target
