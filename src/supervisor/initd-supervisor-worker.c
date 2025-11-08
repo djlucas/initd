@@ -3614,6 +3614,7 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
             if (dep && dep->state == STATE_ACTIVATING) {
                 /* Target must wait for After= dependencies to complete */
                 unit->start_visit_state = DEP_VISIT_NONE;
+                enqueue_waiting_unit(unit, dep->name);
                 return START_RESULT_WAITING;
             }
         }
