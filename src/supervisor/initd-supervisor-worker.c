@@ -75,6 +75,7 @@ static struct unit_file *waiting_units_head = NULL;
 /* Maximum recursion depth for dependency resolution */
 #define MAX_RECURSION_DEPTH 100
 #define MAX_START_DEPENDENCIES (MAX_DEPS * 3)
+#define DEFAULT_DEP_WAIT_TIMEOUT_SEC 90
 
 enum start_result {
     START_RESULT_FAILURE = -1,
@@ -114,7 +115,7 @@ static bool dependency_matches(struct unit_file *candidate, const char *name);
 static struct unit_file *find_unit(const char *name);
 static struct unit_file *resolve_unit(const char *name);
 static bool target_allows_dependency_override(const struct unit_file *unit);
-static void enqueue_waiting_unit(struct unit_file *unit);
+static void enqueue_waiting_unit(struct unit_file *unit, const char *reason);
 static void dequeue_waiting_unit(struct unit_file *unit);
 static bool unit_dependencies_ready(const struct unit_file *unit);
 static bool unit_depends_on_name(const struct unit_file *unit, const char *name);
@@ -126,6 +127,8 @@ static enum start_result start_ordered_dependencies(struct unit_file *unit,
                                                     int depth,
                                                     unsigned int generation,
                                                     bool override);
+static void expire_waiting_units(void);
+static void start_units_waiting_for(const char *dep_name);
 
 /* Promote to stricter dependency semantics when the same unit appears multiple times */
 static bool relation_is_stronger(enum dep_relation_type lhs, enum dep_relation_type rhs) {
@@ -141,13 +144,29 @@ static bool target_allows_dependency_override(const struct unit_file *unit) {
            strcmp(unit->name, "shutdown.target") == 0;
 }
 
-static void enqueue_waiting_unit(struct unit_file *unit) {
+static int unit_wait_timeout(const struct unit_file *unit) {
+    if (!unit || unit->type != UNIT_SERVICE) {
+        return 0;
+    }
+    if (unit->config.service.timeout_start_sec > 0) {
+        return unit->config.service.timeout_start_sec;
+    }
+    return DEFAULT_DEP_WAIT_TIMEOUT_SEC;
+}
+
+static void enqueue_waiting_unit(struct unit_file *unit, const char *reason) {
     if (!unit || unit->waiting_for_dependencies) {
         return;
     }
 
+    log_msg_silent(LOG_DEBUG, unit->name,
+                   "waiting for dependency: %s",
+                   reason ? reason : "<unspecified>");
+
     unit->waiting_for_dependencies = true;
     unit->waiting_next = waiting_units_head;
+    unit->waiting_since = time(NULL);
+    unit->waiting_timeout_sec = unit_wait_timeout(unit);
     waiting_units_head = unit;
 }
 
@@ -167,6 +186,49 @@ static void dequeue_waiting_unit(struct unit_file *unit) {
 
     unit->waiting_next = NULL;
     unit->waiting_for_dependencies = false;
+    unit->waiting_since = 0;
+    unit->waiting_timeout_sec = 0;
+}
+
+static void expire_waiting_units(void) {
+    time_t now = time(NULL);
+    if (now == (time_t)-1) {
+        return;
+    }
+
+    struct unit_file **cursor = &waiting_units_head;
+    while (*cursor) {
+        struct unit_file *unit = *cursor;
+    if (!unit->waiting_for_dependencies || unit->waiting_since == 0 ||
+        unit->waiting_timeout_sec <= 0) {
+        *cursor = unit->waiting_next;
+        unit->waiting_next = NULL;
+        continue;
+    }
+
+        int timeout = unit->waiting_timeout_sec > 0
+                          ? unit->waiting_timeout_sec
+                          : DEFAULT_DEP_WAIT_TIMEOUT_SEC;
+        if (now - unit->waiting_since < timeout) {
+            cursor = &unit->waiting_next;
+            continue;
+        }
+
+        log_service_failed(unit->name, unit->unit.description,
+                           "dependency wait timed out");
+        unit->state = STATE_FAILED;
+        trigger_on_failure(unit);
+
+        struct unit_file *next = unit->waiting_next;
+        unit->waiting_next = NULL;
+        unit->waiting_for_dependencies = false;
+        unit->waiting_since = 0;
+        unit->waiting_timeout_sec = 0;
+        *cursor = next;
+
+        start_units_waiting_for(unit->name);
+        cursor = &waiting_units_head;
+    }
 }
 
 static bool unit_depends_on_name(const struct unit_file *unit, const char *name) {
@@ -339,7 +401,7 @@ static enum start_result start_ordered_dependencies(struct unit_file *unit,
                 }
             } else if (after_unit && after_unit->state == STATE_ACTIVATING && !override) {
                 unit->start_visit_state = DEP_VISIT_NONE;
-                enqueue_waiting_unit(unit);
+                enqueue_waiting_unit(unit, u->unit.after[j]);
                 return START_RESULT_WAITING;
             }
         }
@@ -391,7 +453,7 @@ static enum start_result start_ordered_dependencies(struct unit_file *unit,
             } else if (result == START_RESULT_WAITING) {
                 if (!(override || dep->relation == DEP_RELATION_WANTS)) {
                     unit->start_visit_state = DEP_VISIT_NONE;
-                    enqueue_waiting_unit(unit);
+                    enqueue_waiting_unit(unit, dep->name);
                     return START_RESULT_WAITING;
                 }
             }
@@ -417,6 +479,7 @@ static enum start_result start_ordered_dependencies(struct unit_file *unit,
 
     return START_RESULT_SUCCESS;
 }
+
 
 static void reset_start_traversal_marks(void) {
     for (int i = 0; i < unit_count; i++) {
@@ -3391,7 +3454,7 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
             if (depth == 0 || override) {
                 return START_RESULT_SUCCESS;
             }
-            enqueue_waiting_unit(unit);
+            enqueue_waiting_unit(unit, unit->name);
             return START_RESULT_WAITING;
         }
     }
@@ -3422,7 +3485,7 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
                     } else if (basic_result == START_RESULT_WAITING) {
                         if (!override) {
                             unit->start_visit_state = DEP_VISIT_NONE;
-                            enqueue_waiting_unit(unit);
+                            enqueue_waiting_unit(unit, "basic.target");
                             return START_RESULT_WAITING;
                         }
                     }
@@ -3438,7 +3501,7 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
         if (dep && dep->state == STATE_ACTIVATING && !override) {
             /* After= dependency is still activating - block this unit */
             unit->start_visit_state = DEP_VISIT_NONE;
-            enqueue_waiting_unit(unit);
+            enqueue_waiting_unit(unit, unit->unit.after[i]);
             return START_RESULT_WAITING;
         }
         /* If dep is INACTIVE, don't start it (After= doesn't pull in units) */
@@ -3488,7 +3551,7 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
     } else if (dep_result == START_RESULT_WAITING) {
         if (!override) {
             unit->start_visit_state = DEP_VISIT_NONE;
-            enqueue_waiting_unit(unit);
+            enqueue_waiting_unit(unit, "dependency graph");
             return START_RESULT_WAITING;
         }
     }
@@ -3597,6 +3660,7 @@ void supervisor_test_reset_waiters(void) {
         }
         units[i]->waiting_for_dependencies = false;
         units[i]->waiting_next = NULL;
+        units[i]->waiting_since = 0;
     }
 }
 #endif
@@ -3674,6 +3738,7 @@ static int main_loop(void) {
     nfds++;
 
     while (!shutdown_requested) {
+        expire_waiting_units();
         /* Poll both control socket and master socket */
         int ret = poll(fds, nfds, 1000); /* 1 second timeout */
 
