@@ -274,7 +274,12 @@ NETWORK_SCRIPT_DIR="@4@"
 CONFIG_DIR="@5@"
 MAN8_DIR="@6@"
 BINDIR="@7@"
+ETC_UNIT_DIR="@8@"
 INITCTL="${DESTDIR}@7@/initctl"
+
+# Create unit directories
+install -d -v "${DESTDIR}${UNIT_DIR}"
+install -d -v "${DESTDIR}${ETC_UNIT_DIR}"
 
 # Install target files
 '''.format(
@@ -286,6 +291,7 @@ INITCTL="${DESTDIR}@7@/initctl"
   sysconfdir / 'sysconfig',
   get_option('mandir') / 'man8',
   bindir,
+  sysconfdir / 'initd' / 'system',
 )
 
 foreach target : reference_targets
@@ -385,7 +391,12 @@ SERVICESCRIPTDIR="@3@"
 SYSCONFIGDIR="@4@"
 MANDIR="@5@"
 BINDIR="@6@"
+ETC_UNIT_DIR="@7@"
 INITCTL="${DESTDIR}@6@/initctl"
+
+# Create unit directories
+install -d -v "${DESTDIR}${LIBDIR}"
+install -d -v "${DESTDIR}${ETC_UNIT_DIR}"
 
 # Install target files
 '''.format(
@@ -396,6 +407,7 @@ INITCTL="${DESTDIR}@6@/initctl"
   sysconfdir / 'sysconfig',
   get_option('mandir') / 'man8',
   bindir,
+  sysconfdir / 'initd' / 'system',
 )
 
 foreach target : reference_targets

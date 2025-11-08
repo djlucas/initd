@@ -32,3 +32,22 @@ subdir('sysconfig')
 subdir('docs')
 subdir('tests')
 subdir('analysis')
+
+# Create unit directories on install
+install_sh = find_program('install')
+
+# Handle absolute vs relative paths
+sysconfdir = get_option('sysconfdir')
+if not sysconfdir.startswith('/')
+  sysconfdir = get_option('prefix') / sysconfdir
+endif
+
+libdir = get_option('libdir')
+if not libdir.startswith('/')
+  libdir = get_option('prefix') / libdir
+endif
+
+meson.add_install_script(install_sh, '-d', '-v',
+  libdir / 'initd' / 'system')
+meson.add_install_script(install_sh, '-d', '-v',
+  sysconfdir / 'initd' / 'system')
