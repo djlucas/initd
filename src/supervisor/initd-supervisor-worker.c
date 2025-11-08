@@ -3607,6 +3607,17 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
                 return START_RESULT_FAILURE;
             }
         }
+
+        /* Check if any After= dependencies are still activating */
+        for (int i = 0; i < unit->unit.after_count; i++) {
+            struct unit_file *dep = resolve_unit(unit->unit.after[i]);
+            if (dep && dep->state == STATE_ACTIVATING) {
+                /* Target must wait for After= dependencies to complete */
+                unit->start_visit_state = DEP_VISIT_NONE;
+                return START_RESULT_WAITING;
+            }
+        }
+
         unit->state = STATE_ACTIVE;
         log_target_reached(unit->name, unit->unit.description);
         start_units_waiting_for(unit->name);
