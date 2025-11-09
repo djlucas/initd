@@ -39,7 +39,11 @@ enum unit_type {
 enum service_type {
     SERVICE_SIMPLE,
     SERVICE_FORKING,
-    SERVICE_ONESHOT
+    SERVICE_ONESHOT,
+    SERVICE_NOTIFY,
+    SERVICE_EXEC,
+    SERVICE_IDLE,
+    SERVICE_DBUS
 };
 
 /* Restart policy */
@@ -271,6 +275,7 @@ struct service_section {
     int capability_bounding_set_count;  /* Number of bounding set capabilities */
     char *ambient_capabilities[MAX_CAPABILITIES]; /* AmbientCapabilities= (Linux ambient capabilities) */
     int ambient_capabilities_count;     /* Number of ambient capabilities */
+    char bus_name[256];                 /* BusName= (D-Bus name for Type=dbus) */
 };
 
 /* [Timer] section */

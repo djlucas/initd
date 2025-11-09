@@ -17,6 +17,11 @@ if libcap_dep.found()
   add_project_arguments('-D__HAVE_LIBCAP__', language: 'c')
 endif
 
+dbus_dep = dependency('dbus-1', required: false)
+if dbus_dep.found()
+  add_project_arguments('-DHAVE_DBUS', language: 'c')
+endif
+
 # Subdirectories
 subdir('src/common')
 subdir('src/init')

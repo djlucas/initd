@@ -47,6 +47,9 @@
 #include <glob.h>
 #include <dirent.h>
 #include <libgen.h>
+#ifdef HAVE_DBUS
+#include <dbus/dbus.h>
+#endif
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <sys/ucred.h>
 #include <sys/sysctl.h>
@@ -63,6 +66,11 @@ static volatile sig_atomic_t shutdown_requested = 0;
 static int master_socket = -1;
 static int control_socket = -1;
 static int status_socket = -1;
+static int notify_socket = -1;
+static char notify_socket_path[256] = {0};
+#ifdef HAVE_DBUS
+static DBusConnection *dbus_conn = NULL;
+#endif
 static struct unit_file **units = NULL;
 static int unit_count = 0;
 static unsigned int start_traversal_generation = 0;
@@ -145,10 +153,15 @@ static bool target_allows_dependency_override(const struct unit_file *unit) {
 }
 
 static int unit_wait_timeout(const struct unit_file *unit) {
-    if (!unit || unit->type != UNIT_SERVICE) {
-        return 0;
+    if (!unit) {
+        return DEFAULT_DEP_WAIT_TIMEOUT_SEC;
     }
-    if (unit->config.service.timeout_start_sec > 0) {
+    /* Targets get 2x + 2 the default timeout to allow for chained dependency failures */
+    if (unit->type == UNIT_TARGET) {
+        return DEFAULT_DEP_WAIT_TIMEOUT_SEC * 2 + 2;  /* 182 seconds */
+    }
+    /* Services use TimeoutStartSec= if set, otherwise default */
+    if (unit->type == UNIT_SERVICE && unit->config.service.timeout_start_sec > 0) {
         return unit->config.service.timeout_start_sec;
     }
     return DEFAULT_DEP_WAIT_TIMEOUT_SEC;
@@ -199,21 +212,27 @@ static void expire_waiting_units(void) {
     struct unit_file **cursor = &waiting_units_head;
     while (*cursor) {
         struct unit_file *unit = *cursor;
-    if (!unit->waiting_for_dependencies || unit->waiting_since == 0 ||
-        unit->waiting_timeout_sec <= 0) {
-        *cursor = unit->waiting_next;
-        unit->waiting_next = NULL;
-        continue;
-    }
 
-        int timeout = unit->waiting_timeout_sec > 0
-                          ? unit->waiting_timeout_sec
-                          : DEFAULT_DEP_WAIT_TIMEOUT_SEC;
-        if (now - unit->waiting_since < timeout) {
+        /* Skip units not actually waiting */
+        if (!unit->waiting_for_dependencies || unit->waiting_since == 0) {
+            *cursor = unit->waiting_next;
+            unit->waiting_next = NULL;
+            continue;
+        }
+
+        /* timeout_sec <= 0 means wait forever (for targets and units without timeout) */
+        if (unit->waiting_timeout_sec <= 0) {
             cursor = &unit->waiting_next;
             continue;
         }
 
+        /* Check if timeout has expired */
+        if (now - unit->waiting_since < unit->waiting_timeout_sec) {
+            cursor = &unit->waiting_next;
+            continue;
+        }
+
+        /* Timeout expired - fail the unit */
         log_service_failed(unit->name, unit->unit.description,
                            "dependency wait timed out");
         unit->state = STATE_FAILED;
@@ -419,6 +438,7 @@ static enum start_result start_ordered_dependencies(struct unit_file *unit,
 
     int started = 0;
     bool progress = true;
+    bool has_waiting = false;
 
     while (started < dep_count) {
         progress = false;
@@ -452,9 +472,7 @@ static enum start_result start_ordered_dependencies(struct unit_file *unit,
                 }
             } else if (result == START_RESULT_WAITING) {
                 if (!(override || dep->relation == DEP_RELATION_WANTS)) {
-                    unit->start_visit_state = DEP_VISIT_NONE;
-                    enqueue_waiting_unit(unit, dep->name);
-                    return START_RESULT_WAITING;
+                    has_waiting = true;
                 }
             }
 
@@ -475,6 +493,12 @@ static enum start_result start_ordered_dependencies(struct unit_file *unit,
             unit->start_visit_state = DEP_VISIT_NONE;
             return START_RESULT_FAILURE;
         }
+    }
+
+    if (has_waiting) {
+        unit->start_visit_state = DEP_VISIT_NONE;
+        enqueue_waiting_unit(unit, "dependency graph");
+        return START_RESULT_WAITING;
     }
 
     return START_RESULT_SUCCESS;
@@ -964,11 +988,62 @@ static pid_t start_service(struct unit_file *unit) {
 
     if (resp.type == RESP_SERVICE_STARTED) {
         unit->pid = resp.service_pid;
-        /* For oneshot services, stay in ACTIVATING state until process completes
-         * For other types (simple, forking), become active immediately */
-        if (unit->config.service.type == SERVICE_ONESHOT) {
+        /* For oneshot, forking, notify, and dbus services, stay in ACTIVATING state
+         * until process completes (oneshot/forking) or sends ready signal (notify/dbus)
+         * For simple, exec, and idle services, become active immediately */
+        if (unit->config.service.type == SERVICE_ONESHOT ||
+            unit->config.service.type == SERVICE_FORKING ||
+            unit->config.service.type == SERVICE_NOTIFY ||
+            unit->config.service.type == SERVICE_DBUS) {
             unit->state = STATE_ACTIVATING;
+
+            /* Warn if forking service has no PIDFile */
+            if (unit->config.service.type == SERVICE_FORKING &&
+                (!unit->config.service.pid_file || !unit->config.service.pid_file[0])) {
+                log_msg(LOG_WARNING, unit->name, "Type=forking without PIDFile= is unreliable");
+            }
+
+#ifdef HAVE_DBUS
+            /* Set up D-Bus name monitoring for Type=dbus services */
+            if (unit->config.service.type == SERVICE_DBUS) {
+                if (!unit->config.service.bus_name[0]) {
+                    log_msg(LOG_ERR, unit->name, "Type=dbus requires BusName= directive");
+                    unit->state = STATE_FAILED;
+                    trigger_on_failure(unit);
+                } else if (dbus_conn == NULL) {
+                    log_msg(LOG_ERR, unit->name, "Type=dbus service cannot start: D-Bus connection failed");
+                    unit->state = STATE_FAILED;
+                    trigger_on_failure(unit);
+                } else {
+                    /* Add match rule for NameOwnerChanged signal for this bus name */
+                    char match_rule[512];
+                    snprintf(match_rule, sizeof(match_rule),
+                        "type='signal',sender='org.freedesktop.DBus',"
+                        "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+                        "arg0='%s'", unit->config.service.bus_name);
+
+                    DBusError error;
+                    dbus_error_init(&error);
+                    dbus_bus_add_match(dbus_conn, match_rule, &error);
+                    if (dbus_error_is_set(&error)) {
+                        log_msg(LOG_ERR, unit->name, "Failed to add D-Bus match: %s", error.message);
+                        dbus_error_free(&error);
+                        unit->state = STATE_FAILED;
+                        trigger_on_failure(unit);
+                    } else {
+                        log_msg_silent(LOG_DEBUG, unit->name, "Monitoring D-Bus name: %s",
+                                     unit->config.service.bus_name);
+                    }
+                }
+            }
+#else
+            /* Warn about D-Bus fallback when D-Bus support not compiled in */
+            if (unit->config.service.type == SERVICE_DBUS) {
+                log_msg(LOG_WARNING, unit->name, "Type=dbus using sd_notify() fallback (D-Bus support not compiled in)");
+            }
+#endif
         } else {
+            /* Type=simple, exec, and idle all become active immediately after fork+exec */
             unit->state = STATE_ACTIVE;
         }
 
@@ -2497,7 +2572,7 @@ static void stop_bound_dependents(struct unit_file *unit, const char *reason) {
 /* Check if waiting units can now proceed because dep_name became ready */
 static void start_units_waiting_for(const char *dep_name) {
     struct unit_file *dependency = resolve_unit(dep_name);
-    bool dep_failed = dependency && dependency->state == STATE_FAILED;
+    bool dep_failed = dependency && (dependency->state == STATE_FAILED || dependency->state == STATE_INACTIVE);
     struct unit_file **cursor = &waiting_units_head;
 
     while (*cursor) {
@@ -2520,6 +2595,7 @@ static void start_units_waiting_for(const char *dep_name) {
             continue;
         }
 
+        /* Dependency failed or became inactive - fail units with Requires=/BindsTo= on it */
         if (dep_failed) {
             enum dep_relation_type relation;
             if (unit_dependency_relation(unit, dep_name, &relation) &&
@@ -2529,7 +2605,8 @@ static void start_units_waiting_for(const char *dep_name) {
                 unit->waiting_for_dependencies = false;
 
                 char reason[256];
-                snprintf(reason, sizeof(reason), "dependency %s failed before activation", dep_name);
+                const char *dep_state_str = dependency->state == STATE_FAILED ? "failed" : "stopped";
+                snprintf(reason, sizeof(reason), "dependency %s %s before activation", dep_name, dep_state_str);
                 log_service_failed(unit->name, unit->unit.description, reason);
                 unit->state = STATE_FAILED;
                 trigger_on_failure(unit);
@@ -2542,7 +2619,7 @@ static void start_units_waiting_for(const char *dep_name) {
     }
 }
 
-static void handle_service_exit(pid_t pid, int exit_status) {
+static void handle_service_exit(pid_t pid, int exit_status, const pid_t *child_pids, int child_pid_count) {
     struct unit_file *unit = find_unit_by_pid(pid);
     if (!unit) {
         log_msg(LOG_WARNING, NULL, "unknown service pid %d exited", pid);
@@ -2551,8 +2628,8 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 
     log_msg_silent(LOG_INFO, unit->name, "exited with status %d", exit_status);
     log_msg_silent(LOG_INFO, unit->name,
-                   "handle_service_exit: pid=%d type=%d success=%s",
-                   pid, unit->type, (exit_status == 0) ? "yes" : "no");
+                   "handle_service_exit: pid=%d type=%d success=%s child_count=%d",
+                   pid, unit->type, (exit_status == 0) ? "yes" : "no", child_pid_count);
 
     unit->pid = 0;
 
@@ -2561,10 +2638,47 @@ static void handle_service_exit(pid_t pid, int exit_status) {
 
     /* Update state based on exit status */
     if (success) {
-        /* For oneshot services, successful exit means the job is done - mark ACTIVE
-         * For RemainAfterExit=yes services, stay active after successful exit
-         * For other types (simple/forking), mark INACTIVE */
-        if (unit->config.service.type == SERVICE_ONESHOT || unit->config.service.remain_after_exit) {
+        /* For forking services, parent has exited - read PID file and track daemon */
+        if (unit->config.service.type == SERVICE_FORKING) {
+            if (unit->config.service.pid_file && unit->config.service.pid_file[0]) {
+                FILE *fp = fopen(unit->config.service.pid_file, "r");
+                if (fp) {
+                    pid_t daemon_pid = 0;
+                    if (fscanf(fp, "%d", &daemon_pid) == 1 && daemon_pid > 0) {
+                        unit->pid = daemon_pid;
+                        unit->state = STATE_ACTIVE;
+                        log_msg_silent(LOG_DEBUG, unit->name, "forking service parent exited, daemon pid=%d", daemon_pid);
+                        log_service_started(unit->name, unit->unit.description);
+                    } else {
+                        log_service_failed(unit->name, unit->unit.description, "invalid PID in PIDFile");
+                        unit->state = STATE_FAILED;
+                        trigger_on_failure(unit);
+                    }
+                    fclose(fp);
+                } else {
+                    log_service_failed(unit->name, unit->unit.description, "failed to read PIDFile");
+                    unit->state = STATE_FAILED;
+                    trigger_on_failure(unit);
+                }
+            } else if (child_pid_count > 0) {
+                /* No PIDFile but we detected a child - use it as the daemon PID */
+                unit->pid = child_pids[0];
+                unit->state = STATE_ACTIVE;
+                log_msg_silent(LOG_DEBUG, unit->name, "forking service parent exited, detected daemon pid=%d", child_pids[0]);
+                if (child_pid_count > 1) {
+                    log_msg_silent(LOG_DEBUG, unit->name, "detected %d additional child processes", child_pid_count - 1);
+                }
+                log_service_started(unit->name, unit->unit.description);
+            } else {
+                /* No PIDFile and no detected children - mark active but can't track daemon PID */
+                unit->pid = 0;
+                unit->state = STATE_ACTIVE;
+                log_msg_silent(LOG_DEBUG, unit->name, "forking service parent exited (no PIDFile, daemon PID unknown)");
+                log_service_started(unit->name, unit->unit.description);
+            }
+        } else if (unit->config.service.type == SERVICE_ONESHOT || unit->config.service.remain_after_exit) {
+            /* For oneshot services, successful exit means the job is done - mark ACTIVE
+             * For RemainAfterExit=yes services, stay active after successful exit */
             unit->state = STATE_ACTIVE;
             if (unit->config.service.remain_after_exit) {
                 log_msg_silent(LOG_DEBUG, unit->name, "exited successfully, remaining active (RemainAfterExit=yes)");
@@ -2576,6 +2690,7 @@ static void handle_service_exit(pid_t pid, int exit_status) {
                 log_service_started(unit->name, unit->unit.description);
             }
         } else {
+            /* For simple services, if they exit it means they stopped */
             unit->state = STATE_INACTIVE;
             log_service_stopped(unit->name, unit->unit.description);
         }
@@ -3560,6 +3675,19 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
     }
 
     if (unit->type == UNIT_SERVICE) {
+        /* Type=idle delays execution until all other jobs complete */
+        if (unit->config.service.type == SERVICE_IDLE) {
+            /* Check if any other units are still activating */
+            for (int i = 0; i < unit_count; i++) {
+                if (units[i] != unit && units[i]->state == STATE_ACTIVATING) {
+                    /* Other units still activating - delay this idle service */
+                    unit->start_visit_state = DEP_VISIT_NONE;
+                    enqueue_waiting_unit(unit, "idle (waiting for other jobs)");
+                    return START_RESULT_WAITING;
+                }
+            }
+        }
+
         if (start_service(unit) < 0) {
             log_service_failed(unit->name, unit->unit.description, "failed to start service");
             unit->state = STATE_FAILED;
@@ -3568,14 +3696,16 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
             return START_RESULT_FAILURE;
         }
 
-        /* For oneshot services, state transitions to ACTIVE happen in handle_service_exited
-         * when the master notifies us of process completion. For now, just log that it started.
-         * Non-oneshot services (simple/forking) are already marked ACTIVE above. */
+        /* For oneshot/forking/notify/dbus services, state transitions to ACTIVE happen:
+         * - In handle_service_exited (oneshot/forking) when the process completes
+         * - In notify socket handler (notify) when READY=1 is received
+         * - For dbus: when D-Bus name is acquired (TODO: implement D-Bus monitoring)
+         * Simple, exec, and idle services are already marked ACTIVE above. */
         if (unit->state == STATE_ACTIVE) {
             log_service_started(unit->name, unit->unit.description);
             start_units_waiting_for(unit->name);
         } else if (unit->state == STATE_ACTIVATING) {
-            /* Oneshot service is running - return WAITING so dependents wait for completion */
+            /* Service is activating - return WAITING so dependents wait for completion */
             unit->start_visit_state = DEP_VISIT_NONE;
             return START_RESULT_WAITING;
         }
@@ -3736,7 +3866,7 @@ static int main_loop(void) {
         return -1;
     }
 
-    struct pollfd fds[3];
+    struct pollfd fds[5];
     nfds_t nfds = 0;
     int idx_control = nfds;
     fds[nfds].fd = control_socket;
@@ -3750,6 +3880,27 @@ static int main_loop(void) {
         fds[nfds].events = POLLIN;
         nfds++;
     }
+
+    int idx_notify = -1;
+    if (notify_socket >= 0) {
+        idx_notify = nfds;
+        fds[nfds].fd = notify_socket;
+        fds[nfds].events = POLLIN;
+        nfds++;
+    }
+
+#ifdef HAVE_DBUS
+    int idx_dbus = -1;
+    if (dbus_conn != NULL) {
+        idx_dbus = nfds;
+        int dbus_fd;
+        if (dbus_connection_get_unix_fd(dbus_conn, &dbus_fd)) {
+            fds[nfds].fd = dbus_fd;
+            fds[nfds].events = POLLIN;
+            nfds++;
+        }
+    }
+#endif
 
     int idx_master = nfds;
     fds[nfds].fd = master_socket;
@@ -3787,12 +3938,104 @@ static int main_loop(void) {
                 }
             }
 
+            /* Check for sd_notify notifications */
+            if (idx_notify >= 0 && (fds[idx_notify].revents & POLLIN)) {
+                char buf[4096];
+                struct sockaddr_un from;
+                socklen_t fromlen = sizeof(from);
+                ssize_t n = recvfrom(notify_socket, buf, sizeof(buf) - 1, 0,
+                                    (struct sockaddr *)&from, &fromlen);
+                if (n > 0) {
+                    buf[n] = '\0';
+
+                    /* Extract PID from credentials if available */
+                    struct ucred cred;
+                    socklen_t cred_len = sizeof(cred);
+                    pid_t notifying_pid = 0;
+                    if (getsockopt(notify_socket, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) == 0) {
+                        notifying_pid = cred.pid;
+                    }
+
+                    /* Parse notification message */
+                    if (strstr(buf, "READY=1")) {
+                        /* Service is ready */
+                        struct unit_file *unit = find_unit_by_pid(notifying_pid);
+                        if (unit && (unit->config.service.type == SERVICE_NOTIFY
+#ifndef HAVE_DBUS
+                                   || unit->config.service.type == SERVICE_DBUS  /* Fallback when no D-Bus */
+#endif
+                                   )) {
+                            if (unit->state == STATE_ACTIVATING) {
+                                unit->state = STATE_ACTIVE;
+                                const char *type_str = unit->config.service.type == SERVICE_NOTIFY ? "notify" : "dbus";
+                                log_msg_silent(LOG_DEBUG, unit->name, "%s service ready (pid=%d)", type_str, notifying_pid);
+                                log_service_started(unit->name, unit->unit.description);
+
+                                /* Notify waiters */
+                                start_units_waiting_for(unit->name);
+                            }
+                        }
+                    }
+                }
+            }
+
+#ifdef HAVE_DBUS
+            /* Check for D-Bus messages (NameOwnerChanged signals) */
+            if (idx_dbus >= 0 && (fds[idx_dbus].revents & POLLIN)) {
+                /* Process all pending D-Bus messages */
+                while (dbus_connection_dispatch(dbus_conn) == DBUS_DISPATCH_DATA_REMAINS) {
+                    DBusMessage *msg = dbus_connection_pop_message(dbus_conn);
+                    if (msg == NULL) break;
+
+                    /* Check if it's a NameOwnerChanged signal */
+                    if (dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameOwnerChanged")) {
+                        const char *name = NULL;
+                        const char *old_owner = NULL;
+                        const char *new_owner = NULL;
+
+                        if (dbus_message_get_args(msg, NULL,
+                                                 DBUS_TYPE_STRING, &name,
+                                                 DBUS_TYPE_STRING, &old_owner,
+                                                 DBUS_TYPE_STRING, &new_owner,
+                                                 DBUS_TYPE_INVALID)) {
+                            /* Check if a service acquired this name (new_owner not empty) */
+                            if (new_owner && new_owner[0] != '\0') {
+                                /* Find unit waiting for this bus name */
+                                for (int i = 0; i < unit_count; i++) {
+                                    struct unit_file *unit = units[i];
+                                    if (unit->type == UNIT_SERVICE &&
+                                        unit->config.service.type == SERVICE_DBUS &&
+                                        unit->state == STATE_ACTIVATING &&
+                                        strcmp(unit->config.service.bus_name, name) == 0) {
+                                        /* Service acquired its bus name - mark as active */
+                                        unit->state = STATE_ACTIVE;
+                                        log_msg_silent(LOG_DEBUG, unit->name, "D-Bus name acquired: %s", name);
+                                        log_service_started(unit->name, unit->unit.description);
+
+                                        /* Notify waiters */
+                                        start_units_waiting_for(unit->name);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    dbus_message_unref(msg);
+                }
+
+                /* Read/write to D-Bus connection to handle I/O */
+                dbus_connection_read_write(dbus_conn, 0);
+            }
+#endif
+
             /* Check for notifications from master */
             if (fds[idx_master].revents & POLLIN) {
                 struct priv_response notif = {0};
                 if (recv_response(master_socket, &notif) == 0) {
                     if (notif.type == RESP_SERVICE_EXITED) {
-                        handle_service_exit(notif.service_pid, notif.exit_status);
+                        handle_service_exit(notif.service_pid, notif.exit_status,
+                                          notif.child_pids, notif.child_pid_count);
                     }
                 } else {
                     log_warn("worker", "Master socket closed");
@@ -3817,6 +4060,14 @@ static int main_loop(void) {
     }
 
     log_msg_silent(LOG_INFO, "worker", "All services stopped");
+
+#ifdef HAVE_DBUS
+    /* Cleanup D-Bus connection */
+    if (dbus_conn != NULL) {
+        dbus_connection_unref(dbus_conn);
+        dbus_conn = NULL;
+    }
+#endif
 
     /* Notify master we're done */
     notify_shutdown_complete();
@@ -3896,6 +4147,47 @@ int main(int argc, char *argv[]) {
         }
         return 1;
     }
+
+    /* Create notify socket for Type=notify services */
+    log_msg_silent(LOG_DEBUG, "worker", "Creating notify socket");
+    snprintf(notify_socket_path, sizeof(notify_socket_path), "/run/initd/notify");
+    mkdir("/run/initd", 0755);  /* Create directory if needed */
+    unlink(notify_socket_path);  /* Remove old socket if exists */
+
+    notify_socket = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (notify_socket < 0) {
+        log_error("worker", "failed to create notify socket: %s", strerror(errno));
+    } else {
+        struct sockaddr_un addr = {
+            .sun_family = AF_UNIX,
+        };
+        strncpy(addr.sun_path, notify_socket_path, sizeof(addr.sun_path) - 1);
+
+        if (bind(notify_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            log_error("worker", "failed to bind notify socket: %s", strerror(errno));
+            close(notify_socket);
+            notify_socket = -1;
+        } else {
+            chmod(notify_socket_path, 0666);  /* Allow any service to notify */
+            log_msg_silent(LOG_DEBUG, "worker", "notify socket bound to %s", notify_socket_path);
+        }
+    }
+
+#ifdef HAVE_DBUS
+    /* Connect to D-Bus system bus for Type=dbus services */
+    log_msg_silent(LOG_DEBUG, "worker", "Connecting to D-Bus system bus");
+    DBusError dbus_error;
+    dbus_error_init(&dbus_error);
+    dbus_conn = dbus_bus_get(DBUS_BUS_SYSTEM, &dbus_error);
+    if (dbus_conn == NULL) {
+        log_msg(LOG_WARNING, "worker", "Failed to connect to D-Bus system bus: %s", dbus_error.message);
+        log_msg(LOG_WARNING, "worker", "Type=dbus services will fail to start");
+        dbus_error_free(&dbus_error);
+    } else {
+        dbus_connection_set_exit_on_disconnect(dbus_conn, FALSE);
+        log_msg_silent(LOG_DEBUG, "worker", "Connected to D-Bus system bus");
+    }
+#endif
 
     /* Scan unit directories */
     log_msg_silent(LOG_DEBUG, "worker", "Scanning unit directories");

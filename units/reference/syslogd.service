@@ -9,6 +9,7 @@ Provides=$syslog
 
 [Service]
 Type=forking
+PIDFile=/run/syslogd.pid
 ExecStart=@SBINDIR@/syslogd -m 0
 Restart=on-failure
 StandardOutput=null

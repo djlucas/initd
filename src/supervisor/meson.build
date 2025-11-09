@@ -22,11 +22,16 @@ supervisor = executable(
 )
 
 # Build initd-supervisor-worker (unprivileged worker)
+supervisor_worker_deps = [common_dep]
+if dbus_dep.found()
+  supervisor_worker_deps += dbus_dep
+endif
+
 supervisor_worker = executable(
   'initd-supervisor-worker',
   supervisor_worker_sources,
   c_args: supervisor_c_args,
-  dependencies: common_dep,
+  dependencies: supervisor_worker_deps,
   install: true,
   install_dir: get_option('libexecdir') / 'initd',
 )

@@ -32,6 +32,7 @@
 #include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <syslog.h>
+#include <dirent.h>
 #ifdef __linux__
 #include <sys/reboot.h>
 #include <sys/mount.h>
@@ -694,6 +695,18 @@ static pid_t start_service_process(const struct service_section *service,
             setlogmask(LOG_UPTO(service->log_level_max));
 
             log_debug("supervisor", "Set LogLevelMax=%d for service output", service->log_level_max);
+        }
+
+        /* Type=notify - set NOTIFY_SOCKET for sd_notify protocol */
+        if (service->type == SERVICE_NOTIFY
+#ifndef HAVE_DBUS
+            || service->type == SERVICE_DBUS  /* Type=dbus uses sd_notify fallback when no D-Bus */
+#endif
+           ) {
+            /* Use filesystem socket (not abstract) for BSD portability */
+            setenv("NOTIFY_SOCKET", "/run/initd/notify", 1);
+            const char *type_str = service->type == SERVICE_NOTIFY ? "notify" : "dbus";
+            log_debug("supervisor", "Set NOTIFY_SOCKET=/run/initd/notify for Type=%s service", type_str);
         }
 
         /* Setup stdin */
@@ -2335,11 +2348,45 @@ static void reap_zombies(void) {
             /* Remove from service registry */
             unregister_service(pid);
 
+            /* Find any children that may have been reparented to us (for forking services) */
+            /* Scan /proc to find processes with PPID = our PID */
+            pid_t child_pids[8] = {0};
+            int child_count = 0;
+            DIR *proc_dir = opendir("/proc");
+            if (proc_dir) {
+                struct dirent *entry;
+                while ((entry = readdir(proc_dir)) != NULL && child_count < 8) {
+                    if (entry->d_type != DT_DIR) continue;
+                    pid_t check_pid = atoi(entry->d_name);
+                    if (check_pid <= 0) continue;
+
+                    char stat_path[256];
+                    snprintf(stat_path, sizeof(stat_path), "/proc/%d/stat", check_pid);
+                    FILE *fp = fopen(stat_path, "r");
+                    if (fp) {
+                        pid_t ppid = 0;
+                        /* stat format: pid (comm) state ppid ... */
+                        if (fscanf(fp, "%*d %*s %*c %d", &ppid) == 1) {
+                            if (ppid == getpid() && check_pid != worker_pid) {
+                                /* This process is our child and not the worker */
+                                child_pids[child_count++] = check_pid;
+                            }
+                        }
+                        fclose(fp);
+                    }
+                }
+                closedir(proc_dir);
+            }
+
             /* Send notification to worker */
             struct priv_response notif = {0};
             notif.type = RESP_SERVICE_EXITED;
             notif.service_pid = pid;
             notif.exit_status = exit_status;
+            notif.child_pid_count = child_count;
+            for (int i = 0; i < child_count; i++) {
+                notif.child_pids[i] = child_pids[i];
+            }
 
             if (send_response(ipc_socket, &notif) < 0) {
                 log_error("supervisor", "failed to notify worker of service exit");

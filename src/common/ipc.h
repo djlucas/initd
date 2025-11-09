@@ -99,6 +99,8 @@ struct priv_response {
     int error_code;         /* errno if type == RESP_ERROR */
     pid_t service_pid;      /* For RESP_SERVICE_STARTED/EXITED */
     int exit_status;        /* For RESP_SERVICE_EXITED */
+    pid_t child_pids[8];    /* For RESP_SERVICE_EXITED - children of exited process */
+    int child_pid_count;    /* Number of child PIDs */
     char error_msg[256];    /* For RESP_ERROR */
     char converted_path[1024]; /* For RESP_UNIT_CONVERTED */
 };

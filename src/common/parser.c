@@ -526,6 +526,13 @@ static int parse_service_key(struct service_section *service, const char *key, c
         if (strcmp(value, "simple") == 0) service->type = SERVICE_SIMPLE;
         else if (strcmp(value, "forking") == 0) service->type = SERVICE_FORKING;
         else if (strcmp(value, "oneshot") == 0) service->type = SERVICE_ONESHOT;
+        else if (strcmp(value, "notify") == 0) service->type = SERVICE_NOTIFY;
+        else if (strcmp(value, "exec") == 0) service->type = SERVICE_EXEC;
+        else if (strcmp(value, "idle") == 0) service->type = SERVICE_IDLE;
+        else if (strcmp(value, "dbus") == 0) service->type = SERVICE_DBUS;
+    } else if (strcmp(key, "BusName") == 0) {
+        strncpy(service->bus_name, value, sizeof(service->bus_name) - 1);
+        service->bus_name[sizeof(service->bus_name) - 1] = '\0';
     } else if (strcmp(key, "ExecStart") == 0) {
         append_string(service->exec_start_list, MAX_EXEC_COMMANDS,
                       &service->exec_start_count, value);

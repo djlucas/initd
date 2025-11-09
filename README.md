@@ -182,47 +182,6 @@ Unit types **not supported** (use traditional alternatives):
 - ❌ `.scope`     - Runtime-created units (systemd internal)
 - ❌ `.slice`     - cgroup hierarchy management - elogind has user slices
 
-### Supported Unit Directives
-
-- `AllowIsolate=` - permit isolation to this target (only meaningful for .target units)
-- `DefaultDependencies=` - add implicit After=basic.target Conflicts=shutdown.target Before=shutdown.target for services/timers/sockets (default: yes)
-- `BindsTo=` / `PartOf=` lifecycle linkage for dependent units
-- `StopWhenUnneeded=` automatic teardown when no dependents remain
-- `RefuseManualStart=` / `RefuseManualStop=` guards for manual control
-- `ConditionPath*` checks with optional `!` negation to skip units
-- `StartLimitIntervalSec=` / `StartLimitBurst=` (with StartLimitAction= logging)
-- `Also=` / `Alias=` / `DefaultInstance=` install metadata helpers
-
-### Supported Service Directives
-
-- `Type=` - simple, forking, oneshot
-- `ExecStart=` - service start (master-validated, privilege-separated launch)
-- `ExecStartPre=`, `ExecStartPost=` - pre/post start commands (privileged master with shared validation)
-- `ExecStop=`, `ExecReload=` - service lifecycle commands (privileged master execution with worker mediation)
-- `User=`, `Group=` - Run as specific user/group
-- `WorkingDirectory=` - Set working directory
-- `Environment=` - Set environment variables
-- `EnvironmentFile=` - Load environment from file
-- `Restart=` - no, always, on-failure
-- `RestartSec=` - Delay before restart
-- `TimeoutStartSec=`, `TimeoutStopSec=` - Startup/shutdown timeouts
-- `PrivateTmp=` - Private /tmp namespace (Linux only)
-- `LimitNOFILE=` - File descriptor limit (portable)
-- `LimitCPU=`, `LimitFSIZE=`, `LimitDATA=`, `LimitSTACK=`, `LimitCORE=`, `LimitRSS=`, `LimitAS=`, `LimitNPROC=`, `LimitMEMLOCK=`, `LimitLOCKS=` - Resource limits (portable)
-- `LimitSIGPENDING=`, `LimitMSGQUEUE=`, `LimitNICE=`, `LimitRTPRIO=`, `LimitRTTIME=` - Real-time limits (Linux only)
-- `KillMode=` - process, control-group, mixed, none (portable)
-- `ExecStopPost=`, `ExecCondition=` - additional lifecycle hooks
-- `PIDFile=` - adopt forked services using PID files
-- `RestartPreventExitStatus=` / `RestartForceExitStatus=` - restart filters
-- `RemainAfterExit=` - keep oneshot services active after exit
-- `StandardInput=`/`StandardOutput=`/`StandardError=` - null, inherit, tty, tty-force, syslog, journal, file:path, socket, data
-- `StandardInputText=` / `StandardInputData=` - embed literal input data (text or base64)
-- `TTYPath=` - device to use with tty stdio modes
-- `SyslogIdentifier=` / `SyslogFacility=` / `SyslogLevel=` / `SyslogLevelPrefix=` - syslog configuration
-- `UMask=` - file creation mask (octal)
-- `NoNewPrivileges=` - prevent privilege escalation via setuid/setgid (Linux/FreeBSD only)
-- `RootDirectory=` - chroot jail for filesystem isolation (portable)
-
 ## Quick Start
 
 ### Building
