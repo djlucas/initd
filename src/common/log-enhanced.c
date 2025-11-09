@@ -188,8 +188,8 @@ void log_service_starting(const char *unit_name, const char *description) {
     /* Use description if available, otherwise unit name */
     const char *display = (description && description[0]) ? description : unit_name;
 
-    /* Console: [  INFO  ] Starting Create files and directories... */
-    if (LOGLEVEL_INFO <= enhanced_log_state.console_level) {
+    /* Console: [  INFO  ] Starting Create files and directories... (debug only) */
+    if (LOGLEVEL_DEBUG <= enhanced_log_state.console_level) {
         if (enhanced_log_state.use_colors) {
             fprintf(stderr, "%s[%s  INFO  %s]%s Starting %s...\n",
                     COLOR_BLUE, COLOR_CYAN, COLOR_BLUE, COLOR_RESET, display);

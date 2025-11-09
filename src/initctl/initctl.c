@@ -22,6 +22,7 @@
 #include "../common/parser.h"
 #include "../common/privileged-ops.h"
 #include "../common/unit.h"
+#include "../common/log.h"
 
 /* Print usage */
 static void format_time_iso(time_t ts, char *buf, size_t len) {
@@ -1281,6 +1282,12 @@ int main(int argc, char *argv[]) {
     }
 
     /* Commands that don't require a unit name */
+    if (cmd == CMD_DUMP_LOGS) {
+        /* Dump log buffer directly (no socket needed) */
+        log_dump_buffer();
+        return 0;
+    }
+
     if (cmd == CMD_DAEMON_RELOAD) {
         int failures = 0;
 
@@ -1366,6 +1373,94 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Error: %s\n", resp.message);
             return 1;
         }
+    }
+
+    /* Handle 'status' without unit name - show all units in tree */
+    if (cmd == CMD_STATUS && cmd_argc < 2) {
+        /* Connect to supervisor (read-only socket) */
+        int fd = connect_to_supervisor_status();
+        if (fd < 0) {
+            fprintf(stderr, "Error: Failed to connect to supervisor\n");
+            fprintf(stderr, "Is the init system running?\n");
+            return 1;
+        }
+
+        /* Build and send list-units request */
+        struct control_request req = {0};
+        req.header.length = sizeof(req);
+        req.header.command = CMD_LIST_UNITS;
+        req.header.flags = REQ_FLAG_ALL;  /* Include all units */
+
+        if (send_control_request(fd, &req) < 0) {
+            fprintf(stderr, "Error: Failed to send request\n");
+            close(fd);
+            return 1;
+        }
+
+        /* Receive list of units */
+        struct control_response resp = {0};
+        if (recv_control_response(fd, &resp) < 0) {
+            fprintf(stderr, "Error: Failed to receive response\n");
+            close(fd);
+            return 1;
+        }
+
+        close(fd);
+
+        if (resp.code != RESP_SUCCESS) {
+            fprintf(stderr, "Error: %s\n", resp.message);
+            return 1;
+        }
+
+        /* Get unit list from response payload */
+        struct unit_status_entry *entries = (struct unit_status_entry *)resp.payload;
+        size_t count = resp.payload_size / sizeof(struct unit_status_entry);
+
+        if (count == 0) {
+            printf("No units found.\n");
+            return 0;
+        }
+
+        /* Display status for each unit in tree format */
+        printf("● System status\n");
+        printf("    State: %s\n", "running");  /* TODO: get actual state */
+        printf("     Jobs: 0 queued\n");
+        printf("   Failed: 0 units\n");
+        printf("\n");
+
+        for (size_t i = 0; i < count; i++) {
+            const char *state_color = "";
+            const char *state_symbol = "●";
+            const char *reset = "";
+
+            /* Color coding based on state */
+            if (isatty(STDOUT_FILENO)) {
+                switch (entries[i].state) {
+                case UNIT_STATE_ACTIVE:
+                    state_color = "\033[32m";  /* green */
+                    reset = "\033[0m";
+                    break;
+                case UNIT_STATE_FAILED:
+                    state_color = "\033[31m";  /* red */
+                    state_symbol = "×";
+                    reset = "\033[0m";
+                    break;
+                case UNIT_STATE_ACTIVATING:
+                    state_color = "\033[33m";  /* yellow */
+                    reset = "\033[0m";
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            printf("%s%s%s %s - %s\n",
+                   state_color, state_symbol, reset,
+                   entries[i].name,
+                   entries[i].description[0] ? entries[i].description : "No description");
+        }
+
+        return 0;
     }
 
     /* Commands that require a unit name */
