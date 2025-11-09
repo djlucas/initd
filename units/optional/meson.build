@@ -45,7 +45,6 @@ optional_units = {
   'postgresql': ['postgresql.service'],
   'power-profiles-daemon': ['power-profiles-daemon.service'],
   'proftpd': ['proftpd.service'],
-  'random-seed': ['random-seed.service'],
   'rpc-idmapd': ['rpc-idmapd.service'],
   'rpc-mountd': ['rpc-mountd.service'],
   'rpc-statd-notify': ['rpc-statd-notify.service'],
