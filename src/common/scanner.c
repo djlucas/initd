@@ -198,7 +198,7 @@ int scan_unit_directories_filtered(struct unit_file ***units_out, int *count_out
                         }
                     }
 
-                    if (!already_wanted && unit->unit.wants_count < MAX_DEPENDENCIES) {
+                    if (!already_wanted && unit->unit.wants_count < MAX_DEPS) {
                         strncpy(unit->unit.wants[unit->unit.wants_count], entry->d_name, sizeof(unit->unit.wants[0]) - 1);
                         unit->unit.wants[unit->unit.wants_count][sizeof(unit->unit.wants[0]) - 1] = '\0';
                         unit->unit.wants_count++;
