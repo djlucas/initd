@@ -5,7 +5,7 @@ After=sysinit.target
 Before=multi-user.target
 
 [Service]
-Type=simple
+Type=idle
 ExecStart=@SBINDIR@/agetty --noclear %I 38400 linux
 StandardInput=tty-force
 StandardOutput=tty

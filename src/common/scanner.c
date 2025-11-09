@@ -159,6 +159,63 @@ int scan_unit_directories_filtered(struct unit_file ***units_out, int *count_out
 
     fprintf(stderr, "scanner: loaded %d units\n", count);
 
+    /* Scan .wants directories to populate runtime dependencies */
+    const char *wants_dirs_str = include_systemd ? UNIT_DIRS : "/etc/initd/system:/lib/initd/system";
+    char *wants_dirs = strdup(wants_dirs_str);
+    if (!wants_dirs) {
+        free(units);
+        return -1;
+    }
+
+    for (int i = 0; i < count; i++) {
+        struct unit_file *unit = units[i];
+        char wants_dir_path[1024];
+
+        /* Check each directory in priority order for <unit>.wants/ */
+        char *wants_dirs_copy = strdup(wants_dirs);
+        const char *wants_dir_base = strtok(wants_dirs_copy, ":");
+
+        while (wants_dir_base) {
+            /* Build path to <unit>.wants directory */
+            snprintf(wants_dir_path, sizeof(wants_dir_path), "%s/%s.wants", wants_dir_base, unit->name);
+
+            DIR *wants_dir = opendir(wants_dir_path);
+            if (wants_dir) {
+                const struct dirent *entry;
+
+                while ((entry = readdir(wants_dir)) != NULL) {
+                    if (entry->d_name[0] == '.') continue;
+
+                    /* Check if this is a symlink to a unit file */
+                    if (!is_unit_file(entry->d_name)) continue;
+
+                    /* Add to unit's wants array if not already present */
+                    int already_wanted = 0;
+                    for (int j = 0; j < unit->unit.wants_count; j++) {
+                        if (strcmp(unit->unit.wants[j], entry->d_name) == 0) {
+                            already_wanted = 1;
+                            break;
+                        }
+                    }
+
+                    if (!already_wanted && unit->unit.wants_count < MAX_DEPENDENCIES) {
+                        strncpy(unit->unit.wants[unit->unit.wants_count], entry->d_name, sizeof(unit->unit.wants[0]) - 1);
+                        unit->unit.wants[unit->unit.wants_count][sizeof(unit->unit.wants[0]) - 1] = '\0';
+                        unit->unit.wants_count++;
+                    }
+                }
+
+                closedir(wants_dir);
+            }
+
+            wants_dir_base = strtok(NULL, ":");
+        }
+
+        free(wants_dirs_copy);
+    }
+
+    free(wants_dirs);
+
     *units_out = units;
     *count_out = count;
     return 0;
