@@ -3,7 +3,6 @@ Description=Apply Kernel Parameters
 DefaultDependencies=no
 After=udev-retry.service
 Before=sysinit.target
-ConditionPathExists=@SYSCONFDIR@/sysctl.conf
 
 [Service]
 Type=oneshot

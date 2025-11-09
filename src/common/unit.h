@@ -423,6 +423,10 @@ struct unit_file {
     struct unit_file *waiting_next;
     time_t waiting_since;
     int waiting_timeout_sec;
+
+    /* Target activation timeout (separate from dependency waits) */
+    time_t activation_started;
+    int activation_timeout_sec;
 };
 
 #endif /* UNIT_H */

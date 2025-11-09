@@ -3,7 +3,6 @@ Description=Setup Console Keymap and Font
 DefaultDependencies=no
 After=sysinit.target
 Before=basic.target
-ConditionPathExists=@INITD_SYSCONFIG_DIR@/console.conf
 
 [Service]
 Type=oneshot

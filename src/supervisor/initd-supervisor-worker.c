@@ -253,6 +253,45 @@ static void expire_waiting_units(void) {
     }
 }
 
+static void expire_target_activations(void) {
+    time_t now = time(NULL);
+    if (now == (time_t)-1) {
+        return;
+    }
+
+    for (int i = 0; i < unit_count; i++) {
+        struct unit_file *unit = units[i];
+        if (!unit) {
+            continue;
+        }
+
+        /* Only check targets that are activating and have a timeout set */
+        if (unit->type == UNIT_TARGET &&
+            unit->state == STATE_ACTIVATING &&
+            unit->activation_started > 0 &&
+            unit->activation_timeout_sec > 0) {
+
+            /* Check if timeout has expired */
+            if (now - unit->activation_started >= unit->activation_timeout_sec) {
+                log_service_failed(unit->name, unit->unit.description,
+                                   "target activation timed out");
+                unit->state = STATE_FAILED;
+                unit->activation_started = 0;
+                unit->activation_timeout_sec = 0;
+                trigger_on_failure(unit);
+
+                /* Remove from waiting queue if present */
+                if (unit->waiting_for_dependencies) {
+                    dequeue_waiting_unit(unit);
+                }
+
+                /* Notify any units waiting for this target */
+                start_units_waiting_for(unit->name);
+            }
+        }
+    }
+}
+
 static bool unit_depends_on_name(const struct unit_file *unit, const char *name) {
     if (!unit || !name) {
         return false;
@@ -3681,6 +3720,12 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
     unit->state = STATE_ACTIVATING;
     log_service_starting(unit->name, unit->unit.description);
 
+    /* Start activation timer for targets */
+    if (unit->type == UNIT_TARGET && unit->activation_started == 0) {
+        unit->activation_started = time(NULL);
+        unit->activation_timeout_sec = unit_wait_timeout(unit);
+    }
+
     /* Apply implicit dependencies if DefaultDependencies=yes */
     if (unit->unit.default_dependencies) {
         /* Services, timers, and sockets with DefaultDependencies get implicit After=basic.target */
@@ -3812,6 +3857,8 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
                          unit->unit.requires[i], dep->state);
                 log_service_failed(unit->name, unit->unit.description, reason);
                 unit->state = STATE_FAILED;
+                unit->activation_started = 0;
+                unit->activation_timeout_sec = 0;
                 trigger_on_failure(unit);
                 unit->start_visit_state = DEP_VISIT_NONE;
                 return START_RESULT_FAILURE;
@@ -3825,6 +3872,8 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
                          unit->unit.binds_to[i], dep->state);
                 log_service_failed(unit->name, unit->unit.description, reason);
                 unit->state = STATE_FAILED;
+                unit->activation_started = 0;
+                unit->activation_timeout_sec = 0;
                 trigger_on_failure(unit);
                 unit->start_visit_state = DEP_VISIT_NONE;
                 return START_RESULT_FAILURE;
@@ -3843,6 +3892,8 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
         }
 
         unit->state = STATE_ACTIVE;
+        unit->activation_started = 0;
+        unit->activation_timeout_sec = 0;
         log_target_reached(unit->name, unit->unit.description);
         start_units_waiting_for(unit->name);
     }
@@ -4002,6 +4053,7 @@ static int main_loop(void) {
 
     while (!shutdown_requested) {
         expire_waiting_units();
+        expire_target_activations();
         /* Poll both control socket and master socket */
         int ret = poll(fds, nfds, 1000); /* 1 second timeout */
 
