@@ -63,6 +63,7 @@
 #include "../common/log-enhanced.h"
 
 static volatile sig_atomic_t shutdown_requested = 0;
+static volatile sig_atomic_t emergency_mode_active = 0;
 static int master_socket = -1;
 static int control_socket = -1;
 static int status_socket = -1;
@@ -1047,6 +1048,23 @@ static pid_t start_service(struct unit_file *unit) {
         } else {
             /* Type=simple, exec, and idle all become active immediately after fork+exec */
             unit->state = STATE_ACTIVE;
+        }
+
+        /* Check if emergency.target or emergency.service activated */
+        if (!emergency_mode_active &&
+            (strcmp(unit->name, "emergency.target") == 0 || strcmp(unit->name, "emergency.service") == 0)) {
+            emergency_mode_active = 1;
+            log_msg(LOG_WARNING, "emergency", "Emergency mode activated - blocking new unit starts");
+
+            /* Clear waiting queue */
+            struct unit_file *waiting = waiting_units_head;
+            while (waiting) {
+                struct unit_file *next = waiting->waiting_next;
+                log_msg_silent(LOG_DEBUG, waiting->name, "Dropped from queue (emergency mode)");
+                dequeue_waiting_unit(waiting);
+                waiting->state = STATE_INACTIVE;
+                waiting = next;
+            }
         }
 
         /* Check if this service provides syslog */
@@ -2651,6 +2669,23 @@ static void handle_service_exit(pid_t pid, int exit_status, const pid_t *child_p
                         unit->state = STATE_ACTIVE;
                         log_msg_silent(LOG_DEBUG, unit->name, "forking service parent exited, daemon pid=%d", daemon_pid);
                         log_service_started(unit->name, unit->unit.description);
+
+                        /* Check if emergency mode should activate */
+                        if (!emergency_mode_active &&
+                            (strcmp(unit->name, "emergency.target") == 0 || strcmp(unit->name, "emergency.service") == 0)) {
+                            emergency_mode_active = 1;
+                            log_msg(LOG_WARNING, "emergency", "Emergency mode activated - blocking new unit starts");
+
+                            /* Clear waiting queue */
+                            struct unit_file *waiting = waiting_units_head;
+                            while (waiting) {
+                                struct unit_file *next = waiting->waiting_next;
+                                log_msg_silent(LOG_DEBUG, waiting->name, "Dropped from queue (emergency mode)");
+                                dequeue_waiting_unit(waiting);
+                                waiting->state = STATE_INACTIVE;
+                                waiting = next;
+                            }
+                        }
                     } else {
                         log_service_failed(unit->name, unit->unit.description, "invalid PID in PIDFile");
                         unit->state = STATE_FAILED;
@@ -2671,12 +2706,42 @@ static void handle_service_exit(pid_t pid, int exit_status, const pid_t *child_p
                     log_msg_silent(LOG_DEBUG, unit->name, "detected %d additional child processes", child_pid_count - 1);
                 }
                 log_service_started(unit->name, unit->unit.description);
+
+                /* Check if emergency mode should activate */
+                if (!emergency_mode_active &&
+                    (strcmp(unit->name, "emergency.target") == 0 || strcmp(unit->name, "emergency.service") == 0)) {
+                    emergency_mode_active = 1;
+                    log_msg(LOG_WARNING, "emergency", "Emergency mode activated - blocking new unit starts");
+
+                    /* Clear waiting queue */
+                    while (waiting_units_head) {
+                        struct unit_file *waiting = waiting_units_head;
+                        log_msg_silent(LOG_DEBUG, waiting->name, "Dropped from queue (emergency mode)");
+                        dequeue_waiting_unit(waiting);
+                        waiting->state = STATE_INACTIVE;
+                    }
+                }
             } else {
                 /* No PIDFile and no detected children - mark active but can't track daemon PID */
                 unit->pid = 0;
                 unit->state = STATE_ACTIVE;
                 log_msg_silent(LOG_DEBUG, unit->name, "forking service parent exited (no PIDFile, daemon PID unknown)");
                 log_service_started(unit->name, unit->unit.description);
+
+                /* Check if emergency mode should activate */
+                if (!emergency_mode_active &&
+                    (strcmp(unit->name, "emergency.target") == 0 || strcmp(unit->name, "emergency.service") == 0)) {
+                    emergency_mode_active = 1;
+                    log_msg(LOG_WARNING, "emergency", "Emergency mode activated - blocking new unit starts");
+
+                    /* Clear waiting queue */
+                    while (waiting_units_head) {
+                        struct unit_file *waiting = waiting_units_head;
+                        log_msg_silent(LOG_DEBUG, waiting->name, "Dropped from queue (emergency mode)");
+                        dequeue_waiting_unit(waiting);
+                        waiting->state = STATE_INACTIVE;
+                    }
+                }
             }
         } else if (unit->config.service.type == SERVICE_ONESHOT || unit->config.service.remain_after_exit) {
             /* For oneshot services, successful exit means the job is done - mark ACTIVE
@@ -2690,6 +2755,23 @@ static void handle_service_exit(pid_t pid, int exit_status, const pid_t *child_p
             /* Log "Started" for oneshot services that complete successfully */
             if (unit->config.service.type == SERVICE_ONESHOT) {
                 log_service_started(unit->name, unit->unit.description);
+            }
+
+            /* Check if emergency mode should activate */
+            if (!emergency_mode_active &&
+                (strcmp(unit->name, "emergency.target") == 0 || strcmp(unit->name, "emergency.service") == 0)) {
+                emergency_mode_active = 1;
+                log_msg(LOG_WARNING, "emergency", "Emergency mode activated - blocking new unit starts");
+
+                /* Clear waiting queue */
+                struct unit_file *waiting = waiting_units_head;
+                while (waiting) {
+                    struct unit_file *next = waiting->waiting_next;
+                    log_msg_silent(LOG_DEBUG, waiting->name, "Dropped from queue (emergency mode)");
+                    dequeue_waiting_unit(waiting);
+                    waiting->state = STATE_INACTIVE;
+                    waiting = next;
+                }
             }
         } else {
             /* For simple services, if they exit it means they stopped */
@@ -3539,6 +3621,15 @@ static enum start_result start_unit_recursive_depth(struct unit_file *unit,
         return START_RESULT_FAILURE;
     }
 
+    /* Block new starts in emergency mode (except emergency itself) */
+    if (emergency_mode_active &&
+        strcmp(unit->name, "emergency.target") != 0 &&
+        strcmp(unit->name, "emergency.service") != 0 &&
+        unit->state == STATE_INACTIVE) {
+        log_msg_silent(LOG_DEBUG, unit->name, "Blocked start (emergency mode active)");
+        return START_RESULT_FAILURE;
+    }
+
     if (unit->start_traversal_id != generation) {
         unit->start_traversal_id = generation;
         unit->start_visit_state = DEP_VISIT_NONE;
@@ -3973,6 +4064,23 @@ static int main_loop(void) {
                                 log_msg_silent(LOG_DEBUG, unit->name, "%s service ready (pid=%d)", type_str, notifying_pid);
                                 log_service_started(unit->name, unit->unit.description);
 
+                                /* Check if emergency mode should activate */
+                                if (!emergency_mode_active &&
+                                    (strcmp(unit->name, "emergency.target") == 0 || strcmp(unit->name, "emergency.service") == 0)) {
+                                    emergency_mode_active = 1;
+                                    log_msg(LOG_WARNING, "emergency", "Emergency mode activated - blocking new unit starts");
+
+                                    /* Clear waiting queue */
+                                    struct unit_file *waiting = waiting_units_head;
+                                    while (waiting) {
+                                        struct unit_file *next = waiting->waiting_next;
+                                        log_msg_silent(LOG_DEBUG, waiting->name, "Dropped from queue (emergency mode)");
+                                        dequeue_waiting_unit(waiting);
+                                        waiting->state = STATE_INACTIVE;
+                                        waiting = next;
+                                    }
+                                }
+
                                 /* Notify waiters */
                                 start_units_waiting_for(unit->name);
                             }
@@ -4013,6 +4121,23 @@ static int main_loop(void) {
                                         unit->state = STATE_ACTIVE;
                                         log_msg_silent(LOG_DEBUG, unit->name, "D-Bus name acquired: %s", name);
                                         log_service_started(unit->name, unit->unit.description);
+
+                                        /* Check if emergency mode should activate */
+                                        if (!emergency_mode_active &&
+                                            (strcmp(unit->name, "emergency.target") == 0 || strcmp(unit->name, "emergency.service") == 0)) {
+                                            emergency_mode_active = 1;
+                                            log_msg(LOG_WARNING, "emergency", "Emergency mode activated - blocking new unit starts");
+
+                                            /* Clear waiting queue */
+                                            struct unit_file *waiting = waiting_units_head;
+                                            while (waiting) {
+                                                struct unit_file *next = waiting->waiting_next;
+                                                log_msg_silent(LOG_DEBUG, waiting->name, "Dropped from queue (emergency mode)");
+                                                dequeue_waiting_unit(waiting);
+                                                waiting->state = STATE_INACTIVE;
+                                                waiting = next;
+                                            }
+                                        }
 
                                         /* Notify waiters */
                                         start_units_waiting_for(unit->name);
