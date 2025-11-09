@@ -67,7 +67,9 @@ static int master_socket = -1;
 static int control_socket = -1;
 static int status_socket = -1;
 static int notify_socket = -1;
+#ifndef UNIT_TEST
 static char notify_socket_path[256] = {0};
+#endif
 #ifdef HAVE_DBUS
 static DBusConnection *dbus_conn = NULL;
 #endif
