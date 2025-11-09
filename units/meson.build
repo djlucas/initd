@@ -84,6 +84,7 @@ reference_services = [
   'netfs.service',
   'network@.service',
   'network-wait-online.service',
+  'random-seed.service',
   'remount-root.service',
   'rescue.service',
   'swap.service',
