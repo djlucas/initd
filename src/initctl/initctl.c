@@ -1398,26 +1398,19 @@ int main(int argc, char *argv[]) {
         }
 
         /* Receive list of units */
-        struct control_response resp = {0};
-        if (recv_control_response(fd, &resp) < 0) {
-            fprintf(stderr, "Error: Failed to receive response\n");
+        struct unit_list_entry *entries = NULL;
+        size_t count = 0;
+        if (recv_unit_list(fd, &entries, &count) < 0) {
+            fprintf(stderr, "Error: Failed to receive unit list\n");
             close(fd);
             return 1;
         }
 
         close(fd);
 
-        if (resp.code != RESP_SUCCESS) {
-            fprintf(stderr, "Error: %s\n", resp.message);
-            return 1;
-        }
-
-        /* Get unit list from response payload */
-        struct unit_status_entry *entries = (struct unit_status_entry *)resp.payload;
-        size_t count = resp.payload_size / sizeof(struct unit_status_entry);
-
         if (count == 0) {
             printf("No units found.\n");
+            free(entries);
             return 0;
         }
 
@@ -1460,6 +1453,7 @@ int main(int argc, char *argv[]) {
                    entries[i].description[0] ? entries[i].description : "No description");
         }
 
+        free(entries);
         return 0;
     }
 
